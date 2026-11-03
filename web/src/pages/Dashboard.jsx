@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, AreaChart, Card, Empty, Kpi, StatusBadge, useAsync } from '../components/ui.jsx';
-import { vnd, num, pct, today, addDays } from '../lib.js';
+import { vnd, num, pct, today, addDays, monthStart } from '../lib.js';
+import { Compass, Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 
 const MONTH = () => `tháng ${Number(today().slice(5, 7))}`;
 
@@ -16,24 +17,29 @@ export default function Dashboard() {
   const { shopId, user } = useSession();
   const shop = shopId === 'all' ? undefined : shopId;
   const state = useAsync(async () => {
-    const [dash, series, orders] = await Promise.all([
+    const [dash, series, orders, elements] = await Promise.all([
       api.get('/reports/dashboard', { shop_id: shop }),
       api.get('/reports/revenue', { shop_id: shop, from: addDays(today(), -29), to: today() }),
       api.get('/orders', { shop_id: shop, from: today(), to: today(), limit: 8 }),
+      api.get('/reports/elements', { shop_id: shop, from: monthStart(), to: today() }),
     ]);
-    return { dash: dash.data, series: series.data, orders: orders.data };
+    return { dash: dash.data, series: series.data, orders: orders.data, elements: elements.data };
   }, [shopId]);
 
   return (
     <div className="page stack">
       <div className="page-head"><div><div className="eyebrow">Sổ hôm nay</div><h1>{greeting(user.displayName)}</h1></div></div>
       <Async state={state}>
-        {({ dash: d, series, orders }) => {
+        {({ dash: d, series, orders, elements }) => {
           const cur = d.period.current;
           const flagged = d.health.data.filter((h) => h.status === 'red' || h.status === 'yellow');
           return (
             <>
               <section className="card hero">
+                <Compass className="hero-compass" size={300} />
+                <div className="hero-body">
+                <div className="hero-vert">Sổ hôm nay · {MONTH()}</div>
+                <div>
                 <div className="eyebrow">Doanh thu {MONTH()}</div>
                 <div className="big">{vnd(cur.net_revenue)}</div>
                 <div className="delta">
@@ -46,9 +52,11 @@ export default function Dashboard() {
                   <div><b>{vnd(cur.net_profit_estimate)}</b><span>Lãi ròng ước tính</span></div>
                   <div><b>{num(cur.order_count)}</b><span>Đơn · TB {vnd(cur.aov)}</span></div>
                 </div>
+                </div>
+                </div>
               </section>
 
-              <div className="grid cols-2 collapse">
+              <div className="grid split-75 collapse">
                 <Card flat title="Đơn hôm nay" actions={<Link to="/orders" className="small">Xem tất cả</Link>}>
                   {!orders.length ? <Empty>Hôm nay chưa có đơn nào.</Empty> : orders.map((o) => (
                     <Link key={o.id} to={`/orders/${o.id}`} className="pick">
@@ -77,7 +85,24 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid cols-2 collapse">
+              <Card title="Bán theo ngũ hành" actions={<Link to="/reports" className="small">Báo cáo</Link>}>
+                {(() => {
+                  const total = elements.reduce((a, e) => a + e.revenue, 0);
+                  const by = Object.fromEntries(elements.map((e) => [e.element, e.revenue]));
+                  if (!total) return <span className="muted">Chưa có doanh thu trong tháng.</span>;
+                  const slug = { Kim: 'kim', Mộc: 'moc', Thuỷ: 'thuy', Hoả: 'hoa', Thổ: 'tho' };
+                  return (
+                    <div className="el-bars">
+                      {ELEMENT_ORDER.map((e) => (
+                        <div className="el-bar" key={e}><Element name={e} /><div className="track"><i className={`el-fill-${slug[e]}`} style={{ width: `${(by[e] / total) * 100}%` }} /></div><b className="small num">{vnd(by[e])}</b></div>
+                      ))}
+                      {by[null] > 0 && <div className="small muted">Chưa gán hành: {vnd(by[null])} ({Math.round((by[null] / total) * 100)}%). Sản phẩm hợp nhiều hành được chia đều.</div>}
+                    </div>
+                  );
+                })()}
+              </Card>
+
+              <div className="grid split-57 collapse">
                 <Card title="Đang chờ xử lý" actions={<Link to="/orders" className="small">Xem đơn</Link>}>
                   {Object.keys(d.pending_orders).length === 0 ? <span className="muted">Không có đơn nào đang chờ.</span> : Object.entries(d.pending_orders).map(([st, n]) => (
                     <Link key={st} to={`/orders?status=${st}`} className="ledger-line" style={{ color: 'inherit' }}><StatusBadge status={st} /><b>{n}</b></Link>

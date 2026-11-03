@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Bars, HBars, Async, Card, Chips, Tabs, DateRange, Empty, Kpi, useAsync } from '../components/ui.jsx';
+import { Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 import { vnd, num, pct, monthStart, today, fmtDate, addDays } from '../lib.js';
 
 const TABS = [['revenue', 'Doanh thu'], ['profit', 'Lợi nhuận'], ['channels', 'Kênh'], ['products', 'Sản phẩm'], ['customers', 'Khách'], ['inventory', 'Kho'], ['cash', 'Dòng tiền'], ['custom', 'Chỉ số tuỳ chỉnh'], ['health', 'Sức khoẻ']];
@@ -18,7 +19,7 @@ export default function Reports() {
       case 'revenue': return Promise.all([api.get('/reports/overview', p), api.get('/reports/revenue', p)]);
       case 'profit': return Promise.all([api.get('/reports/overview', p), api.get('/reports/shops', p)]);
       case 'channels': return api.get('/reports/channels', p);
-      case 'products': return api.get('/reports/products', p);
+      case 'products': return Promise.all([api.get('/reports/products', p), api.get('/reports/elements', p)]);
       case 'customers': return api.get('/reports/customers', p);
       case 'inventory': return api.get('/reports/inventory', { shop_id: p.shop_id });
       case 'cash': return api.get('/reports/cashflow', p);
@@ -80,11 +81,14 @@ function Body({ tab, d }) {
       <tbody>{d.data.map((c) => <tr key={c.channel_id}><td><b>{c.channel_name}</b></td><td className="num">{c.order_count}</td><td className="num">{vnd(c.net_revenue)}</td><td className="num">{vnd(c.platform_fee)}</td><td className="num">{vnd(c.gross_profit)}</td><td className="num">{pct(c.gross_margin_pct)}</td><td className="num">{pct(c.cancel_rate_pct)}</td></tr>)}</tbody>
     </table></div></Card>
   );
-  if (tab === 'products') return !d.data.length ? <Empty>Chưa bán sản phẩm nào trong kỳ.</Empty> : (
+  if (tab === 'products') return !d[0].data.length ? <Empty>Chưa bán sản phẩm nào trong kỳ.</Empty> : (
+    <>
+    <Card title="Theo ngũ hành"><HBars items={ELEMENT_ORDER.map((e) => ({ label: e, value: d[1].data.find((x) => x.element === e)?.revenue || 0 }))} /><p className="small muted" style={{ marginBottom: 0 }}>Sản phẩm hợp nhiều hành được chia đều doanh thu cho các hành đó.</p></Card>
     <Card flat><div className="table-wrap"><table>
       <thead><tr><th>Sản phẩm</th><th className="num">Đã bán</th><th className="num">Doanh thu</th><th className="num">Giá vốn</th><th className="num">LN gộp</th><th className="num">Biên</th></tr></thead>
-      <tbody>{d.data.map((p) => <tr key={p.variant_id}><td>{p.product_name}{p.variant_name ? ` — ${p.variant_name}` : ''}<div className="small muted">{p.sku}</div></td><td className="num">{num(p.qty_sold)}</td><td className="num">{vnd(p.revenue)}</td><td className="num">{vnd(p.cogs)}</td><td className="num">{vnd(p.gross_profit)}</td><td className="num">{pct(p.margin_pct)}</td></tr>)}</tbody>
+      <tbody>{d[0].data.map((p) => <tr key={p.variant_id}><td>{p.product_name}{p.variant_name ? ` — ${p.variant_name}` : ''}<div className="small muted">{p.sku}</div></td><td className="num">{num(p.qty_sold)}</td><td className="num">{vnd(p.revenue)}</td><td className="num">{vnd(p.cogs)}</td><td className="num">{vnd(p.gross_profit)}</td><td className="num">{pct(p.margin_pct)}</td></tr>)}</tbody>
     </table></div></Card>
+    </>
   );
   if (tab === 'customers') {
     const c = d.data;

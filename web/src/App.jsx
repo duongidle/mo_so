@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { SessionProvider, useSession } from './session.jsx';
 import { Loading } from './components/ui.jsx';
 import Icon from './components/Icon.jsx';
+import { lunarInfo } from './lib.js';
 import Auth from './pages/Auth.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Pos from './pages/Pos.jsx';
@@ -70,6 +71,7 @@ function Shell() {
   const { pathname } = useLocation();
   const [pinned, setPinned] = useState(() => { try { return localStorage.getItem('moso.pin') === '1'; } catch { return false; } });
   const togglePin = () => setPinned((p) => { try { localStorage.setItem('moso.pin', p ? '0' : '1'); } catch { /* bỏ qua */ } return !p; });
+  const lunar = lunarInfo();
   const dateText = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
   const tab = (to, label, icon) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}><Icon name={icon} />{label}</NavLink>
@@ -95,7 +97,7 @@ function Shell() {
       <div className="main">
         <header className="topbar">
           <div className="row"><span className="mark-wrap"><img className="mark" src="/logo-mark.svg" alt="Mở Sổ" /></span><ShopSwitcher /></div>
-          <div className="row"><span className="small muted" style={{ textTransform: 'capitalize' }}>{dateText}</span>{pathname !== '/pos' && <Link to="/pos" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
+          <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></span>{pathname !== '/pos' && <Link to="/pos" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
         </header>
         <Routes>
           <Route path="/" element={<Dashboard />} />

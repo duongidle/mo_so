@@ -27,6 +27,16 @@
 
 ## Nhật ký
 
+### 2026-11-03 — Phiên 5: phong thuỷ trong giao diện
+
+- Chủ shop chọn cả 4 hướng (ngũ hành, không gian Á Đông, hoa văn truyền thống, chất liệu) nên đã sửa mục 7A của `CLAUDE.md` cho phép, có giới hạn.
+- **Ngũ hành thành dữ liệu**: ký hiệu 金木水火土 + màu cho mệnh khách (danh sách, hồ sơ, gợi ý), hành sản phẩm; thẻ "Bán theo ngũ hành" ở Tổng quan và tab Sản phẩm của Báo cáo (API mới `GET /reports/elements`, có test).
+- **Âm lịch + can chi ngày** ở thanh trên (đã kiểm: 1/1/2000 = 25/11 Kỷ Mão, ngày Mậu Ngọ; 10/2/2024 = mùng 1 Giáp Thìn).
+- **Họa tiết**: la bàn bát quái (hero, đăng nhập), lôi văn (dưới tiêu đề trang, đáy hero), trống đồng (có sẵn component, chưa dùng), dấu triện "MỞ SỔ" ở đăng nhập, dấu "ĐÃ CHỐT" trên đơn đã thu đủ.
+- **Chất liệu phẳng**: vân giấy dó mờ trên nền, vân gỗ trên sidebar/hero/thanh tab.
+- **Bố cục**: Tổng quan chia lệch 7:5, nhãn chữ dọc ở hero, trang đăng nhập hai nửa.
+- Còn lại: các trang Sản phẩm/Kho/Cài đặt mới chỉ ăn theo nền và họa tiết chung; chưa dùng trống đồng.
+
 ### 2026-11-03 — Phiên 4: gộp Import vào Đơn hàng, làm lại giao diện
 
 - **Import** nay là cửa sổ mở từ nút "Nhập từ file" ở trang Đơn hàng (cũng hiện ở trạng thái trống). Bỏ mục menu riêng.

@@ -24,6 +24,7 @@ r.get('/revenue', (c) => c.json(svc.revenueSeries(f(c))));
 r.get('/shops', (c) => c.json(svc.byShop(f(c))));
 r.get('/channels', (c) => c.json(svc.byChannel(f(c))));
 r.get('/products', (c) => c.json(svc.byProduct(f(c), { limit: Number(c.req.query('limit')) || 50 })));
+r.get('/elements', (c) => c.json(svc.byElement(f(c))));
 r.get('/customers', (c) => c.json({ data: svc.customerMetrics(f(c)) }));
 r.get('/inventory', (c) => c.json({ data: svc.inventoryMetrics({ shopId: c.req.query('shop_id'), warehouseId: c.req.query('warehouse_id') }) }));
 r.get('/cashflow', (c) => c.json({ data: svc.cashflow(f(c)) }));

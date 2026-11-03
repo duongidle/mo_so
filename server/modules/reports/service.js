@@ -1,5 +1,6 @@
 import { getDb } from '../../db/index.js';
 import { addDays, daysBetween, businessDate } from '../../lib/time.js';
+import { allocate } from '../../lib/money.js';
 import { getSettings } from '../settings/service.js';
 import { listStock } from '../inventory/service.js';
 
@@ -186,6 +187,34 @@ export function byProduct(filter, { limit = 50 } = {}) {
     )
     .all(...params, limit);
   return { filter: f, data: rows.map((r) => ({ ...r, gross_profit: r.revenue - r.cogs, margin_pct: pct(r.revenue - r.cogs, r.revenue) })) };
+}
+
+/**
+ * Doanh thu theo ngũ hành của sản phẩm. Sản phẩm hợp nhiều hành thì chia đều doanh thu cho các hành đó
+ * (để tổng 5 hành + "chưa gán" luôn bằng doanh thu thuần của dòng hàng, không đếm trùng).
+ */
+export function byElement(filter) {
+  const f = normalizeFilter(filter);
+  const { where, params } = orderWhere(f);
+  const rows = db()
+    .prepare(
+      `SELECT p.elements, SUM(l.qty - l.returned_qty) AS qty, SUM(l.line_total - l.allocated_order_discount) AS revenue
+       FROM order_lines l JOIN orders o ON o.id = l.order_id JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
+       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED} GROUP BY p.id`,
+    )
+    .all(...params);
+  const acc = new Map(['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ', null].map((e) => [e, { element: e, revenue: 0, qty: 0 }]));
+  for (const r of rows) {
+    const els = JSON.parse(r.elements || '[]');
+    const targets = els.length ? els : [null];
+    const shares = allocate(r.revenue, targets.map(() => 1));
+    targets.forEach((e, i) => {
+      const a = acc.get(e) ?? acc.get(null);
+      a.revenue += shares[i];
+      a.qty += r.qty;
+    });
+  }
+  return { filter: f, data: [...acc.values()] };
 }
 
 export function customerMetrics(filter, { topLimit = 10 } = {}) {

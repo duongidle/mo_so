@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Empty, ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd } from '../lib.js';
+import { Element } from '../components/Motif.jsx';
 
 const ELEMENTS = ['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ'];
 const blank = () => ({ name: '', unit: 'cái', consumption_days: '', elements: [], variants: [{ sku: '', name: '', default_price: 0, min_stock: 0 }], shop_ids: [] });
@@ -30,7 +31,7 @@ export default function Products() {
               <tr key={p.id} className="click" onClick={async () => { const full = await api.get(`/products/${p.id}`); setEdit({ ...full.data, consumption_days: full.data.consumption_days ?? '', shop_ids: (full.data.listings || []).map((l) => l.shop_id), _existing: true }); }}>
                 <td><b>{p.name}</b><div className="small muted">{p.variant_count ?? p.variants?.length ?? ''} biến thể</div></td>
                 <td className="small">{(p.variants || []).map((v) => v.sku).join(', ') || p.sku}</td>
-                <td className="small">{(p.elements || []).join(', ')}</td>
+                <td><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>
                 <td className="num">{p.min_price !== undefined ? vnd(p.min_price) : (p.variants || []).length ? vnd(p.variants[0].price ?? p.variants[0].default_price) : ''}</td>
               </tr>))}</tbody>
           </table></div></Card>
