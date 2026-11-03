@@ -13,19 +13,48 @@
 | M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng. Danh sách khách theo shop, xoá khỏi một shop, nhãn theo shop, xuất danh sách khách (Excel/CSV) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
 | M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Có trình sửa mẫu map cột (gợi ý cột từ file, ánh xạ trạng thái) |
-| M7 | Chi phí, đối soát Shopee | ✅ | ✅ | ✅ | Chi phí huỷ mềm; đối soát theo lô, báo lỗi từng đơn |
-| M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | Tính trực tiếp từ bảng đơn, chưa dùng `daily_stats` (xem nhật ký quyết định) |
+| M7 | Chi phí, đối soát Shopee, quỹ tiền | ✅ | ✅ | ✅ | Chi phí huỷ mềm, có phương thức trả; đối soát theo lô; quỹ tiền (chuyển quỹ, kiểm đếm, sổ quỹ) |
+| M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | `daily_stats` bằng trigger; báo cáo chi phí, tuổi nợ, thuế ước tính, xuất Excel, trang Cách đọc số liệu |
 | M9 | Loyalty & Campaign | ✅ | ✅ | ✅ | Một module `/loyalty`: hôm nay (nhắc mua lại, sinh nhật), gợi ý theo mệnh (shop phong thuỷ), hạng khách, mẫu tin nhắn (soạn + sao chép, không tự gửi). Tự động hoá: chưa làm |
 | M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
-| M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 48, vitest 80, smoke e2e 9 |
+| M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 76, vitest 91, smoke e2e 10 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
 
 ---
 
 ## Nhật ký
+
+### 2026-11-03 — Phiên 11: rà soát báo cáo và tài chính
+
+Đánh giá cho thấy doanh thu, lợi nhuận gộp, đối soát Shopee ổn nhưng chi phí và dòng tiền có lỗi số liệu. Đã chạy thử từng nghi vấn trước khi sửa.
+
+**Lỗi tìm thấy và đã sửa** (mỗi lỗi có test)
+- Chi phí chung chia lệch 1 đồng (làm tròn từng shop): nay chia bằng `allocate()`. Chi phí của shop đã lưu trữ biến mất khỏi tổng.
+- Dòng tiền không tính chi phí (cash_out = 0 dù đã chi).
+- Lọc theo kênh cộng lặp chi phí chung ở mọi kênh (nay chia theo doanh thu kênh, cộng lại đúng tổng).
+- Số ngày tồn theo shop dùng giá vốn của mọi shop (shop NH hiện 60 ngày, đúng là 120).
+- Danh sách chi phí lọc theo shop không hiện chi phí chung.
+- **Báo cáo theo sản phẩm và ngũ hành không trừ hàng trả** (lệch đúng bằng tổng hàng trả) — bắt được nhờ bộ test đối chiếu.
+- Huỷ phiếu nhập đã trả tiền NCC: tiền đã chi nằm đó không hàng, không công nợ → nay bắt buộc ghi nhận NCC hoàn tiền.
+- **PATCH áp giá trị mặc định** (zod 4 `.partial()`): sửa đơn nháp qua API xoá phí ship/phí sàn/giảm giá/ship shop chịu; sửa đơn đã chốt luôn 409 (không sửa được phí sàn khi sàn trả tiền); cùng lỗi ở chi phí (đổi phương thức về tiền mặt), phiếu nhập, sản phẩm (đơn vị, ngũ hành, nhãn, giá), webhook (bật lại hook đã tắt). Nay dùng `patchOf`.
+- Giao diện Báo cáo sập khi đổi tab (tab mới vẽ bằng dữ liệu tab cũ lúc đang tải) — lỗi có từ trước.
+
+**Thêm mới**
+- Báo cáo chi phí theo danh mục, phân bổ chi phí chung theo tỷ lệ cố định, lọc danh mục sản phẩm, tuổi nợ (khách, sàn, NCC), xuất Excel từng tab báo cáo.
+- `daily_stats` bằng trigger SQLite + tính lại ô bẩn khi đọc; `npm run check-stats`.
+- Quỹ tiền (két, ngân hàng, ví): số dư tính từ sổ, chuyển quỹ, kiểm đếm, sổ quỹ. Chi phí có phương thức trả.
+- Ước tính thuế do người dùng tự nhập, mặc định tắt (không tự đặt mức thuế vì các nguồn tra cứu mâu thuẫn nhau).
+- Trang **Cách đọc số liệu** trong menu: 5 câu hỏi xanh/vàng/đỏ kèm việc nên làm, từ điển các con số.
+- Bộ test đối chiếu `tests/finance_integrity.test.js`, `tests/finance.test.js`, `tests/cash.test.js`, `tests/daily_stats.test.js`.
+
+**Còn lại / cần quyết định**
+- Phí sàn khi khách trả hàng được giả định sàn không hoàn; nếu Shopee có hoàn một phần thì cần ô nhập phí sàn hoàn trên phiếu trả hàng.
+- Mức thuế thực tế do chủ shop/kế toán nhập ở Cài đặt → Thuế.
+- Chưa có chi phí định kỳ tự sinh (tiền thuê mặt bằng hằng tháng): hiện nhập tay mỗi tháng.
+- Số dư đầu của quỹ cần nhập một lần để khớp tiền thật (mặc định tính từ toàn bộ lịch sử nên quỹ ngân hàng có thể âm).
 
 ### 2026-11-03 — Phiên 10: nhiều tài khoản, tách ngành nước hoa, khách theo shop, Loyalty & Campaign
 
