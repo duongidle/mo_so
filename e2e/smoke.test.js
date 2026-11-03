@@ -199,7 +199,7 @@ test('trường thông tin khách hiện thành cột ở danh sách khách; tr�
   // Shop phong thuỷ chưa có đơn: trạng thái trống dùng trống đồng
   await pickShop(page, 'Phong thuỷ');
   await page.goto(`${base}/orders`);
-  await page.waitForSelector('.empty');
+  await page.waitForSelector('.empty svg.empty-art'); // chờ đến khi hình trống đồng vẽ xong, không đoán thời gian
   assert.ok(await page.locator('.empty svg.empty-art').count(), 'trống đồng ở shop phong thuỷ');
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -374,6 +374,82 @@ test('khách theo shop: gắn nhãn, lọc theo nhãn, xuất file, xoá khỏi 
   await page.waitForFunction(() => ![...document.querySelectorAll('[role=tab]')].some((t) => t.textContent.includes('Gợi ý theo mệnh')));
   await page.click('[role=tab]:has-text("Tự động hoá")');
   await page.waitForSelector('text=Chưa có gì chạy tự động');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('tài chính: chi phí trả bằng ngân hàng, quỹ tiền (chuyển quỹ, kiểm đếm), báo cáo chi phí và công nợ, xuất Excel, trang hướng dẫn đọc số liệu', { skip }, async () => {
+  await api('POST', '/orders', { shop_id: ids.nh, lines: [{ sku: 'TD-1', qty: 2 }], status: 'completed', payments: [{ amount: 200000, method: 'cash' }] });
+  const { page, errors, ctx } = await login();
+  await pickShop(page, 'Nước hoa');
+
+  // Thêm chi phí trả bằng chuyển khoản
+  await page.goto(`${base}/expenses`);
+  await page.click('button:has-text("+ Chi phí")');
+  await page.fill('.modal input[type=number]', '70000');
+  await page.selectOption('.modal select >> nth=2', 'bank');
+  await page.click('.modal button.primary');
+  await page.waitForSelector('td:has-text("Chuyển khoản")');
+
+  // Quỹ tiền: số dư trên màn hình khớp số dư API; chuyển quỹ giữ nguyên tổng; kiểm đếm ghi đúng phần chênh
+  const fmt = (n) => `${new Intl.NumberFormat('vi-VN').format(n)} ₫`;
+  const balances = async () => Object.fromEntries((await api('GET', '/cash/accounts')).data.map((a) => [a.id, a.balance]));
+  await page.click('[role=tab]:has-text("Quỹ tiền")');
+  await page.waitForSelector('text=Tổng tiền trong các quỹ');
+  const b0 = await balances();
+  assert.ok(await page.locator('.card:has-text("Tiền mặt")').getByText(fmt(b0.cac_cash), { exact: true }).count(), 'số dư tiền mặt trên màn hình = API');
+  await page.click('button:has-text("Chuyển quỹ")');
+  await page.locator('.modal input[type=number]').fill('50000');
+  await page.click('.modal button.primary');
+  await page.waitForSelector('.modal', { state: 'detached' });
+  const b1 = await balances();
+  assert.equal(b1.cac_cash, b0.cac_cash - 50000, 'chuyển từ quỹ đầu (tiền mặt) sang quỹ thứ hai');
+  assert.equal(b1.cac_bank, b0.cac_bank + 50000);
+  await page.locator('.card:has-text("Tiền mặt")').getByRole('button', { name: 'Kiểm đếm' }).click();
+  const counted = b1.cac_cash - 10000;
+  await page.locator('.modal input[type=number]').fill(String(counted));
+  await page.waitForSelector('.modal >> text=Chênh thiếu');
+  await page.click('.modal button.primary');
+  await page.waitForSelector('.modal >> text=Đã ghi điều chỉnh');
+  await page.click('.modal button.primary');
+  assert.equal((await balances()).cac_cash, counted);
+
+  // Báo cáo chi phí và tiền & công nợ
+  await page.goto(`${base}/reports?tab=expenses`);
+  await page.waitForSelector('text=Chi phí / doanh thu thuần');
+  assert.ok(await page.locator('text=Quảng cáo').count());
+  await page.click('[role=tab]:has-text("Tiền & công nợ")');
+  await page.waitForSelector('text=Số dư các quỹ');
+  assert.ok(await page.locator('text=Khách còn nợ').count());
+
+  // Xuất Excel đúng tab đang xem
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Xuất Excel")')]);
+  assert.match(dl.suggestedFilename(), /^bao-cao-cash-\d{8}-\d{8}\.xlsx$/);
+  const file = path.join(os.tmpdir(), `moso-rp-${Date.now()}.xlsx`);
+  await dl.saveAs(file);
+  const XLSX = require(path.resolve('web/node_modules/xlsx'));
+  const wb = XLSX.read(fs.readFileSync(file));
+  assert.deepEqual(wb.SheetNames, ['Thông tin', 'Dòng tiền', 'Số dư quỹ', 'Tuổi nợ']);
+  const quy = XLSX.utils.sheet_to_json(wb.Sheets['Số dư quỹ'], { header: 1 });
+  assert.equal(quy[1][0], 'Tiền mặt');
+  assert.equal(quy[1][2], counted, 'số dư tiền mặt sau kiểm đếm, là số chứ không phải chữ');
+  fs.rmSync(file, { force: true });
+
+  // Cài đặt: thuế mặc định tắt, phân bổ cố định có ô tỷ lệ cho từng shop
+  await page.goto(`${base}/settings`);
+  await page.click('[role=tab]:has-text("Thuế")');
+  await page.waitForSelector('text=không tự điền');
+  await page.click('[role=tab]:has-text("Ngưỡng")');
+  await page.selectOption('select:has(option[value=fixed])', 'fixed');
+  await page.waitForSelector('input[aria-label^="Tỷ lệ"]');
+
+  // Trang hướng dẫn: có trong menu, 5 câu hỏi, từ điển mở được
+  await page.goto(base);
+  await page.locator('nav a[href="/guide"]').click();
+  await page.waitForSelector('h1:has-text("Cách đọc sức khoẻ kinh doanh")');
+  for (const q of ['Tiền có đủ không?', 'Bán có lời không?', 'Hàng có bị kẹt hoặc sắp hết không?', 'Khách có quay lại không?', 'Chi phí có đang phình ra không?']) assert.ok(await page.locator(`text=${q}`).count(), q);
+  await page.click('summary:has-text("Biên lợi nhuận gộp")');
+  await page.waitForSelector('text=/giá bán chưa đủ cao/i');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -1,16 +1,19 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate, monthStart, today, METHODS } from '../lib.js';
+import CashAccounts from './CashAccounts.jsx';
 
 export default function Expenses() {
-  const [tab, setTab] = useState('expenses');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(['expenses', 'reconcile', 'cash'].includes(params.get('tab')) ? params.get('tab') : 'expenses');
   return (
     <div className="page stack">
       <div className="page-head"><h1>Chi phí & đối soát</h1></div>
-      <Tabs options={[['expenses', 'Chi phí'], ['reconcile', 'Đối soát Shopee']]} value={tab} onChange={setTab} />
-      {tab === 'expenses' ? <ExpenseList /> : <Reconcile />}
+      <Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ['reconcile', 'Đối soát Shopee']]} value={tab} onChange={setTab} />
+      {tab === 'expenses' && <ExpenseList />}{tab === 'cash' && <CashAccounts />}{tab === 'reconcile' && <Reconcile />}
     </div>
   );
 }
@@ -23,12 +26,12 @@ function ExpenseList() {
   const state = useAsync(() => api.get('/expenses', { shop_id: isAll ? undefined : shopId, from: range.from, to: range.to, limit: 200 }), [shopId, range.from, range.to]);
   const { busy, error, run } = useAction();
   const save = () => run(async () => {
-    await api.post('/expenses', { category_id: form.category_id, shop_id: form.shop_id || null, amount: Number(form.amount), expense_date: form.expense_date, payee: form.payee || null, note: form.note || null });
+    await api.post('/expenses', { category_id: form.category_id, shop_id: form.shop_id || null, amount: Number(form.amount), expense_date: form.expense_date, method: form.method || 'cash', payee: form.payee || null, note: form.note || null });
     setForm(null); state.reload();
   });
   return (
     <>
-      <div className="row wrap between"><DateRange {...range} onChange={setRange} /><button className="btn primary" onClick={() => setForm({ category_id: 'ecat_ads', shop_id: isAll ? '' : shopId, amount: '', expense_date: today() })}>+ Chi phí</button></div>
+      <div className="row wrap between"><DateRange {...range} onChange={setRange} /><button className="btn primary" onClick={() => setForm({ category_id: 'ecat_ads', shop_id: isAll ? '' : shopId, amount: '', expense_date: today(), method: 'cash' })}>+ Chi phí</button></div>
       <Async state={state}>
         {({ data }) => (
           <>
@@ -37,7 +40,7 @@ function ExpenseList() {
               <Card flat><div className="table-wrap"><table>
                 <thead><tr><th>Ngày</th><th>Danh mục</th><th>Shop</th><th>Ghi chú</th><th className="num">Số tiền</th><th /></tr></thead>
                 <tbody>{data.map((e) => (
-                  <tr key={e.id}><td>{fmtDate(e.expense_date)}</td><td>{e.category_name}</td><td>{e.shop_name || <span className="muted">Chung</span>}</td><td className="small">{e.payee} {e.note}</td><td className="num">{vnd(e.amount)}</td>
+                  <tr key={e.id}><td>{fmtDate(e.expense_date)}</td><td>{e.category_name}</td><td>{e.shop_name || <span className="badge plain" title="Chi phí chung: được chia về các shop khi xem báo cáo">Chung</span>}</td><td className="small">{e.payee} {e.note}<div className="muted">{METHODS[e.method]}</div></td><td className="num">{vnd(e.amount)}</td>
                     <td><button className="btn sm danger" onClick={() => confirm('Huỷ khoản chi này? (không xoá hẳn, vẫn lưu vết)') && run(async () => { await api.del(`/expenses/${e.id}`); state.reload(); })}>Huỷ</button></td></tr>
                 ))}</tbody>
               </table></div></Card>
@@ -54,6 +57,7 @@ function ExpenseList() {
             <Field label="Ngày"><input type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} /></Field>
             <Field label="Thuộc shop" hint="“Chung” sẽ được chia về các shop khi xem báo cáo"><select value={form.shop_id} onChange={(e) => setForm({ ...form, shop_id: e.target.value })}><option value="">Chung (phân bổ)</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
           </div>
+          <Field label="Trả bằng" hint="Quyết định tiền chi ra khỏi quỹ nào"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
           <Field label="Ghi chú"><input value={form.note || ''} onChange={(e) => setForm({ ...form, note: e.target.value })} /></Field>
           <ErrorBox error={error} />
         </Modal>
