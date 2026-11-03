@@ -174,6 +174,7 @@ moso/
   - `paid_amount`, `payment_status`: `unpaid | partial | paid | refunded`
   - **Số tiền cần thu** khác nhau theo kênh: kênh sàn (`channels.is_marketplace = 1`) → cần thu `net_amount` (sàn trừ phí rồi mới trả shop); kênh khác → cần thu `total_amount` (phí ship shop chịu là khoản chi riêng). Đều trừ phần hàng đã trả.
 - **Phiếu bán hàng**: trang in khổ A5/80mm từ đơn, có logo/tên shop, không gọi là "hoá đơn".
+- **Xuất đơn**: `GET /orders/export` dùng đúng bộ lọc của danh sách đơn (`orderFilter`), hai kiểu file (mỗi đơn một dòng / mỗi sản phẩm một dòng), CSV (có BOM, chống công thức độc) hoặc JSON (giao diện dựng Excel), `format=count` để báo trước số dòng. Tiền là số nguyên đồng, ngày giờ theo giờ VN, tối đa 50.000 dòng. Khác với `/system/export/orders.csv` (bản sao thô của bảng, dùng để lưu trữ).
 
 ### 5.7 Import đơn
 - Nguồn: file CSV/XLSX xuất từ Shopee, hoặc file theo **mẫu chuẩn của app** (dùng cho Facebook/AI tạo hàng loạt).
@@ -290,7 +291,7 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | Đăng nhập / Thiết lập lần đầu | tạo mật khẩu, tạo shop & kho đầu tiên |
 | Tổng quan | doanh thu hôm nay/tháng, LN gộp, đơn chờ xử lý, cảnh báo sức khoẻ, hàng sắp hết, khách cần nhắc |
 | Bán nhanh (POS) | tìm SKU, giỏ hàng, chọn khách (gõ SĐT), giảm giá, thu tiền, "Bán ngay" |
-| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; chi tiết đơn; đổi trạng thái; thanh toán; trả hàng; in phiếu |
+| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; chi tiết đơn; đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
 | Import đơn | chọn file → chọn mẫu map cột → xem thử → xác nhận → kết quả |
 | Sản phẩm | danh sách theo shop, chi tiết sản phẩm + biến thể, niêm yết theo shop, đồng bộ sang shop khác |
 | Kho | tồn theo kho, lịch sử biến động, kiểm kê, chuyển kho |
@@ -472,3 +473,4 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Giao diện có 3 lớp test: vitest (hàm thuần, component), test API, smoke e2e bằng trình duyệt thật (tự bỏ qua nếu thiếu Playwright/dist) | Lớp e2e bắt được lỗi mà hai lớp kia không thấy (trang sập khi chuyển sang "Tất cả shop" vì dữ liệu cũ + shop rỗng). |
 | 2026-11-03 | Tối đa 4 cột trường khách ở danh sách khách mỗi shop | Nhiều hơn thì bảng vỡ trên máy tính và vô dụng trên điện thoại (cột ẩn ở màn nhỏ). |
 | 2026-11-03 | Biến động kho của đơn import ghi theo ngày đặt trên sàn, và "lần xuất/nhập gần nhất" chỉ tiến, không lùi | Sổ cái kho theo ngày và tốc độ bán 30 ngày phải phản ánh lúc hàng thực sự đi, không phải lúc bấm import. Sổ cái vẫn sắp theo thứ tự ghi nên số dư từng dòng luôn đúng. |
+| 2026-11-03 | Xuất đơn là endpoint riêng có bộ lọc chung với danh sách, không dùng bản sao thô của bảng | Bản sao thô có cột kỹ thuật (id, JSON) và không lọc được. File cho người dùng cần tiêu đề tiếng Việt, ngày giờ VN, lợi nhuận tính sẵn, và phải khớp đúng những gì đang thấy trên danh sách. Dùng chung `orderFilter` nên hai nơi không thể lệch nhau (có test đối chiếu). |

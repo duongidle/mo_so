@@ -13,7 +13,7 @@ export const EXPORTS = {
   payments: 'SELECT * FROM payments ORDER BY paid_at',
 };
 
-function cell(v) {
+export function cell(v) {
   if (v === null || v === undefined) return '';
   let s = String(v);
   // Chống "CSV injection": ô bắt đầu bằng = + - @ bị Excel hiểu là công thức
@@ -29,4 +29,9 @@ export function toCsv(table) {
   const cols = Object.keys(rows[0]);
   // BOM để Excel mở đúng tiếng Việt
   return '﻿' + [cols.join(','), ...rows.map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n') + '\r\n';
+}
+
+/** Ghép CSV từ tên cột + các dòng giá trị (BOM để Excel mở đúng tiếng Việt, CRLF) */
+export function rowsToCsv(headers, rows) {
+  return '\uFEFF' + [headers.map(cell).join(','), ...rows.map((r) => r.map(cell).join(','))].join('\r\n') + '\r\n';
 }

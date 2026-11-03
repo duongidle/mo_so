@@ -5,6 +5,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, SearchBox, StatusBadge, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
+import ExportOrders from '../components/ExportOrders.jsx';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import { vnd, num, fmtDate, STATUS, PAY_STATUS, METHODS } from '../lib.js';
 
@@ -22,6 +23,7 @@ export function OrderList() {
   const [cursor, setCursor] = useState(null);
   const nav = useNavigate();
   const showImport = sp.get('import') === '1';
+  const [showExport, setShowExport] = useState(false);
   const setImport = (on) => { const n = new URLSearchParams(sp); on ? n.set('import', '1') : n.delete('import'); setSp(n, { replace: true }); };
   const params = { shop_id: shopId === 'all' ? undefined : shopId, status: status || undefined, channel: channel || undefined, q: dq || undefined, from: range.from || undefined, to: range.to || undefined };
   const state = useAsync(async () => { setExtra([]); setCursor(null); return api.get('/orders', { ...params, limit: 50 }); }, [shopId, status, channel, dq, range.from, range.to]);
@@ -33,7 +35,7 @@ export function OrderList() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/pos" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
+      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/pos" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
       <Chips options={TABS} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
       <div className="row wrap">
         <SearchBox value={text} onChange={setText} placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" />
@@ -68,6 +70,7 @@ export function OrderList() {
           );
         }}
       </Async>
+      {showExport && <ExportOrders filters={Object.fromEntries(Object.entries(params).filter(([, v]) => v))} onClose={() => setShowExport(false)} />}
       {showImport && <ImportPanel defaultShop={shopId} onClose={() => { setImport(false); state.reload(); }} />}
     </div>
   );

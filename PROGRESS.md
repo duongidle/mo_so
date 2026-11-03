@@ -27,6 +27,12 @@
 
 ## Nhật ký
 
+### 2026-11-03 — Phiên 9: xuất đơn hàng
+
+- **Xuất đơn** ở trang Đơn hàng ("Xuất file"): theo đúng bộ lọc đang xem, hai kiểu (mỗi đơn một dòng: tiền, phí sàn, thực nhận, giá vốn, lợi nhuận; mỗi sản phẩm một dòng: SKU, SL, giá, giá vốn), hai định dạng (Excel dựng ở trình duyệt, CSV tải thẳng từ server). Có đếm trước số dòng, báo khi không có đơn hoặc vượt 50.000 dòng. API `GET /orders/export` (`layout`, `format=csv|json|count`), API key chỉ đọc dùng được.
+- Bộ lọc đơn tách thành `orderFilter` dùng chung với danh sách; test đối chiếu số dòng file với danh sách cho 9 kiểu lọc.
+- Test: API 32, giao diện 55, smoke e2e 7 (tải thật CSV và Excel về rồi đọc nội dung). Test giao diện bắt được lỗi tên file Excel ("tatca" thay vì "tat-ca") và một test theme đua thời gian (đã sửa, chạy 15 lần liên tiếp không hỏng).
+
 ### 2026-11-03 — Phiên 8: các việc còn lại trong danh sách
 
 - **Trường khách hiện thành cột ở danh sách khách** (migration 014): mỗi trường khách của shop có cờ "Cột", bật trong "Thông tin khách của shop" hoặc lúc thêm trường. Tối đa 4 cột mỗi shop (`TOO_MANY_COLUMNS`), chỉ trường khách mới có cột, trường công thức không hiện cột. Chỉ hiện khi xem theo một shop; xem "Tất cả shop" thì không có cột và không lộ giá trị.
