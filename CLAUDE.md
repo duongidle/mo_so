@@ -123,7 +123,7 @@ moso/
 - **Biến thể / SKU** (`variants`): mỗi sản phẩm ≥ 1 biến thể (mùi, size, màu…). Tồn kho và giá tính theo biến thể. Sản phẩm đơn giản có 1 biến thể mặc định.
 - **Niêm yết theo shop** (`shop_listings`): biến thể được bán ở shop nào, giá bán riêng của shop, trạng thái đang bán/ngừng.
 - **Đồng bộ sản phẩm giữa shop** = tạo niêm yết ở shop đích từ niêm yết của shop nguồn (chọn từng sản phẩm hoặc toàn bộ). Thông tin sản phẩm dùng chung (vì là sản phẩm gốc), giá được chép sang rồi chỉnh riêng. Tuỳ chọn: ghi đè giá nếu đã tồn tại.
-- **Combo** (giai đoạn sau): biến thể loại `bundle` gồm nhiều biến thể thành phần; bán combo trừ kho thành phần.
+- **Combo**: biến thể `kind = 'bundle'` gồm các biến thể đơn (không lồng combo) kèm số lượng mỗi combo (`bundle_components`). Combo **không có tồn riêng**: số bán được = min theo thành phần (tồn / SL mỗi combo); nhập hàng, điều chỉnh, chuyển kho, kiểm kê chỉ làm trên thành phần (chặn `BUNDLE_NO_STOCK`). Bán combo trừ kho từng thành phần; giá vốn dòng = Σ SL × giá vốn thành phần lúc bán; ảnh chụp thành phần + giá vốn lưu ở `order_line_components` để huỷ đơn/trả hàng hoàn đúng kể cả khi công thức combo đổi sau. Biến thể đã có lịch sử kho/đơn không đổi loại được (`KIND_LOCKED`).
 
 ### 5.3 Tồn kho & giá vốn
 - `stock_levels(warehouse, variant)`: `on_hand` (đang có), `reserved` (đã giữ cho đơn chưa giao — giai đoạn sau), `avg_cost` (giá vốn bình quân).
@@ -131,7 +131,7 @@ moso/
 - **Chi phí nhập phân bổ vào giá vốn**: phí ship nhập, phí khác trên phiếu nhập được chia theo tỷ lệ giá trị dòng.
 - **Loại biến động** (`stock_movements.type`): `purchase_in`, `sale_out`, `sale_return_in`, `adjust_in`, `adjust_out`, `transfer_out`, `transfer_in`, `opening` (tồn đầu kỳ), `damage_out`.
 - Không cho tồn âm theo mặc định (cấu hình `allow_negative_stock` trong settings, mặc định `false`). Đơn import từ kênh có thể vượt tồn → được phép nhưng gắn cờ cảnh báo.
-- **Kiểm kho**: phiếu kiểm kê → chênh lệch sinh `adjust_in/out`.
+- **Kiểm kho**: phiếu kiểm kê nhiều bước (`stock_counts`): tạo phiếu (chụp tồn) → nhập số đếm dần, lưu giữa chừng → hoàn tất sinh `adjust_in/out` theo chênh lệch. Chênh lệch tính theo tồn hệ thống **tại lúc nhập số đếm của từng dòng**, nên hàng bán trước hoặc sau lúc đếm không làm sai. Dòng chưa đếm: bỏ qua (mặc định) hoặc coi là 0. Thiếu giá vốn cho hàng nhập lần đầu thì cả phiếu không áp. Phiếu đã chốt không sửa.
 - **Chuyển kho**: `transfer_out` + `transfer_in` với cùng giá vốn.
 
 ### 5.4 Nhập hàng (Purchase)
@@ -411,7 +411,10 @@ npm start            # chạy server tại http://localhost:3000
 # Điện thoại: http://<IP-của-Mac>:3000 (cùng wifi)
 
 npm run dev          # chế độ phát triển (server + Vite hot reload)
-npm test             # chạy test API
+npm test             # test API (node:test)
+npm run test:web     # test giao diện (vitest + Testing Library)
+npm run test:e2e     # smoke test trình duyệt thật (cần npm run build và Playwright)
+npm run test:all     # cả ba
 node scripts/seed.js # tạo dữ liệu mẫu (2 shop, 1 kho, vài sản phẩm)
 ```
 
@@ -463,3 +466,6 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Thêm **ngành bán** cho shop; mỗi ngành có theme giao diện, tính năng và trường khách riêng. Mệnh/ngày sinh chuyển từ cột chung của khách sang **trường tuỳ chỉnh của từng shop** | Mệnh chỉ hợp với shop phong thuỷ; shop nước hoa không cần và giao diện phong thuỷ cũng không hợp. Chủ shop muốn trường khách tồn tại riêng theo shop, kể cả cùng một khách. Giá trị gắn vào trường (mà trường thuộc shop) nên tách theo shop tự nhiên, không cần cột shop trên giá trị. Cột cũ trên `customers` giữ lại (không xoá dữ liệu), chỉ dùng để chép sang khi bật ngành phong thuỷ. |
 | 2026-11-03 | Gợi ý theo mệnh chỉ trong phạm vi một shop phong thuỷ (sản phẩm niêm yết ở shop đó); không còn bán chéo từ shop khác | Mệnh là thông tin riêng của shop nên shop khác không biết mệnh để gợi ý. Cần bán chéo thì chủ shop nhập mệnh ở shop phong thuỷ. |
 | 2026-11-03 | Theme `nuochoa` dùng bảng màu biến thể ngoài bảng thương hiệu | Chủ shop muốn mỗi ngành một giao diện khác hẳn. Biến thể vẫn qua kiểm tra tương phản; logo và theme gốc không đổi. |
+| 2026-11-03 | Combo không có tồn riêng, tồn khả dụng tính từ thành phần; chụp thành phần + giá vốn lúc bán | Tồn riêng của combo sẽ lệch khi bán lẻ thành phần. Ảnh chụp giúp huỷ/trả hàng hoàn đúng cả khi công thức combo đổi hay giá vốn thành phần đổi. |
+| 2026-11-03 | Kiểm kê: chênh lệch tính theo tồn hệ thống tại lúc nhập số đếm từng dòng, không phải lúc tạo phiếu | Đếm cả kho mất nhiều giờ, trong lúc đó vẫn bán hàng. Tính theo tồn lúc tạo phiếu sẽ ghi đè mất các đơn bán sau đó. Giả định: người đếm nhập số ngay sau khi đếm. |
+| 2026-11-03 | Giao diện có 3 lớp test: vitest (hàm thuần, component), test API, smoke e2e bằng trình duyệt thật (tự bỏ qua nếu thiếu Playwright/dist) | Lớp e2e bắt được lỗi mà hai lớp kia không thấy (trang sập khi chuyển sang "Tất cả shop" vì dữ liệu cũ + shop rỗng). |

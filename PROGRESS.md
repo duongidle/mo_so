@@ -8,24 +8,35 @@
 |---|---|---|---|---|---|
 | M0 | Nền tảng | ✅ | — | ✅ | |
 | M1 | Shop, kho, kênh, cài đặt | ✅ | ✅ | ✅ | |
-| M2 | Sản phẩm, niêm yết, đồng bộ | ✅ | ✅ | ✅ | Combo chưa làm |
-| M3 | Tồn kho, nhập hàng, NCC | ✅ | ✅ | ✅ | Kiểm kê dạng phiếu nhiều bước chưa làm (đang là điều chỉnh 1 bước). Chuyển kho có API, chưa có màn hình |
-| M4 | Khách hàng chung, mệnh | ✅ | ✅ | ✅ | Chưa có màn hình gộp hồ sơ trùng (API có) |
+| M2 | Sản phẩm, niêm yết, đồng bộ | ✅ | ✅ | ✅ | Combo xong (tồn khả dụng theo thành phần) |
+| M3 | Tồn kho, nhập hàng, NCC | ✅ | ✅ | ✅ | Kiểm kê nhiều bước, chuyển kho, điều chỉnh nhanh |
+| M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng (danh sách nghi trùng + gộp thủ công) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
-| M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Chưa có màn hình sửa mẫu map cột (API có) |
+| M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Có trình sửa mẫu map cột (gợi ý cột từ file, ánh xạ trạng thái) |
 | M7 | Chi phí, đối soát Shopee | ✅ | ✅ | ✅ | Chi phí huỷ mềm; đối soát theo lô, báo lỗi từng đơn |
 | M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | Tính trực tiếp từ bảng đơn, chưa dùng `daily_stats` (xem nhật ký quyết định) |
 | M9 | Loyalty, nhắc mua lại | ✅ | ✅ | ✅ | Hạng, nhắc mua lại, sinh nhật, gợi ý theo mệnh, mẫu tin nhắn (chỉ soạn + sao chép, không tự gửi) |
-| M10 | Trường tuỳ chỉnh, công thức | ✅ | 🟡 | ✅ | Có màn hình tạo trường/chỉ số; chưa có ô nhập trường tuỳ chỉnh trong form đơn/sản phẩm/khách (API `/custom/values` có) |
+| M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
-| M13 | Giao diện web | | 🟡 | | Đủ các màn hình chính, chạy được trên điện thoại và máy tính. Còn các điểm ghi ở từng module |
+| M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: vitest 43, smoke e2e 5 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
 
 ---
 
 ## Nhật ký
+
+### 2026-11-03 — Phiên 7: làm nốt các việc còn thiếu
+
+- **Combo**: biến thể `bundle` (migration 012). Tồn khả dụng = min theo thành phần; bán trừ kho từng thành phần, giá vốn = tổng thành phần lúc bán; huỷ đơn/trả hàng hoàn đúng theo ảnh chụp (`order_line_components`) kể cả khi công thức combo hay giá vốn đổi sau. Chặn nhập/điều chỉnh/chuyển kho/kiểm kê trên combo. UI: tạo combo trong form sản phẩm (chọn thành phần + SL), POS và Kho hiện "combo, bán được N".
+- **Kiểm kê nhiều bước** (migration 013): phiếu → đếm dần → hoàn tất. Chênh lệch tính theo tồn tại lúc nhập số đếm từng dòng. Tab "Kiểm kê" trong Kho; nút cũ đổi tên "Điều chỉnh nhanh".
+- **Trường tuỳ chỉnh có ô nhập** trong chi tiết đơn, form sản phẩm (khi sửa), phiếu nhập (component `CustomFieldsPanel`; công thức chỉ đọc). Sửa luôn lỗi hiển thị số công thức thiếu dấu phân cách nghìn.
+- **Gộp khách trùng**: danh sách nghi trùng, so sánh hai hồ sơ, gộp (không hoàn tác); gộp thủ công từ hồ sơ khách.
+- **Chuyển kho** (nút ở trang Kho, hiện khi có từ 2 kho). **Trình sửa mẫu import**: gợi ý cột từ file đang mở, cảnh báo cột mất, lấy sẵn giá trị trạng thái từ file.
+- **Test giao diện**: vitest + Testing Library (43 test: hàm thuần, gom dòng import, trình sửa mẫu, panel trường tuỳ chỉnh, theme/tính năng theo shop) và smoke e2e bằng Chromium thật (5 luồng). Tổng cộng test API 25.
+- **Lỗi bắt được nhờ test**: trang sập khi chuyển sang "Tất cả shop" lúc đang xem hồ sơ khách (dữ liệu cũ của shop + shop rỗng). Đã sửa.
+- Còn lại: trường khách chưa hiện thành cột ở danh sách khách; trống đồng chưa dùng; chưa thử iPhone thật; combo chưa có báo cáo riêng (doanh thu tính theo combo, giá vốn theo thành phần).
 
 ### 2026-11-03 — Phiên 6: ngành bán, giao diện và trường khách theo shop
 

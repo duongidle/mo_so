@@ -19,7 +19,9 @@ npm install
 npm run build     # build giao diện web (lần đầu)
 npm run seed      # (tuỳ chọn) dữ liệu mẫu, đăng nhập admin / matkhau123
 npm start         # http://localhost:3000
-npm test
+npm test           # test API
+npm run test:web   # test giao diện
+npm run test:e2e   # smoke test trình duyệt thật (cần build + Playwright)
 ```
 
 Sao lưu tự động mỗi ngày vào `data/backups/` (giữ 14 bản ngày + 8 bản tuần). Sao lưu tay: `npm run backup`. Khôi phục (tắt server trước): `npm run restore -- <file>`. Phát triển giao diện: chạy `npm run dev` và `npm run dev:web` song song. Quên mật khẩu: `npm run reset-password -- admin matkhaumoi`.
