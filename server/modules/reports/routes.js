@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { query } from '../../lib/http.js';
 import * as svc from './service.js';
+import { evaluateMetrics } from '../custom/service.js';
 
 const r = new Hono();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -12,6 +13,12 @@ const f = (c) => {
 };
 
 r.get('/dashboard', (c) => c.json({ data: svc.dashboard(f(c)) }));
+r.get('/custom-metrics', (c) => {
+  const flt = f(c);
+  const ov = svc.overview(flt).current;
+  // Thêm vài chỉ số đã tính sẵn để công thức dùng được: {expenses_amount}, {net_profit_estimate}...
+  return c.json({ data: evaluateMetrics(ov, flt.shopIds), filter: svc.normalizeFilter(flt) });
+});
 r.get('/overview', (c) => c.json({ data: svc.overview(f(c)) }));
 r.get('/revenue', (c) => c.json(svc.revenueSeries(f(c))));
 r.get('/shops', (c) => c.json(svc.byShop(f(c))));
