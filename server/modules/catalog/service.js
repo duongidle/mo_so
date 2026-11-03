@@ -2,6 +2,7 @@ import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { audit, emit } from '../../lib/events.js';
+import { componentsOf, setComponents, availableBundles, assertKindChangeAllowed } from './bundles.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 
 const db = () => getDb();
@@ -57,6 +58,7 @@ function hydrateProduct(p) {
     tags: parseJson(p.tags),
     variants: variants.map((v) => ({
       ...v,
+      ...(v.kind === 'bundle' ? { components: componentsOf(v.id), available: availableBundles(v.id) } : {}),
       listings: listings.filter((l) => l.variant_id === v.id),
       stock: stock.filter((s) => s.variant_id === v.id),
       on_hand_total: stock.filter((s) => s.variant_id === v.id).reduce((a, s) => a + s.on_hand, 0),
@@ -103,10 +105,12 @@ function insertVariant(productId, v, at) {
   const id = newId('var');
   db()
     .prepare(
-      `INSERT INTO variants (id, product_id, sku, name, barcode, default_price, min_stock, weight_gram, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO variants (id, product_id, sku, name, barcode, default_price, min_stock, weight_gram, kind, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, productId, v.sku.trim().toUpperCase(), v.name ?? null, v.barcode ?? null, v.default_price ?? 0, v.min_stock ?? 0, v.weight_gram ?? null, at, at);
+    .run(id, productId, v.sku.trim().toUpperCase(), v.name ?? null, v.barcode ?? null, v.default_price ?? 0, v.min_stock ?? 0, v.weight_gram ?? null, v.kind === 'bundle' ? 'bundle' : 'single', at, at);
+  if (v.kind === 'bundle') setComponents(id, v.components);
+  else if (v.components?.length) throw badRequest('NOT_BUNDLE', 'Chỉ combo mới có thành phần');
   return id;
 }
 
@@ -161,6 +165,15 @@ export function updateProduct(id, input, actor) {
       const cur = db().prepare('SELECT * FROM variants WHERE id = ? AND product_id = ?').get(v.id, id);
       if (!cur) throw notFound('Biến thể');
       const n = { ...cur, ...v, sku: (v.sku ?? cur.sku).trim().toUpperCase() };
+      if (v.kind && v.kind !== cur.kind) {
+        assertKindChangeAllowed(cur.id);
+        db().prepare('UPDATE variants SET kind = ? WHERE id = ?').run(v.kind, cur.id);
+        if (v.kind === 'single') db().prepare('DELETE FROM bundle_components WHERE bundle_variant_id = ?').run(cur.id);
+      }
+      if ((v.kind ?? cur.kind) === 'bundle') {
+        if (v.components) setComponents(cur.id, v.components);
+        else if (cur.kind !== 'bundle') throw badRequest('BUNDLE_EMPTY', 'Combo cần ít nhất 1 thành phần');
+      }
       db()
         .prepare('UPDATE variants SET sku=?, name=?, barcode=?, default_price=?, min_stock=?, weight_gram=?, archived_at=?, updated_at=? WHERE id=?')
         .run(n.sku, n.name, n.barcode, n.default_price, n.min_stock, n.weight_gram, n.archived_at ?? null, at, v.id);
@@ -230,7 +243,7 @@ export function searchVariants({ shopId, warehouseId, q, limit = 30, onlyListed 
   if (shopId && onlyListed) where.push('l.id IS NOT NULL AND l.active = 1');
   return db()
     .prepare(
-      `SELECT v.id, v.sku, v.name AS variant_name, v.barcode, v.default_price, v.min_stock,
+      `SELECT v.id, v.sku, v.kind, v.name AS variant_name, v.barcode, v.default_price, v.min_stock,
               p.id AS product_id, p.name AS product_name, p.unit, p.image_url,
               COALESCE(l.price, v.default_price) AS price, l.active AS listed,
               COALESCE(s.on_hand, 0) AS on_hand, COALESCE(s.avg_cost, 0) AS avg_cost
@@ -241,5 +254,10 @@ export function searchVariants({ shopId, warehouseId, q, limit = 30, onlyListed 
        WHERE ${where.join(' AND ')}
        ORDER BY p.name, v.sku LIMIT ?`,
     )
-    .all(...params, limit);
+    .all(...params, limit)
+    .map((r) => (r.kind === 'bundle' ? { ...r, on_hand: availableBundles(r.id, warehouseId), avg_cost: componentsOf(r.id).reduce((a, c) => a + c.qty * (costOf(c.component_variant_id, warehouseId)), 0) } : r));
+}
+
+function costOf(variantId, warehouseId) {
+  return db().prepare(`SELECT COALESCE(${warehouseId ? 'avg_cost' : 'MAX(avg_cost)'},0) AS c FROM stock_levels WHERE variant_id = ? ${warehouseId ? 'AND warehouse_id = ?' : ''}`).get(...(warehouseId ? [variantId, warehouseId] : [variantId]))?.c ?? 0;
 }
