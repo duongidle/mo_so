@@ -10,4 +10,5 @@ export default defineConfig({
     proxy: { '/api': 'http://localhost:3000' },
   },
   build: { outDir: 'dist', chunkSizeWarningLimit: 900 },
+  test: { globals: true, environment: 'jsdom', include: ['src/**/*.test.{js,jsx}'], css: false, restoreMocks: true },
 });

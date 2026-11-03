@@ -239,13 +239,13 @@ export function CustomerDetail() {
           <>
             <div className="page-head"><div><h1>{c.name}</h1><div className="muted small sub">{c.code} · {c.phone} {c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">Facebook</a>}</div></div><div className="row wrap"><button className="btn" onClick={() => setMergeOpen(true)}>Gộp khách trùng</button><button className="btn" onClick={() => setEdit(c)}>Sửa thông tin chung</button></div></div>
             <div className="grid cols-3">
-              {has('feng_shui') && (
+              {has('feng_shui') && c.shop_profile?.shop_id === shop?.id && (
                 <Card title="Mệnh">{c.feng_shui ? <><Element name={c.feng_shui.element} size="xl" />{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Ước tính từ năm sinh (chưa biết ngày)' : 'Tính từ ngày sinh theo âm lịch'}</div><div className="row wrap small" style={{ marginTop: 6 }}>Hợp: {c.feng_shui.compatible_elements.map((e) => <Element key={e} name={e} size="sm" />)}</div></> : <span className="muted small">Chưa có ngày/năm sinh trong thông tin riêng của shop.</span>}</Card>
               )}
               <Card title="Hạng"><Async state={loy}>{({ data: l }) => <><b style={{ fontSize: 20 }}>{l.tier.name}</b><div className="small">Chi tiêu 12 tháng: {vnd(l.spent_12m)}</div>{l.next_tier && <div className="small muted">Còn {vnd(l.to_next)} lên {l.next_tier.name}</div>}</>}</Async></Card>
               <Card title="Tổng"><b style={{ fontSize: 20 }}>{vnd(c.total_spent)}</b><div className="small">{c.order_count} đơn</div><div className="small muted">Đầu: {fmtDate(c.first_order_at)} · Gần nhất: {fmtDate(c.last_order_at)}</div></Card>
             </div>
-            {c.shop_profile ? <ShopProfile customerId={c.id} shop={shop} profile={c.shop_profile} onSaved={reloadAll} /> : (
+            {c.shop_profile && shop && c.shop_profile.shop_id === shop.id ? <ShopProfile customerId={c.id} shop={shop} profile={c.shop_profile} onSaved={reloadAll} /> : (
               <div className="alert warn">Đang xem tất cả shop. Chọn một shop ở góc trên để xem và sửa thông tin riêng của khách trong shop đó.</div>
             )}
             {c.by_shop.length > 0 && <Card title="Theo shop">{c.by_shop.map((s) => <div key={s.shop_id} className="row between small"><span>{s.shop_name}</span><span>{s.order_count} đơn · {vnd(s.spent)}</span></div>)}</Card>}
