@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num, fmtDate, METHODS } from '../lib.js';
+import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 
 const ST = { draft: 'Nháp', received: 'Đã nhận', cancelled: 'Đã huỷ' };
 
@@ -115,6 +116,7 @@ function PurchaseView({ id, onClose }) {
           <div className="row between"><span>Tổng</span><b>{vnd(p.total_amount)}</b></div>
           <div className="row between"><span>Đã trả</span><b>{vnd(p.paid_amount)}</b></div>
           {p.payments?.map((x) => <div key={x.id} className="small muted">{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)}</div>)}
+          <CustomFieldsPanel bare entity="purchase" id={p.id} shopId={p.shop_id} />
           <ErrorBox error={error} />
           <div className="row wrap">
             {p.status === 'draft' && <button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/receive`); s.reload(); })}>Nhận hàng</button>}

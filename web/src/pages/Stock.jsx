@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num, fmtDate, MOVE_TYPES } from '../lib.js';
+import StockCounts from './StockCounts.jsx';
 
 export default function Stock() {
   const { shopId, isAll, warehouses } = useSession();
@@ -15,13 +16,15 @@ export default function Stock() {
   const [tab, setTab] = useState('stock');
   const [adj, setAdj] = useState(null);
   const [hist, setHist] = useState(null);
+  const [transfer, setTransfer] = useState(false);
   const state = useAsync(() => api.get('/stock', { shop_id: isAll ? undefined : shopId, warehouse_id: wh || undefined, q: dq || undefined, filter: filter || undefined }), [shopId, wh, dq, filter]);
   const moves = useAsync(() => (tab === 'moves' ? api.get('/stock-movements', { warehouse_id: wh || undefined, limit: 100 }) : null), [tab, wh]);
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Kho</h1><button className="btn" onClick={() => setAdj({ kind: 'count', lines: [] })}>Kiểm kê / điều chỉnh</button></div>
-      <Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động']]} value={tab} onChange={setTab} />
+      <div className="page-head"><h1>Kho</h1><div className="row">{warehouses.length > 1 && <button className="btn" onClick={() => setTransfer(true)}>Chuyển kho</button>}<button className="btn" onClick={() => setAdj({ kind: 'adjust', lines: [] })}>Điều chỉnh nhanh</button></div></div>
+      <Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê']]} value={tab} onChange={setTab} />
+      {tab === 'counts' ? <StockCounts /> : <>
       <div className="row wrap">
         <select value={wh} onChange={(e) => setWh(e.target.value)} style={{ width: 200 }} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
         {tab === 'stock' && <input placeholder="Tìm SKU, tên…" value={q} onChange={(e) => setQ(e.target.value)} className="grow" aria-label="Tìm" />}
@@ -38,9 +41,9 @@ export default function Stock() {
                     <thead><tr><th>Sản phẩm</th><th className="num">Tồn</th><th className="num">Giá vốn BQ</th><th className="num">Giá trị</th><th className="num">Còn đủ</th></tr></thead>
                     <tbody>{r.data.map((i) => (
                       <tr key={i.variant_id} className="click" onClick={() => setHist(i)}>
-                        <td>{i.product_name}{i.variant_name ? ` — ${i.variant_name}` : ''}<div className="small muted">{i.sku}</div></td>
+                        <td>{i.product_name}{i.variant_name ? ` — ${i.variant_name}` : ''}{i.is_bundle && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<div className="small muted">{i.sku}{i.is_bundle && ' · bán được theo thành phần'}</div></td>
                         <td className="num"><b className={i.is_negative ? 'h-red' : i.is_low ? 'h-yellow' : ''}>{num(i.on_hand)}</b>{i.is_low && <div className="small h-yellow">sắp hết</div>}{i.is_slow && <div className="small muted">bán chậm</div>}</td>
-                        <td className="num">{vnd(i.avg_cost)}</td><td className="num">{vnd(i.stock_value)}</td>
+                        <td className="num">{i.is_bundle ? '—' : vnd(i.avg_cost)}</td><td className="num">{i.is_bundle ? '—' : vnd(i.stock_value)}</td>
                         <td className="num small">{i.days_left === null ? '—' : `${i.days_left} ngày`}</td>
                       </tr>))}</tbody>
                   </table></div></Card>
@@ -57,7 +60,9 @@ export default function Stock() {
           </table></div></Card>
         )}</Async>
       )}
+      </>}
       {hist && <History item={hist} onClose={() => setHist(null)} />}
+      {transfer && <TransferModal onClose={() => setTransfer(false)} onSaved={() => { setTransfer(false); state.reload(); moves.reload(); }} />}
       {adj && <Adjust onClose={() => setAdj(null)} onSaved={() => { setAdj(null); state.reload(); }} />}
     </div>
   );
@@ -107,6 +112,40 @@ function Adjust({ onClose, onSaved }) {
         </div>
       ))}
       <Field label="Lý do"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+      <ErrorBox error={error} />
+    </Modal>
+  );
+}
+
+function TransferModal({ onClose, onSaved }) {
+  const { warehouses } = useSession();
+  const [from, setFrom] = useState(warehouses[0]?.id);
+  const [to, setTo] = useState(warehouses[1]?.id);
+  const [q, setQ] = useState('');
+  const dq = useDebounced(q);
+  const [lines, setLines] = useState([]);
+  const [note, setNote] = useState('');
+  const found = useAsync(() => (dq ? api.get('/variants', { warehouse_id: from, q: dq, all: '1', limit: 8 }) : Promise.resolve({ data: [] })), [dq, from]);
+  const { busy, error, run } = useAction();
+  const upd = (id, p) => setLines((l) => l.map((x) => (x.id === id ? { ...x, ...p } : x)));
+  return (
+    <Modal title="Chuyển kho" onClose={onClose} footer={<button className="btn primary" disabled={busy || !lines.length || from === to} onClick={() => run(async () => { await api.post('/transfers', { from_warehouse_id: from, to_warehouse_id: to, note: note || null, lines: lines.map((l) => ({ variant_id: l.id, qty: Number(l.qty) })) }); onSaved(); })}>Chuyển</button>}>
+      <div className="grid cols-2">
+        <Field label="Từ kho"><select value={from} onChange={(e) => { setFrom(e.target.value); setLines([]); }}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+        <Field label="Đến kho"><select value={to} onChange={(e) => setTo(e.target.value)}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+      </div>
+      {from === to && <div className="alert err small">Kho đi và kho đến phải khác nhau.</div>}
+      <input placeholder="Tìm SKU để thêm…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Tìm SKU" />
+      {found.data?.data?.filter((v) => v.kind !== 'bundle').map((v) => <div key={v.id} className="pick" onClick={() => { setLines((l) => (l.some((x) => x.id === v.id) ? l : [...l, { id: v.id, sku: v.sku, name: v.product_name, qty: 1, on_hand: v.on_hand }])); setQ(''); }}>{v.product_name} <span className="muted small">{v.sku} · tồn {num(v.on_hand)}</span></div>)}
+      {lines.map((l) => (
+        <div key={l.id} className="row">
+          <div className="grow"><div>{l.name}</div><div className="small muted">{l.sku} · có {num(l.on_hand)}</div></div>
+          <input type="number" min="1" max={l.on_hand} value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} style={{ width: 90 }} aria-label="Số lượng chuyển" />
+          <button className="btn sm" onClick={() => setLines((x) => x.filter((y) => y.id !== l.id))} aria-label={`Bỏ ${l.sku}`}>✕</button>
+        </div>
+      ))}
+      <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+      <p className="small muted" style={{ margin: 0 }}>Giá vốn được giữ nguyên khi chuyển.</p>
       <ErrorBox error={error} />
     </Modal>
   );
