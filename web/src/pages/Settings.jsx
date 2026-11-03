@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 
 const TABS = [['shops', 'Shop & kho'], ['health', 'Ngưỡng & kho'], ['tiers', 'Hạng khách'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
@@ -11,7 +11,7 @@ export default function Settings() {
   return (
     <div className="page stack">
       <div className="page-head"><h1>Cài đặt</h1></div>
-      <Chips options={TABS} value={tab} onChange={setTab} />
+      <Tabs options={TABS} value={tab} onChange={setTab} />
       {tab === 'shops' && <Shops />}{tab === 'health' && <Thresholds />}{tab === 'tiers' && <Tiers />}{tab === 'fields' && <Fields />}
       {tab === 'metrics' && <Metrics />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>

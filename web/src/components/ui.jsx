@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { STATUS, vnd } from '../lib.js';
+import Icon, { OpenBook } from './Icon.jsx';
 
 export function useAsync(fn, deps = []) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
@@ -28,7 +29,9 @@ export function useDebounced(value, ms = 250) {
 
 export const Loading = () => <div className="empty">Đang tải…</div>;
 export const ErrorBox = ({ error }) => (error ? <div className="alert err" role="alert">{error.message || String(error)}</div> : null);
-export const Empty = ({ children }) => <div className="empty">{children}</div>;
+export const Empty = ({ children, action }) => (
+  <div className="empty"><OpenBook /><div style={{ maxWidth: 420 }}>{children}</div>{action}</div>
+);
 
 /** Hiện trạng thái tải/lỗi, rồi mới render nội dung */
 export function Async({ state, children }) {
@@ -40,7 +43,7 @@ export function Async({ state, children }) {
 export const Card = ({ title, actions, children, flat, className = '' }) => (
   <section className={`card ${flat ? 'flat' : ''} ${className}`}>
     {(title || actions) && (
-      <div className="row between" style={{ marginBottom: 8, padding: flat ? '14px 14px 0' : 0 }}>
+      <div className="card-head">
         {title && <h3>{title}</h3>}
         <div className="row">{actions}</div>
       </div>
@@ -59,6 +62,24 @@ export const Field = ({ label, children, hint }) => (
 
 export const StatusBadge = ({ status }) => <span className={`badge st-${status}`}>{STATUS[status] || status}</span>;
 
+/** Tab gạch chân cho các mục lớn của một trang */
+export function Tabs({ options, value, onChange }) {
+  return (
+    <div className="tabs" role="tablist">
+      {options.map(([v, label]) => (
+        <button key={v} className="tab" role="tab" aria-selected={value === v} onClick={() => onChange(v)}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+export const SearchBox = ({ value, onChange, placeholder, ...rest }) => (
+  <div className="searchbox grow" style={{ minWidth: 220 }}>
+    <Icon name="search" />
+    <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} {...rest} />
+  </div>
+);
+
 export function Kpi({ label, value, delta, hint, tone }) {
   return (
     <div className="card kpi">
@@ -74,7 +95,7 @@ export function Kpi({ label, value, delta, hint, tone }) {
   );
 }
 
-export function Modal({ title, onClose, children, footer }) {
+export function Modal({ title, onClose, children, footer, wide }) {
   useEffect(() => {
     const h = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', h);
@@ -82,7 +103,7 @@ export function Modal({ title, onClose, children, footer }) {
   }, [onClose]);
   return (
     <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="row between" style={{ marginBottom: 12 }}>
           <h2>{title}</h2>
           <button className="btn sm" onClick={onClose} aria-label="Đóng">✕</button>
@@ -139,4 +160,50 @@ export function DateRange({ from, to, onChange }) {
 
 export function LoadMore({ next, onMore }) {
   return next ? <div className="row" style={{ justifyContent: 'center', padding: 12 }}><button className="btn" onClick={onMore}>Xem thêm</button></div> : null;
+}
+
+/** Biểu đồ vùng nhỏ cho thẻ hero (nền tối). data: [{ value }] */
+export function AreaChart({ data, color = 'var(--champagne)' }) {
+  if (!data?.length) return null;
+  const W = 600, H = 110, pad = 4;
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const x = (i) => (data.length === 1 ? W / 2 : (i / (data.length - 1)) * W);
+  const y = (v) => H - pad - (v / max) * (H - pad * 2);
+  // đường gấp khúc thẳng: đường cong sẽ "phình" giữa các ngày doanh thu bằng 0 và làm người xem hiểu nhầm
+  const pts = data.map((d, i) => [x(i), y(d.value)]);
+  const line = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' ');
+  const last = pts[pts.length - 1];
+  return (
+    <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Biểu đồ doanh thu theo ngày">
+      <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".38" /><stop offset="1" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+      <path d={`${line} L${W},${H} L0,${H} Z`} fill="url(#ag)" />
+      <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={last[0]} cy={last[1]} r="4" fill={color} vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+/** Cột doanh thu theo ngày, có trục ngày đầu/cuối và gợi ý khi rê chuột */
+export function Bars({ data, value = 'net_revenue' }) {
+  const max = Math.max(1, ...data.map((d) => d[value]));
+  return (
+    <div>
+      <div className="chart-bars" role="img" aria-label="Biểu đồ cột theo ngày">
+        {data.map((d) => <i key={d.date} className={d[value] ? '' : 'zero'} title={`${d.date.split('-').reverse().join('/')}: ${vnd(d[value])}`} style={{ height: `${Math.max(3, (d[value] / max) * 100)}%` }} />)}
+      </div>
+      <div className="chart-axis"><span>{data[0]?.date.split('-').reverse().slice(0, 2).join('/')}</span><span>Cao nhất {vnd(max)}</span><span>{data[data.length - 1]?.date.split('-').reverse().slice(0, 2).join('/')}</span></div>
+    </div>
+  );
+}
+
+/** Thanh ngang so sánh các mục (kênh, shop…) */
+export function HBars({ items, format = vnd }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return items.map((i) => (
+    <div className="hbar" key={i.label}>
+      <span className="small" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.label}</span>
+      <div className="track"><i style={{ width: `${(i.value / max) * 100}%` }} /></div>
+      <b className="small num">{format(i.value)}</b>
+    </div>
+  ));
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Empty, ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num, fmtDate, METHODS } from '../lib.js';
 
 const ST = { draft: 'Nháp', received: 'Đã nhận', cancelled: 'Đã huỷ' };
@@ -15,7 +15,7 @@ export default function Purchases() {
   return (
     <div className="page stack">
       <div className="page-head"><h1>Nhập hàng</h1><button className="btn primary" onClick={() => setForm(true)}>+ Phiếu nhập</button></div>
-      <Chips options={[['purchases', 'Phiếu nhập'], ['suppliers', 'Nhà cung cấp']]} value={tab} onChange={setTab} />
+      <Tabs options={[['purchases', 'Phiếu nhập'], ['suppliers', 'Nhà cung cấp']]} value={tab} onChange={setTab} />
       {tab === 'purchases' && <Chips options={[['', 'Tất cả'], ['draft', 'Nháp'], ['received', 'Đã nhận'], ['cancelled', 'Đã huỷ']]} value={status} onChange={setStatus} />}
       <Async state={state}>
         {({ data }) => tab === 'purchases' ? (!data.length ? <Empty>Chưa có phiếu nhập.</Empty> : (
