@@ -343,7 +343,7 @@ Tỷ lệ là định hướng tổng thể, không áp dụng cứng cho từng
 ### Logo
 Thư mục `brand/`:
 - `logo-mark.svg`: biểu tượng vuông bo góc nền Walnut. Hai tờ sổ phẳng lệch nhau (tờ trái Terracotta ở phía bóng, tờ phải Linen đang được mở lên), dòng kẻ sổ là "dấu vết", gáy Champagne, một dấu niêm Oxblood đóng hơi lệch như đóng tay. Viền Champagne mảnh gợi ép kim trên hộp quà.
-- `logo-lockup.svg`: biểu tượng + chữ "Mở Sổ" (serif, Walnut) + dòng "DẤU VẾT CỦA THỜI GIAN" (Terracotta). Chữ dùng font hệ thống (Iowan Old Style → Palatino → Georgia), chưa chuyển thành đường nét. Nếu đem in hoặc gửi đối tác, xuất ra PNG/PDF trên máy có font đó, hoặc chọn font bản quyền rồi chuyển outline.
+- `logo-lockup.svg`: biểu tượng + chữ "Mở Sổ" (serif, Walnut) + dòng "DẤU VẾT CỦA THỜI GIAN" (Terracotta). Chữ đã chuyển thành đường nét (font Noto Serif SemiBold, giấy phép SIL OFL) nên hiển thị giống nhau trên mọi máy, không phụ thuộc font cài sẵn. Muốn đổi chữ thì phải tạo lại outline, không sửa trực tiếp.
 - `favicon.svg`: bản rút gọn cho thanh tab và icon nhỏ (bỏ dòng kẻ và viền).
 - `tokens.css`: biến CSS màu và font cho giao diện.
 
@@ -421,4 +421,5 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Đổi tên dự án Tiệm → **Mở Sổ**; chốt concept "Đương đại Á Đông · Dấu vết thời gian" | Tên cũ chung chung. "Mở Sổ" nói đúng việc app làm: một cuốn sổ cái cho mọi shop. Chi tiết ở mục 7A. |
 | 2026-11-03 | Thêm Muted Champagne làm màu nhấn, chỉ cho nét mảnh/viền, cấm làm chữ trên Linen | Gợi ép kim cho logo và hộp quà. Tương phản với Linen chỉ 1.6:1. Quy tắc gốc cũng cấm vàng kim làm màu chủ đạo. |
 | 2026-11-03 | Màu trạng thái đơn giảm bão hoà, thành ngoại lệ chức năng ngoài bảng màu | Xanh/đỏ/cam rực làm vỡ tông giấy-gỗ, nhưng người bán cần phân biệt trạng thái trong 1 giây. Mọi giá trị ≥ 4.5:1 trên Linen. |
+| 2026-11-03 | Chữ trong logo chuyển thành outline từ Noto Serif | Bản đầu dùng thẻ text với font hệ thống, máy khác thay font làm vỡ dấu tiếng Việt (ở, ổ) và tagline tràn khung. |
 | 2026-11-03 | Migration 007 cập nhật tên mẫu import thay vì sửa 006 | Quy ước 10: không sửa migration đã có. Đổi tên file DB `tiem.db` → `moso.db`, cookie `moso_session`, header webhook `X-Moso-*` (chưa có dữ liệu thật nên không cần chuyển). |
