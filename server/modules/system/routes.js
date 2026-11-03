@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { getDb } from '../../db/index.js';
-import { body, query } from '../../lib/http.js';
+import { body, query, patchOf } from '../../lib/http.js';
 import { newId, randomToken } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { sha256 } from '../../lib/auth.js';
@@ -57,8 +57,8 @@ const hookInput = z.object({
   event_types: z
     .array(z.string())
     .min(1)
-    .default(['*'])
-    .refine((a) => a.every((t) => t === '*' || t.endsWith('.*') || EVENT_TYPES.includes(t)), 'Có loại sự kiện không hợp lệ'),
+    .refine((a) => a.every((t) => t === '*' || t.endsWith('.*') || EVENT_TYPES.includes(t)), 'Có loại sự kiện không hợp lệ')
+    .default(['*']),
   active: z.boolean().default(true),
 });
 const shapeHook = (h, withSecret = false) => ({ ...h, event_types: JSON.parse(h.event_types), active: !!h.active, secret: withSecret ? h.secret : `${h.secret.slice(0, 10)}…` });
@@ -78,7 +78,7 @@ r.patch('/webhooks/:id', async (c) => {
   const id = c.req.param('id');
   const h = db().prepare('SELECT * FROM webhooks WHERE id = ?').get(id);
   if (!h) throw notFound('Webhook');
-  const input = await body(c, hookInput.partial());
+  const input = await body(c, patchOf(hookInput));
   const m = { name: input.name ?? h.name, url: input.url ?? h.url, event_types: JSON.stringify(input.event_types ?? JSON.parse(h.event_types)), active: input.active === undefined ? h.active : input.active ? 1 : 0 };
   db().prepare('UPDATE webhooks SET name=?, url=?, event_types=?, active=?, updated_at=? WHERE id=?').run(m.name, m.url, m.event_types, m.active, nowIso(), id);
   return c.json({ data: shapeHook(db().prepare('SELECT * FROM webhooks WHERE id = ?').get(id)) });
