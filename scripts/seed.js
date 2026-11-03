@@ -1,8 +1,7 @@
 // Tạo dữ liệu mẫu để thử app. Chỉ chạy trên DB trống: node scripts/seed.js
-import { getDb, tx } from '../server/db/index.js';
+import { runInTenant, tx } from '../server/db/index.js';
+import { accountCount, bootstrapTenancy, createAccount, storeFor } from '../server/db/tenancy.js';
 import { hashPassword } from '../server/lib/auth.js';
-import { newId } from '../server/lib/id.js';
-import { nowIso } from '../server/lib/time.js';
 import { createWarehouse } from '../server/modules/warehouses/service.js';
 import { createShop } from '../server/modules/shops/service.js';
 import { createProduct } from '../server/modules/catalog/service.js';
@@ -11,21 +10,18 @@ import { createOrder } from '../server/modules/orders/service.js';
 import { setValues } from '../server/modules/custom/service.js';
 import { findByPhone } from '../server/modules/customers/service.js';
 
-const db = getDb();
-if (db.prepare('SELECT COUNT(*) n FROM users').get().n > 0) {
-  console.log('DB đã có dữ liệu, bỏ qua seed. Xoá thư mục data/ nếu muốn làm lại từ đầu.');
+bootstrapTenancy();
+if (accountCount() > 0) {
+  console.log('Đã có tài khoản, bỏ qua seed. Xoá thư mục data/ nếu muốn làm lại từ đầu.');
   process.exit(0);
 }
+const account = createAccount({ username: 'admin', displayName: 'Chủ shop', passwordHash: hashPassword('matkhau123') });
 
-tx(() => {
-  const at = nowIso();
-  const userId = newId('usr');
-  db.prepare(`INSERT INTO users (id, username, display_name, password_hash, role, created_at, updated_at) VALUES (?,?,?,?, 'owner', ?, ?)`).run(
-    userId, 'admin', 'Chủ shop', hashPassword('matkhau123'), at, at,
-  );
+runInTenant(storeFor(account), () => tx(() => {
+  const userId = account.id;
   const actor = { type: 'user', id: userId };
   const wh = createWarehouse({ code: 'K1', name: 'Kho nhà' }, actor);
-  const nh = createShop({ code: 'NH', name: 'Nước hoa ô tô', industry: 'nuoc_hoa', default_warehouse_id: wh.id }, actor);
+  const nh = createShop({ code: 'NH', name: 'Nước hoa ô tô', industry: 'nuoc_hoa_o_to', default_warehouse_id: wh.id }, actor);
   const pt = createShop({ code: 'PT', name: 'Vật phẩm phong thuỷ', industry: 'phong_thuy', default_warehouse_id: wh.id }, actor);
 
   const perfume = createProduct({
@@ -57,5 +53,5 @@ tx(() => {
   const tai = findByPhone('0912345678');
   setValues('customer', tai.id, { ngay_sinh: '1988-03-12', gioi_tinh: 'Nam' }, { shopId: pt.id });
   setValues('customer', tai.id, { nhom_huong: ['Gỗ', 'Biển'], dong_xe: 'Toyota Camry', dip_dung: 'Xe cá nhân' }, { shopId: nh.id });
-});
+}));
 console.log('Đã tạo dữ liệu mẫu. Đăng nhập: admin / matkhau123');

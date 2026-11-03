@@ -7,6 +7,7 @@ import { body, query } from '../../lib/http.js';
 import { newId, randomToken } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { sha256 } from '../../lib/auth.js';
+import { indexApiKey, unindexApiKey } from '../../db/tenancy.js';
 import { audit } from '../../lib/events.js';
 import { badRequest, forbidden, notFound } from '../../lib/errors.js';
 import { runBackup, listBackups, backupDir } from '../../jobs/backup.js';
@@ -34,6 +35,7 @@ r.post('/api-keys', async (c) => {
   db()
     .prepare('INSERT INTO api_keys (id, name, prefix, key_hash, scopes, created_at) VALUES (?,?,?,?,?,?)')
     .run(id, input.name, key.slice(0, 12), sha256(key), JSON.stringify(input.scopes), nowIso());
+  indexApiKey(sha256(key), c.get('actor').accountId); // để xác thực biết key thuộc tài khoản nào
   audit(c.get('actor'), 'api_key.created', 'api_key', id, null, { name: input.name, scopes: input.scopes });
   // Khoá đầy đủ chỉ hiện đúng 1 lần này
   return c.json({ data: { id, name: input.name, prefix: key.slice(0, 12), scopes: input.scopes, key } }, 201);
@@ -42,6 +44,8 @@ r.delete('/api-keys/:id', (c) => {
   const id = c.req.param('id');
   if (!db().prepare('SELECT 1 FROM api_keys WHERE id = ?').get(id)) throw notFound('API key');
   db().prepare('UPDATE api_keys SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?').run(nowIso(), id);
+  const row = db().prepare('SELECT key_hash FROM api_keys WHERE id = ?').get(id);
+  if (row) unindexApiKey(row.key_hash);
   audit(c.get('actor'), 'api_key.revoked', 'api_key', id);
   return c.json({ data: { id, revoked: true } });
 });

@@ -2,7 +2,7 @@ import { ELEMENTS } from './lunar.js';
 
 /**
  * Danh mục ngành bán. Mỗi ngành quyết định:
- *  - theme: giao diện web (phongthuy | nuochoa | general)
+ *  - theme: giao diện web (phongthuy | nuochoa | oto | general)
  *  - features: tính năng bật theo ngành (vd 'feng_shui' = mệnh, ngũ hành, âm lịch)
  *  - customer_fields: trường thông tin khách tạo sẵn cho shop khi chọn ngành này
  * Thêm ngành mới = thêm một mục ở đây (và một theme CSS nếu muốn giao diện riêng).
@@ -30,16 +30,32 @@ export const INDUSTRIES = {
       { key: 'menh', label: 'Mệnh (để trống = tự tính)', type: 'select', options: ELEMENTS, role: 'element' },
     ],
   },
-  nuoc_hoa: {
-    id: 'nuoc_hoa',
-    name: 'Nước hoa',
-    description: 'Nước hoa (kể cả nước hoa ô tô). Ghi nhóm hương yêu thích, dòng xe, dịp mua; giao diện riêng.',
-    theme: 'nuochoa',
+  nuoc_hoa_o_to: {
+    id: 'nuoc_hoa_o_to',
+    name: 'Nước hoa ô tô',
+    description: 'Nước hoa, tinh dầu, phụ kiện thơm cho xe. Ghi nhóm hương, dòng xe, mua cho xe nào; giao diện riêng.',
+    theme: 'oto',
     features: [],
     customer_fields: [
       { key: 'nhom_huong', label: 'Nhóm hương yêu thích', type: 'multiselect', options: ['Gỗ', 'Hoa cỏ', 'Cam chanh', 'Biển', 'Phương Đông', 'Ngọt'] },
       { key: 'dong_xe', label: 'Dòng xe', type: 'text' },
       { key: 'dip_dung', label: 'Mua cho', type: 'select', options: ['Xe cá nhân', 'Quà tặng', 'Xe dịch vụ'] },
+      { key: 'sinh_nhat', label: 'Sinh nhật', type: 'date', role: 'birth_date' },
+    ],
+  },
+  nuoc_hoa: {
+    id: 'nuoc_hoa',
+    name: 'Nước hoa',
+    description: 'Nước hoa mặc cho người (chính hãng, chiết). Ghi nhóm hương, nồng độ, dung tích, thương hiệu yêu thích, dịp dùng, ngân sách; giao diện riêng.',
+    theme: 'nuochoa',
+    features: [],
+    customer_fields: [
+      { key: 'nhom_huong', label: 'Nhóm hương yêu thích', type: 'multiselect', options: ['Gỗ', 'Hoa cỏ', 'Cam chanh', 'Biển', 'Phương Đông', 'Ngọt', 'Xạ hương'] },
+      { key: 'nong_do', label: 'Nồng độ hay dùng', type: 'select', options: ['EDC', 'EDT', 'EDP', 'Parfum'] },
+      { key: 'thuong_hieu_yeu_thich', label: 'Thương hiệu yêu thích', type: 'text' },
+      { key: 'phong_cach', label: 'Phong cách', type: 'select', options: ['Nam tính', 'Nữ tính', 'Unisex'] },
+      { key: 'dip_su_dung', label: 'Dịp sử dụng', type: 'select', options: ['Đi làm', 'Hẹn hò', 'Dự tiệc', 'Hằng ngày', 'Quà tặng'] },
+      { key: 'ngan_sach', label: 'Ngân sách mỗi lần', type: 'money' },
       { key: 'sinh_nhat', label: 'Sinh nhật', type: 'date', role: 'birth_date' },
     ],
   },

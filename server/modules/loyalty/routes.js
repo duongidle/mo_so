@@ -17,6 +17,11 @@ r.put('/tiers', async (c) => {
 r.get('/customers/:id', (c) => c.json({ data: svc.customerLoyalty(c.req.param('id')) }));
 r.get('/customers/:id/suggestions', (c) => c.json(svc.elementSuggestions(c.req.param('id'), { shopId: c.req.query('shop_id'), limit: Number(c.req.query('limit')) || 10 })));
 
+r.get('/element-campaign', (c) => {
+  const q = query(c, z.object({ shop_id: z.string().min(1), per_customer: z.coerce.number().int().min(1).max(10).default(3), limit: z.coerce.number().int().min(1).max(500).default(100) }));
+  return c.json(svc.elementCampaign({ shopId: q.shop_id, perCustomer: q.per_customer, limit: q.limit }));
+});
+
 r.get('/today', (c) => {
   const q = query(c, z.object({ shop_id: z.string().optional(), lookahead_days: z.coerce.number().int().min(0).max(30).default(3), birthday_days: z.coerce.number().int().min(0).max(60).default(7) }));
   return c.json({ data: { reminders: svc.dueReminders({ shopId: q.shop_id, lookaheadDays: q.lookahead_days }), birthdays: svc.upcomingBirthdays({ withinDays: q.birthday_days, shopId: q.shop_id }) } });
@@ -30,6 +35,7 @@ const tplInput = z.object({ name: z.string().trim().min(1), kind: z.enum(['reord
 r.get('/templates', (c) => c.json({ data: svc.listTemplates(c.req.query('kind')) }));
 r.post('/templates', async (c) => c.json({ data: svc.saveTemplate(null, await body(c, tplInput)) }, 201));
 r.put('/templates/:id', async (c) => c.json({ data: svc.saveTemplate(c.req.param('id'), await body(c, tplInput)) }));
+r.delete('/templates/:id', (c) => (svc.deleteTemplate(c.req.param('id')), c.json({ data: { deleted: true } })));
 r.post('/render', async (c) => {
   const i = await body(c, z.object({ template_id: z.string(), customer_id: z.string(), product_id: z.string().optional(), shop_id: z.string().optional() }));
   const tpl = getDb().prepare('SELECT * FROM message_templates WHERE id = ?').get(i.template_id);

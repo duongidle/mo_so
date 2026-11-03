@@ -7,25 +7,41 @@
 | # | Module | Backend | Giao diện | Test | Ghi chú |
 |---|---|---|---|---|---|
 | M0 | Nền tảng | ✅ | — | ✅ | |
-| M1 | Shop, kho, kênh, cài đặt | ✅ | ✅ | ✅ | |
+| M1 | Shop, kho, kênh, cài đặt, tài khoản | ✅ | ✅ | ✅ | Nhiều tài khoản, mỗi tài khoản một DB riêng; đăng ký; thiết lập lần đầu (shop → kho → sản phẩm) |
 | M2 | Sản phẩm, niêm yết, đồng bộ | ✅ | ✅ | ✅ | Combo xong (tồn khả dụng theo thành phần) |
 | M3 | Tồn kho, nhập hàng, NCC | ✅ | ✅ | ✅ | Kiểm kê nhiều bước, chuyển kho, điều chỉnh nhanh |
-| M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng (danh sách nghi trùng + gộp thủ công) |
+| M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng. Danh sách khách theo shop, xoá khỏi một shop, nhãn theo shop, xuất danh sách khách (Excel/CSV) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
 | M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Có trình sửa mẫu map cột (gợi ý cột từ file, ánh xạ trạng thái) |
 | M7 | Chi phí, đối soát Shopee | ✅ | ✅ | ✅ | Chi phí huỷ mềm; đối soát theo lô, báo lỗi từng đơn |
 | M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | Tính trực tiếp từ bảng đơn, chưa dùng `daily_stats` (xem nhật ký quyết định) |
-| M9 | Loyalty, nhắc mua lại | ✅ | ✅ | ✅ | Hạng, nhắc mua lại, sinh nhật, gợi ý theo mệnh, mẫu tin nhắn (chỉ soạn + sao chép, không tự gửi) |
+| M9 | Loyalty & Campaign | ✅ | ✅ | ✅ | Một module `/loyalty`: hôm nay (nhắc mua lại, sinh nhật), gợi ý theo mệnh (shop phong thuỷ), hạng khách, mẫu tin nhắn (soạn + sao chép, không tự gửi). Tự động hoá: chưa làm |
 | M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
-| M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: vitest 43, smoke e2e 5 |
+| M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 48, vitest 80, smoke e2e 9 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
 
 ---
 
 ## Nhật ký
+
+### 2026-11-03 — Phiên 10: nhiều tài khoản, tách ngành nước hoa, khách theo shop, Loyalty & Campaign
+
+- **Nhiều tài khoản**: mỗi tài khoản một file SQLite riêng (`data/accounts/<id>.db`) + `data/master.db` giữ tài khoản/phiên/chỉ mục API key. Request chạy trong ngữ cảnh DB của tài khoản (`AsyncLocalStorage`); `getDb()` ngoài ngữ cảnh báo lỗi. Đăng ký (`/auth/register`, đóng được bằng `REGISTRATION=closed`), giới hạn đăng ký theo IP. Bản cài cũ (`moso.db`) tự thành tài khoản đầu tiên. Sao lưu/webhook/script chạy theo từng tài khoản. Cả 33 test cũ chạy nguyên trên helper mới; thêm 7 test cách ly.
+- **Thiết lập lần đầu**: đăng ký → tạo shop (4 ngành) → popup tạo kho → tạo sản phẩm đầu tiên; trang chủ nhắc tiếp nếu còn thiếu.
+- **Tách ngành**: `nuoc_hoa_o_to` (theme `oto`: xám than + hổ phách, đồng hồ tốc độ) và `nuoc_hoa` (theme `nuochoa`: mận + hồng đồng, vòng lan toả; trường nhóm hương, nồng độ, thương hiệu, phong cách, dịp dùng, ngân sách, sinh nhật). Migration 015 chuyển shop `nuoc_hoa` cũ sang `nuoc_hoa_o_to`. Chỉnh terracotta của `oto` cho đạt AA (4.1 → 4.7).
+- **Khách theo shop** (migration 016): `customer_shops` (thành viên, kèm `removed_at`) và `customer_tags`. Xoá khách = xoá khỏi một shop (mất thông tin riêng/nhãn/ghi chú của shop đó; giữ hồ sơ, shop khác, lịch sử đơn); hồ sơ không còn shop nào và chưa có đơn thì lưu trữ, tạo lại cùng SĐT dùng lại hồ sơ cũ. Nhãn riêng từng shop (UI: thẻ nhãn ở hồ sơ khách, bộ lọc nhãn ở danh sách). Thêm khách vào shop từ SĐT trùng. Nhắc mua lại không nhắc khách đã xoá khỏi shop.
+- **Xuất danh sách khách**: `GET /customers/export` dùng chung bộ lọc với danh sách; theo shop có đủ trường riêng + nhãn + mệnh + số liệu tại shop, không chọn shop thì chỉ thông tin chung. Excel/CSV, chống công thức độc.
+- **Loyalty & Campaign**: gộp Chăm sóc, Gợi ý theo mệnh, Hạng khách (chuyển từ Cài đặt), Mẫu tin nhắn (thêm sửa/xoá) thành `/loyalty`; `/care` chuyển hướng. API mới `GET /loyalty/element-campaign`, `DELETE /loyalty/templates/:id`. Tab Tự động hoá chỉ ghi rõ là chưa làm.
+- Test: API 48, giao diện 80, smoke e2e 9. Đã chụp màn hình kiểm tra bằng mắt: đăng ký, tạo shop, theme nước hoa/ô tô, danh sách + hồ sơ khách, hộp xuất file, Loyalty.
+
+**Cần chủ shop quyết định / chưa làm**
+- Tự động nhắn tin và tự động nâng hạng: cần chọn kênh gửi (Zalo OA, SMS…) và quy định tin nhắn quảng cáo trước.
+- Nhân viên trong một tài khoản (phân quyền): chưa làm; mỗi tài khoản hiện là một chủ.
+- Chưa có "quên mật khẩu" qua email (không có email trong hồ sơ tài khoản); dùng `npm run reset-password -- <tên_đăng_nhập> <mật_khẩu_mới>` trên máy chủ.
+- Cột `customers.tags` cũ (chung mọi shop, chưa từng có giao diện nhập) không còn dùng; dữ liệu nếu có vẫn nằm trong DB.
 
 ### 2026-11-03 — Phiên 9: xuất đơn hàng
 
@@ -159,5 +175,5 @@
 - Thử trên iPhone thật qua wifi (cần thiết bị).
 - Kiểm tra với file xuất Shopee thật: tên cột, phí ship shop chịu có bị trừ vào payout không (cần file thật).
 - Điền "chu kỳ dùng hết" cho từng sản phẩm thì mới có nhắc mua lại.
-- Chưa có ngành thứ tư: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
+- Chưa có ngành thứ năm: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
 - `daily_stats` và tính hoàn trả theo ngày trả hàng: đã quyết định chưa làm (xem nhật ký quyết định trong `CLAUDE.md`).

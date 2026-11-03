@@ -4,7 +4,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 
-const TABS = [['shops', 'Shop & kho'], ['health', 'Ngưỡng & kho'], ['tiers', 'Hạng khách'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
 export default function Settings() {
   const [tab, setTab] = useState('shops');
@@ -12,7 +12,7 @@ export default function Settings() {
     <div className="page stack">
       <div className="page-head"><h1>Cài đặt</h1></div>
       <Tabs options={TABS} value={tab} onChange={setTab} />
-      {tab === 'shops' && <Shops />}{tab === 'health' && <Thresholds />}{tab === 'tiers' && <Tiers />}{tab === 'fields' && <Fields />}
+      {tab === 'shops' && <Shops />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
       {tab === 'metrics' && <Metrics />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>
   );
@@ -80,33 +80,6 @@ function Thresholds() {
         <label className="check"><input type="checkbox" checked={s.allow_negative_stock} onChange={(e) => setS({ ...s, allow_negative_stock: e.target.checked })} />Cho phép bán âm kho (không khuyến khích)</label>
         <ErrorBox error={error} />{saved && <div className="alert ok">Đã lưu.</div>}
         <div><button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.patch('/settings', s); setSaved(true); reload(); })}>Lưu</button></div>
-      </div>
-    </Card>
-  );
-}
-
-function Tiers() {
-  const state = useAsync(() => api.get('/loyalty/tiers'), []);
-  return <Async state={state}>{({ data }) => <TierEditor init={data} />}</Async>;
-}
-function TierEditor({ init }) {
-  const [t, setT] = useState(init);
-  const { busy, error, run } = useAction();
-  const [saved, setSaved] = useState(false);
-  const set = (i, k, v) => { setT(t.map((x, j) => (j === i ? { ...x, [k]: v } : x))); setSaved(false); };
-  return (
-    <Card title="Hạng khách theo chi tiêu 12 tháng (mọi shop)">
-      <div className="stack">
-        {t.map((x, i) => (
-          <div key={i} className="grid cols-3">
-            <Field label="Tên hạng"><input value={x.name} onChange={(e) => set(i, 'name', e.target.value)} /></Field>
-            <Field label="Chi tiêu từ (₫)"><input type="number" min="0" value={x.min_spent} onChange={(e) => set(i, 'min_spent', Number(e.target.value))} /></Field>
-            <Field label="Giảm giá gợi ý (%)"><input type="number" min="0" max="100" value={x.discount_pct} onChange={(e) => set(i, 'discount_pct', Number(e.target.value))} /></Field>
-          </div>
-        ))}
-        <div className="row"><button className="btn sm" onClick={() => setT([...t, { name: '', min_spent: 0, discount_pct: 0 }])}>+ Hạng</button></div>
-        <ErrorBox error={error} />{saved && <div className="alert ok">Đã lưu.</div>}
-        <div><button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.put('/loyalty/tiers', t.map(({ id, ...r }) => ({ ...r, ...(id ? { id } : {}) }))); setSaved(true); })}>Lưu</button></div>
       </div>
     </Card>
   );

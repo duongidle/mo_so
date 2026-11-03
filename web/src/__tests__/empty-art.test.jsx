@@ -25,6 +25,13 @@ describe('Empty: hình minh hoạ theo giao diện của shop', () => {
     expect(container.querySelectorAll('svg.empty-art line').length).toBe(0);
     expect(kinds(container).rings).toBeGreaterThanOrEqual(6);
   });
+  it('nước hoa ô tô dùng đồng hồ (có vạch chia, ít vòng hơn trống đồng)', () => {
+    theme = 'oto';
+    const { container } = render(<Empty>x</Empty>);
+    expect(kinds(container).art).toBe(true);
+    expect(container.querySelectorAll('svg.empty-art line').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('svg.empty-art line').length).toBeLessThan(40);
+  });
   it('chung và khi chưa có phiên làm việc dùng cuốn sổ mở', () => {
     for (const t of ['general', 'none']) {
       theme = t;

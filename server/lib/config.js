@@ -17,4 +17,7 @@ export const config = {
   businessTz: process.env.TZ_BUSINESS || 'Asia/Ho_Chi_Minh',
   secureCookie: process.env.SECURE_COOKIE === '1',
   sessionDays: 30,
+  // Đăng ký tài khoản mới: 'open' (mặc định) hoặc 'closed'. Tài khoản đầu tiên luôn được tạo.
+  registration: process.env.REGISTRATION === 'closed' ? 'closed' : 'open',
+  registerLimitPerHour: Number(process.env.REGISTER_LIMIT || 20),
 };

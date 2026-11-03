@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { getDb } from '../db/index.js';
+import { forEachAccount } from '../db/tenancy.js';
 import { nowIso } from '../lib/time.js';
 
 // Lần thử 1 gửi ngay; thất bại thì chờ 1p, 5p, 30p, 2h, 12h cho các lần sau → tối đa 6 lần
@@ -81,7 +82,7 @@ export function startWebhookWorker({ intervalMs = 5000 } = {}) {
     if (busy) return;
     busy = true;
     try {
-      await processDue();
+      await forEachAccount(() => processDue()); // mỗi tài khoản có hàng đợi webhook riêng
     } catch (e) {
       console.error('Webhook worker lỗi:', e);
     } finally {

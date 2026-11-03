@@ -6,10 +6,10 @@ const fields = async (api, shopId) => (await api.get(`/custom/fields?entity_type
 
 test('Trường thông tin khách hiện thành cột ở danh sách khách, riêng từng shop, có giới hạn số cột', async () => {
   const { api, nh, pt } = await setup();
-  await api.patch(`/shops/${nh.id}`, { industry: 'nuoc_hoa' });
+  await api.patch(`/shops/${nh.id}`, { industry: 'nuoc_hoa_o_to' });
   await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' });
-  const a = (await api.post('/customers', { name: 'Anh A', phone: '0911000001' })).body.data;
-  await api.post('/customers', { name: 'Anh B', phone: '0911000002' });
+  const a = (await api.post('/customers', { name: 'Anh A', phone: '0911000001', shop_id: nh.id })).body.data;
+  await api.post('/customers', { name: 'Anh B', phone: '0911000002', shop_id: nh.id });
   await api.put(`/custom/values/customer/${a.id}?shop_id=${nh.id}`, { dong_xe: 'Camry', nhom_huong: ['Gỗ', 'Biển'] });
 
   // Mặc định chưa có cột nào
@@ -54,7 +54,7 @@ test('Lọc khách theo mệnh lọc trước khi phân trang: không bỏ sót 
   const { api, pt } = await setup();
   await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' });
   const ids = [];
-  for (let i = 1; i <= 6; i++) ids.push((await api.post('/customers', { name: `Khách ${i}`, phone: `091100010${i}` })).body.data.id);
+  for (let i = 1; i <= 6; i++) ids.push((await api.post('/customers', { name: `Khách ${i}`, phone: `091100010${i}`, shop_id: pt.id })).body.data.id);
   // Hai khách CŨ NHẤT mệnh Kim, bốn khách mới mệnh Mộc → trang đầu (mới nhất trước) toàn Mộc
   for (const [i, id] of ids.entries()) await api.put(`/custom/values/customer/${id}?shop_id=${pt.id}`, { menh: i < 2 ? 'Kim' : 'Mộc' });
 

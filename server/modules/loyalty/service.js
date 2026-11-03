@@ -88,8 +88,11 @@ export function dueReminders({ shopId, lookaheadDays = 3, today = businessDate()
   );
   const cust = db().prepare('SELECT id, code, name, phone, facebook_url, merged_into, archived_at FROM customers');
   const customers = new Map(cust.all().map((c) => [c.id, c]));
+  // Khách đã bị xoá khỏi shop thì shop đó không còn nhắc họ nữa (đơn cũ vẫn còn, nhưng họ không còn là khách của shop)
+  const members = new Set(db().prepare('SELECT customer_id, shop_id FROM customer_shops WHERE removed_at IS NULL').all().map((m) => `${m.customer_id}|${m.shop_id}`));
   const out = [];
   for (const r of reorderCandidates({ shopId })) {
+    if (!members.has(`${r.customer_id}|${r.shop_id}`)) continue;
     if (r.due_date > addDays(today, lookaheadDays)) continue;
     const st = states.get(`${r.customer_id}|${r.product_id}|${r.last_purchase_date}`);
     if (st && (st.status === 'done' || st.status === 'dismissed')) continue;
@@ -185,9 +188,38 @@ export function elementSuggestions(customerId, { shopId, limit = 10 } = {}) {
   return { element: fs.element, approximate: fs.approximate, data: data.slice(0, limit) };
 }
 
+/**
+ * Chiến dịch theo mệnh cho cả shop: mỗi khách còn trong shop, biết mệnh, và còn vật phẩm hợp chưa mua → một dòng.
+ * Dùng cho trang Loyalty & Campaign. Chỉ shop phong thuỷ; shop khác trả rỗng kèm lý do.
+ */
+export function elementCampaign({ shopId, perCustomer = 3, limit = 100 } = {}) {
+  if (!shopId || !shopHasFeature(shopId, 'feng_shui')) return { data: [], total: 0, reason: 'Chỉ dùng cho shop theo ngành phong thuỷ' };
+  const members = db()
+    .prepare(
+      `SELECT c.id FROM customers c JOIN customer_shops m ON m.customer_id = c.id AND m.shop_id = ? AND m.removed_at IS NULL
+       WHERE c.merged_into IS NULL AND c.archived_at IS NULL ORDER BY c.total_spent DESC, c.id`,
+    )
+    .all(shopId);
+  const rv = roleValues(shopId, members.map((m) => m.id));
+  const rows = [];
+  for (const m of members) {
+    if (!fengShuiOf(rv.get(m.id))) continue; // chưa biết mệnh
+    const sug = elementSuggestions(m.id, { shopId, limit: perCustomer });
+    if (!sug.data.length) continue;
+    const c = getCustomer(m.id);
+    rows.push({ customer: { id: c.id, code: c.code, name: c.name, phone: c.phone, facebook_url: c.facebook_url, total_spent: c.total_spent }, element: sug.element, approximate: sug.approximate, suggestions: sug.data });
+  }
+  return { data: rows.slice(0, limit), total: rows.length };
+}
+
 // ---------- Mẫu tin nhắn ----------
 export const listTemplates = (kind) =>
   db().prepare(`SELECT * FROM message_templates ${kind ? 'WHERE kind = ?' : ''} ORDER BY created_at`).all(...(kind ? [kind] : []));
+
+export function deleteTemplate(id) {
+  const r = db().prepare('DELETE FROM message_templates WHERE id = ?').run(id);
+  if (!r.changes) throw notFound('Mẫu tin nhắn');
+}
 
 export function saveTemplate(id, { name, kind, body }) {
   const at = nowIso();
