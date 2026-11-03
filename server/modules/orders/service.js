@@ -8,7 +8,7 @@ import { dailyCode } from '../../lib/codes.js';
 import { applyMovement } from '../inventory/service.js';
 import { recordPayment, netPaid, listPaymentsFor } from '../payments/service.js';
 import { isBundle, componentsOf } from '../catalog/bundles.js';
-import { findOrCreateCustomer, recalcCustomerStats, getCustomer } from '../customers/service.js';
+import { findOrCreateCustomer, recalcCustomerStats, getCustomer, ensureMember } from '../customers/service.js';
 import { getShop } from '../shops/service.js';
 
 const db = () => getDb();
@@ -291,6 +291,7 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
     if (dup) throw conflict('DUPLICATE_ORDER', `Đơn ${input.external_id} đã tồn tại (${dup.code})`, { order_id: dup.id });
   }
   const customer = resolveCustomer(input, actor);
+  if (customer) ensureMember(customer.id, shop.id); // mua ở shop nào thì là khách của shop đó
   const lines = resolveLines(shop.id, input.lines);
   const h = computeHeader(lines, input);
   const orderedAt = toIso(input.ordered_at) || nowIso();
@@ -369,6 +370,7 @@ export function updateOrder(id, input, actor) {
     const c = resolveCustomer(input, actor);
     merged.customer_id = c?.id ?? null;
     if (c) {
+      ensureMember(c.id, before.shop_id);
       merged.customer_name = input.customer?.name ?? c.name;
       merged.customer_phone = input.customer?.phone ?? c.phone;
     }

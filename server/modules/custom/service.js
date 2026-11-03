@@ -173,6 +173,12 @@ export function setValues(entityType, entityId, values, { shopId = null } = {}) 
     if (v.text === null && v.num === null) del.run(entityType, entityId, f.id);
     else up.run(entityType, entityId, f.id, v.text, v.num);
   }
+  if (entityType === 'customer') {
+    // Có thông tin riêng ở shop nào thì là khách của shop đó (nếu từng bị xoá khỏi shop thì quay lại)
+    db().prepare('INSERT INTO customer_shops (customer_id, shop_id, added_at) VALUES (?,?,?) ON CONFLICT(customer_id, shop_id) DO UPDATE SET removed_at = NULL')
+      .run(entityId, shopId, new Date().toISOString());
+    db().prepare('UPDATE customers SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL AND merged_into IS NULL').run(entityId);
+  }
   return getValues(entityType, entityId, { shopId });
 }
 

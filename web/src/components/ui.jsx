@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { STATUS, vnd } from '../lib.js';
 import Icon, { OpenBook } from './Icon.jsx';
-import { Dongson, Ripple } from './Motif.jsx';
+import { Dongson, Ripple, Gauge } from './Motif.jsx';
 import { useSession } from '../session.jsx';
 
 export function useAsync(fn, deps = []) {
@@ -36,6 +36,7 @@ function EmptyArt() {
   const theme = useSession()?.theme;
   if (theme === 'phongthuy') return <Dongson className="empty-art" size={84} />;
   if (theme === 'nuochoa') return <Ripple className="empty-art" size={84} />;
+  if (theme === 'oto') return <Gauge className="empty-art" size={84} />;
   return <OpenBook />;
 }
 export const Empty = ({ children, action }) => (

@@ -7,7 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { serve } from '@hono/node-server';
-import { openDb, setDb } from '../server/db/index.js';
+import { resetTenancy } from '../server/db/tenancy.js';
+import { resetRateLimits } from '../server/lib/ratelimit.js';
 import { createApp } from '../server/app.js';
 
 const require = createRequire(import.meta.url);
@@ -28,12 +29,14 @@ const stock = async (sku) => (await api('GET', `/stock?q=${sku}`)).data.find((r)
 let ids = {};
 before(async () => {
   if (skip) return;
-  setDb(openDb(':memory:'));
+  resetTenancy(); resetRateLimits();
   server = serve({ fetch: createApp().fetch, port: 0, hostname: '127.0.0.1' });
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
-  await api('POST', '/auth/setup', { username: 'admin', display_name: 'Chủ shop', password: 'matkhau123', shops: [{ name: 'Nước hoa', code: 'NH', industry: 'nuoc_hoa' }, { name: 'Phong thuỷ', code: 'PT', industry: 'phong_thuy' }] });
-  await api('POST', '/auth/login', { username: 'admin', password: 'matkhau123' });
+  await api('POST', '/auth/register', { username: 'admin', display_name: 'Chủ shop', password: 'matkhau123' });
+  const wh0 = (await api('POST', '/warehouses', { code: 'K1', name: 'Kho chính' })).data;
+  await api('POST', '/shops', { name: 'Nước hoa', code: 'NH', industry: 'nuoc_hoa_o_to', default_warehouse_id: wh0.id });
+  await api('POST', '/shops', { name: 'Phong thuỷ', code: 'PT', industry: 'phong_thuy', default_warehouse_id: wh0.id });
   const shops = (await api('GET', '/shops')).data;
   ids.nh = shops.find((s) => s.code === 'NH').id;
   ids.pt = shops.find((s) => s.code === 'PT').id;
@@ -42,7 +45,9 @@ before(async () => {
   const b = (await api('POST', '/products', { name: 'Móc treo', variants: [{ sku: 'MT-1', default_price: 50000 }], shop_ids: [ids.nh] })).data.variants[0];
   await api('POST', '/products', { name: 'Combo', variants: [{ sku: 'CB-1', kind: 'bundle', default_price: 180000, components: [{ variant_id: a.id, qty: 2 }, { variant_id: b.id, qty: 1 }] }], shop_ids: [ids.nh] });
   await api('POST', '/purchases', { warehouse_id: wh, receive: true, lines: [{ variant_id: a.id, qty: 20, unit_cost: 40000 }, { variant_id: b.id, qty: 10, unit_cost: 10000 }] });
-  ids.cust = (await api('POST', '/customers', { name: 'Chị Lan', phone: '0922000222' })).data.id;
+  // Khách thuộc danh sách của từng shop: chị Lan là khách của cả hai shop
+  ids.cust = (await api('POST', '/customers', { name: 'Chị Lan', phone: '0922000222', shop_id: ids.nh })).data.id;
+  await api('POST', `/customers/${ids.cust}/shops`, { shop_id: ids.pt });
   browser = await chromium.launch();
 });
 after(async () => { await browser?.close(); server?.close(); });
@@ -86,8 +91,8 @@ test('đăng nhập sai mật khẩu báo lỗi, đúng thì vào được', { s
 test('chuyển shop đổi giao diện, tính năng và trường khách đúng theo ngành', { skip }, async () => {
   const { page, errors, ctx } = await login();
   await pickShop(page, 'Nước hoa');
-  await themeIs(page, 'nuochoa');
-  assert.equal(await page.locator('.lunar').count(), 0, 'shop nước hoa không có âm lịch');
+  await themeIs(page, 'oto'); // shop ngành Nước hoa ô tô có giao diện riêng
+  assert.equal(await page.locator('.lunar').count(), 0, 'shop nước hoa ô tô không có âm lịch');
   await page.goto(`${base}/customers`);
   await page.waitForSelector('tr.click');
   assert.equal(await page.locator('th:has-text("Mệnh")').count(), 0);
@@ -253,5 +258,122 @@ test('xuất đơn hàng: tải CSV và Excel thật theo bộ lọc đang xem',
 
   assert.deepEqual(errors, []);
   for (const f of [csvFile, xlFile]) fs.rmSync(f, { force: true });
+  await ctx.close();
+});
+
+test('đăng ký tài khoản mới: tạo shop, kho, sản phẩm đầu tiên theo hướng dẫn; dữ liệu tách biệt với tài khoản khác', { skip }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, locale: 'vi-VN' });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('response', (r) => r.url().includes('/api/') && r.status() >= 500 && errors.push(`${r.status()} ${r.url()}`));
+  await page.goto(base);
+  await page.click('a:has-text("Đăng ký")');
+  await page.fill('input[autocomplete=username]', 'khach_moi');
+  await page.fill('input[autocomplete=name]', 'Khách Mới');
+  await page.locator('input[autocomplete=new-password]').first().fill('matkhau-moi-1');
+  await page.locator('input[autocomplete=new-password]').nth(1).fill('khac-nhau-hoan-toan');
+  await page.click('button.primary');
+  await page.waitForSelector('text=chưa giống nhau');
+  await page.locator('input[autocomplete=new-password]').nth(1).fill('matkhau-moi-1');
+  await page.click('button.primary');
+
+  // Bước 1: chưa có shop nào → tạo shop đầu tiên
+  await page.waitForSelector('text=Tạo shop đầu tiên');
+  assert.equal(await page.locator('.sidebar').count(), 0, 'chưa có shop thì chưa có thanh điều hướng của ứng dụng');
+  await page.fill('input[placeholder^="vd:"]', 'Cửa hàng Mới');
+  assert.equal(await page.locator('label:has-text("Mã shop") input').inputValue(), 'CHM', 'mã shop gợi ý từ tên');
+  await page.locator('input[name=industry][value=nuoc_hoa]').check();
+  await page.click('button:has-text("Tạo shop và tiếp tục")');
+
+  // Bước 2: kho đầu tiên
+  await page.waitForSelector('text=Bước 2/3 · Tạo kho đầu tiên');
+  await page.click('.modal button:has-text("Tạo kho")');
+
+  // Bước 3: sản phẩm đầu tiên (có tồn đầu → bắt buộc giá nhập)
+  await page.waitForSelector('text=Bước 3/3 · Tạo sản phẩm đầu tiên');
+  await page.locator('.modal label:has-text("Tên sản phẩm") input').fill('Nước hoa Mẫu');
+  await page.locator('.modal label:has-text("Giá bán") input').fill('500000');
+  await page.locator('.modal label:has-text("Số lượng đang có") input').fill('5');
+  assert.ok(await page.locator('.modal button:has-text("Tạo sản phẩm")').isDisabled(), 'có tồn mà thiếu giá nhập thì chưa cho tạo');
+  await page.locator('.modal label:has-text("Giá nhập") input').fill('300000');
+  await page.click('.modal button:has-text("Tạo sản phẩm")');
+  await page.waitForSelector('text=Sẵn sàng bán hàng');
+  await page.keyboard.press('Escape');
+
+  await page.waitForSelector('.sidebar');
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'nuochoa', 'giao diện theo ngành đã chọn');
+  assert.equal(await page.locator('text=Hoàn tất thiết lập').count(), 0, 'đã xong thì không còn thẻ nhắc thiết lập');
+  const mine = await page.evaluate(async () => ({
+    shops: (await (await fetch('/api/v1/shops')).json()).data.map((s) => s.name),
+    products: (await (await fetch('/api/v1/products')).json()).data.map((p) => p.name),
+    stock: (await (await fetch('/api/v1/stock')).json()).data.map((r) => [r.sku, r.on_hand]),
+  }));
+  assert.deepEqual(mine.shops, ['Cửa hàng Mới'], 'không thấy shop của tài khoản khác');
+  assert.deepEqual(mine.products, ['Nước hoa Mẫu']);
+  assert.equal(mine.stock[0][1], 5, 'tồn đầu đã ghi');
+
+  // Đăng xuất rồi vào tài khoản admin: chỉ thấy dữ liệu của admin
+  await page.click('.sidebar button[title="Đăng xuất"]');
+  await page.waitForSelector('input[autocomplete=username]');
+  await page.fill('input[autocomplete=username]', 'admin');
+  await page.fill('input[type=password]', 'matkhau123');
+  await page.click('button.primary');
+  await page.waitForSelector('.topbar');
+  const admin = await page.evaluate(async () => (await (await fetch('/api/v1/shops')).json()).data.map((s) => s.name));
+  assert.deepEqual(admin.sort(), ['Nước hoa', 'Phong thuỷ']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('khách theo shop: gắn nhãn, lọc theo nhãn, xuất file, xoá khỏi shop này không mất ở shop kia; trang Loyalty & Campaign', { skip }, async () => {
+  const hung = (await api('POST', '/customers', { name: 'Anh Hùng', phone: '0933000333', shop_id: ids.nh })).data.id;
+  await api('POST', `/customers/${hung}/shops`, { shop_id: ids.pt });
+  const { page, errors, ctx } = await login();
+  await pickShop(page, 'Nước hoa');
+  await page.goto(`${base}/customers/${hung}`);
+  await page.waitForSelector('text=Nhãn · Nước hoa');
+  await page.fill('input[aria-label="Thêm nhãn"]', 'VIP');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('section:has-text("Nhãn · Nước hoa") .badge:has-text("VIP")');
+
+  // Danh sách: nhãn hiện thành bộ lọc, lọc đúng
+  await page.goto(`${base}/customers`);
+  await page.waitForSelector('button.chip:has-text("VIP")');
+  await page.click('button.chip:has-text("VIP")');
+  await page.waitForFunction(() => document.querySelectorAll('tr.click').length === 1);
+  assert.ok(await page.locator('tr.click:has-text("Anh Hùng")').count());
+
+  // Xuất file: hộp thoại báo đúng số khách và cột
+  await page.click('button:has-text("Xuất file")');
+  await page.waitForSelector('.modal >> text=Xuất 1 khách');
+  assert.ok(await page.locator('.modal >> text=Nhãn: VIP').count());
+  await page.keyboard.press('Escape');
+
+  // Xoá khỏi shop Nước hoa
+  await page.goto(`${base}/customers/${hung}`);
+  await page.click('button:has-text("Xoá khỏi Nước hoa")');
+  await page.waitForSelector('.modal >> text=Sẽ mất ở Nước hoa');
+  await page.locator('.modal button:has-text("Xoá khỏi Nước hoa")').click();
+  await page.waitForURL(`${base}/customers`);
+  await page.waitForSelector('text=Chị Lan');
+  assert.equal(await page.locator('tr.click:has-text("Anh Hùng")').count(), 0, 'đã ra khỏi danh sách shop Nước hoa');
+
+  // Shop Phong thuỷ vẫn còn anh Hùng; nhãn của Nước hoa không lọt sang
+  await pickShop(page, 'Phong thuỷ');
+  await page.goto(`${base}/customers`);
+  await page.waitForSelector('tr.click:has-text("Anh Hùng")');
+  assert.equal(await page.locator('button.chip:has-text("VIP")').count(), 0);
+
+  // Loyalty & Campaign: tab mệnh chỉ có ở shop phong thuỷ; /care chuyển hướng
+  await page.goto(`${base}/care`);
+  await page.waitForURL(`${base}/loyalty`);
+  await page.waitForSelector('h1:has-text("Loyalty & Campaign")');
+  assert.ok(await page.locator('[role=tab]:has-text("Gợi ý theo mệnh")').count());
+  await pickShop(page, 'Nước hoa');
+  await page.waitForFunction(() => ![...document.querySelectorAll('[role=tab]')].some((t) => t.textContent.includes('Gợi ý theo mệnh')));
+  await page.click('[role=tab]:has-text("Tự động hoá")');
+  await page.waitForSelector('text=Chưa có gì chạy tự động');
+  assert.deepEqual(errors, []);
   await ctx.close();
 });

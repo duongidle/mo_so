@@ -299,7 +299,7 @@ body { background-image: var(--fibre); background-size: 320px; }
 .hero { padding-bottom: 36px; }
 .hero::before { content: ''; position: absolute; left: 26px; right: 26px; bottom: 16px; height: 10px; background-image: var(--meander); background-repeat: repeat-x; background-size: 20px 10px; opacity: .55; }
 .hero-compass { position: absolute; right: -70px; top: -70px; color: var(--champagne); opacity: .28; pointer-events: none; }
-.hero > *:not(.hero-compass):not(.hero-ripple) { position: relative; }
+.hero > *:not(.hero-compass):not(.hero-ripple):not(.hero-gauge) { position: relative; }
 .hero-body.with-vert { display: grid; grid-template-columns: auto 1fr; gap: 0 22px; }
 .hero-vert { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11.5px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--champagne); border-right: 1px solid color-mix(in srgb, var(--champagne) 40%, transparent); padding-left: 16px; white-space: nowrap; }
 @media (max-width: 720px) { .hero-vert { display: none; } .hero-body.with-vert { grid-template-columns: 1fr; } .hero-compass { right: -110px; top: -100px; opacity: .2; } }
@@ -345,19 +345,44 @@ body { background-image: var(--fibre); background-size: 320px; }
 }
 [data-theme=phongthuy] .page-head { border-bottom: 0; }
 
-/* nuochoa: bảng màu mực đen + hổ phách + rượu vang; vòng lan toả; không họa tiết phong thuỷ */
+/* nuochoa (nước hoa): mận + hồng đồng + đỏ tía, nền hồng phấn; vòng lan toả; không họa tiết phong thuỷ */
 [data-theme=nuochoa] {
-  --bg: #f7f4ef; --paper: #fffdf9;
-  --walnut: #1f2428; --linen: #f3eee7;
-  --text-muted: #55606a; --ink-soft: #5e6870;
-  --terracotta: #8a6a4c; --oxblood: #8a3a4e; --champagne: #b9975e;
-  --head-mark: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='10' fill='none' stroke='%23B9975E' stroke-width='1'%3E%3Cpath d='M5 1l4 4-4 4-4-4zM20 1l4 4-4 4-4-4zM35 1l4 4-4 4-4-4z'/%3E%3C/svg%3E");
+  --bg: #f8f2f0; --paper: #fffcfa;
+  --walnut: #2b2029; --linen: #f6eeee;
+  --text-muted: #5f4f5a; --ink-soft: #6a5863;
+  --terracotta: #8d5d52; --oxblood: #7a2e4a; --champagne: #c08a76;
+  --head-mark: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='10' fill='none' stroke='%23C08A76' stroke-width='1'%3E%3Cpath d='M5 1l4 4-4 4-4-4zM20 1l4 4-4 4-4-4zM35 1l4 4-4 4-4-4z'/%3E%3C/svg%3E");
 }
 [data-theme=nuochoa] h1, [data-theme=nuochoa] h2 { font-weight: 500; letter-spacing: .02em; }
 [data-theme=nuochoa] .page-head { border-bottom: 1px solid var(--rule); background-image: var(--head-mark); background-repeat: no-repeat; background-position: left bottom; background-size: 44px 10px; padding-bottom: 26px; }
 [data-theme=nuochoa] .hero::before { display: none; }
 [data-theme=nuochoa] { --hero-pattern: none; }
+
+/* oto (nước hoa ô tô): xám than + hổ phách như đèn đồng hồ taplô + cam cháy; đồng hồ tốc độ; vạch kẻ đường */
+[data-theme=oto] {
+  --bg: #f0f2f1; --paper: #fafbfa;
+  --walnut: #1b2226; --linen: #eef1f0;
+  --text-muted: #4d5a60; --ink-soft: #58656b;
+  --terracotta: #946020; --oxblood: #9c3d1a; --champagne: #d49a3a;
+}
+[data-theme=oto] h1, [data-theme=oto] h2 { font-weight: 600; letter-spacing: .01em; text-transform: none; }
+[data-theme=oto] .page-head { border-bottom: 2px dashed color-mix(in srgb, var(--champagne) 85%, transparent); padding-bottom: 20px; }
+[data-theme=oto] .hero::before { display: none; }
+[data-theme=oto] { --hero-pattern: none; }
+[data-theme=oto] .eyebrow { letter-spacing: .16em; }
+.hero-gauge { position: absolute; right: -40px; top: -30px; color: var(--champagne); opacity: .55; pointer-events: none; }
+@media (max-width: 720px) { .hero-gauge { right: -90px; top: -60px; opacity: .35; } }
 .hero-ripple { position: absolute; right: -60px; top: -60px; color: var(--champagne); opacity: .5; pointer-events: none; }
 @media (max-width: 720px) { .hero-ripple { right: -110px; top: -100px; opacity: .35; } }
 
 .empty .empty-art { color: var(--terracotta); opacity: .75; width: 84px; height: 84px; }
+
+/* Các bước thiết lập đầu tiên */
+.stepper { display: flex; gap: 8px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+.stepper li { display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border: 1px solid var(--rule); border-radius: 999px; font-size: 13.5px; font-weight: 500; color: var(--ink-soft); }
+.stepper li span { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid currentColor; font-size: 12px; font-weight: 700; }
+.stepper li.on { color: var(--text); border-color: var(--seal); } .stepper li.on span { background: var(--seal); border-color: var(--seal); color: var(--linen); }
+.stepper li.done { color: var(--st-completed); } .stepper li.done span { background: var(--st-completed); border-color: var(--st-completed); color: var(--linen); }
+.pick-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--rule); border-radius: 12px; cursor: pointer; background: var(--paper); }
+.pick-card.on { border-color: var(--seal); outline: 1px solid var(--seal); }
+.pick-card input { width: 18px; min-height: 18px; margin-top: 3px; }

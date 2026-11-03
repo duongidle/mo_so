@@ -1,12 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getDb } from '../db/index.js';
+import { getDb, tenantStore } from '../db/index.js';
+import { forEachAccount, getMaster } from '../db/tenancy.js';
 import { config } from '../lib/config.js';
 import { businessDate, addDays } from '../lib/time.js';
 
 const NAME_RE = /^moso-(\d{8})-(\d{4})\.db$/;
 
-export const backupDir = () => path.join(config.dataDir, 'backups');
+/** Thư mục sao lưu của tài khoản đang làm việc (mỗi tài khoản một thư mục riêng; tài khoản cũ giữ thư mục gốc) */
+export const backupDir = () => {
+  const sub = tenantStore()?.backupSub;
+  return sub ? path.join(config.dataDir, 'backups', sub) : path.join(config.dataDir, 'backups');
+};
+const masterBackupDir = () => path.join(config.dataDir, 'backups', '_master');
 
 function stamp(date = new Date()) {
   const d = businessDate(date.toISOString()).replaceAll('-', '');
@@ -14,28 +20,28 @@ function stamp(date = new Date()) {
   return `${d}-${t}`;
 }
 
-export function listBackups() {
-  if (!fs.existsSync(backupDir())) return [];
+export function listBackups(dir = backupDir()) {
+  if (!fs.existsSync(dir)) return [];
   return fs
-    .readdirSync(backupDir())
+    .readdirSync(dir)
     .filter((f) => NAME_RE.test(f))
     .sort()
     .reverse()
     .map((f) => {
-      const st = fs.statSync(path.join(backupDir(), f));
+      const st = fs.statSync(path.join(dir, f));
       return { name: f, size: st.size, created_at: st.mtime.toISOString() };
     });
 }
 
 /** Sao lưu bằng SQLite online backup (an toàn khi đang có người ghi). */
-export async function runBackup(date = new Date()) {
-  fs.mkdirSync(backupDir(), { recursive: true });
+export async function runBackup(date = new Date(), { conn = getDb(), dir = backupDir() } = {}) {
+  fs.mkdirSync(dir, { recursive: true });
   const name = `moso-${stamp(date)}.db`;
-  const file = path.join(backupDir(), name);
+  const file = path.join(dir, name);
   const tmp = `${file}.tmp`;
-  await getDb().backup(tmp);
+  await conn.backup(tmp);
   fs.renameSync(tmp, file); // chỉ lộ ra khi đã ghi xong
-  const pruned = pruneBackups(date);
+  const pruned = pruneBackups(date, { dir });
   return { name, file, size: fs.statSync(file).size, pruned };
 }
 
@@ -43,9 +49,9 @@ export async function runBackup(date = new Date()) {
  * Giữ bản mới nhất của mỗi ngày trong 14 ngày gần đây,
  * và bản mới nhất của mỗi tuần (theo thứ Hai) trong 8 tuần gần đây. Còn lại xoá.
  */
-export function pruneBackups(now = new Date(), { days = 14, weeks = 8 } = {}) {
+export function pruneBackups(now = new Date(), { days = 14, weeks = 8, dir = backupDir() } = {}) {
   const today = businessDate(now.toISOString());
-  const files = listBackups().map((b) => ({ ...b, date: b.name.slice(5, 13).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }));
+  const files = listBackups(dir).map((b) => ({ ...b, date: b.name.slice(5, 13).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3') }));
   const keep = new Set();
   const seenDay = new Set();
   const seenWeek = new Set();
@@ -70,22 +76,27 @@ export function pruneBackups(now = new Date(), { days = 14, weeks = 8 } = {}) {
   const removed = [];
   for (const f of files) {
     if (!keep.has(f.name)) {
-      fs.unlinkSync(path.join(backupDir(), f.name));
+      fs.unlinkSync(path.join(dir, f.name));
       removed.push(f.name);
     }
   }
   return removed;
 }
 
-/** Chạy khi server khởi động: nếu hôm nay chưa có bản sao lưu thì tạo, rồi kiểm tra lại mỗi giờ. */
+/**
+ * Chạy khi server khởi động rồi kiểm tra lại mỗi giờ: tài khoản nào hôm nay chưa có bản sao lưu thì tạo.
+ * Mỗi tài khoản một thư mục riêng; sổ tài khoản (master) sao lưu riêng ở backups/_master.
+ */
 export function startBackupScheduler({ intervalMs = 3600_000 } = {}) {
+  const today = () => businessDate().replaceAll('-', '');
   const tick = async () => {
     try {
-      const today = businessDate().replaceAll('-', '');
-      if (!listBackups().some((b) => b.name.startsWith(`moso-${today}`))) {
+      await forEachAccount(async (a) => {
+        if (listBackups().some((b) => b.name.startsWith(`moso-${today()}`))) return;
         const r = await runBackup();
-        console.log(`Đã sao lưu tự động: ${r.name}`);
-      }
+        console.log(`Đã sao lưu tự động (${a.username}): ${r.name}`);
+      });
+      if (!listBackups(masterBackupDir()).some((b) => b.name.startsWith(`moso-${today()}`))) await runBackup(new Date(), { conn: getMaster(), dir: masterBackupDir() });
     } catch (e) {
       console.error('Sao lưu tự động lỗi:', e);
     }
