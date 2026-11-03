@@ -1,0 +1,195 @@
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { api } from '../api.js';
+import { useSession } from '../session.jsx';
+import { Async, Card, Empty, ErrorBox, Field, Modal, StatusBadge, SearchBox, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import FieldInput, { fieldText, slugify } from '../components/FieldInput.jsx';
+import { vnd, fmtDate } from '../lib.js';
+import { Element, ELEMENT_ORDER } from '../components/Motif.jsx';
+import Icon from '../components/Icon.jsx';
+
+const TYPES = { text: 'Văn bản', number: 'Số', money: 'Tiền', date: 'Ngày', select: 'Chọn một', multiselect: 'Chọn nhiều', boolean: 'Có/Không' };
+
+export function CustomerList() {
+  const { shop, isAll, has } = useSession();
+  const [q, setQ] = useState('');
+  const dq = useDebounced(q);
+  const [sort, setSort] = useState('recent');
+  const [element, setElement] = useState('');
+  const [form, setForm] = useState(null);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const nav = useNavigate();
+  const showMenh = has('feng_shui');
+  const state = useAsync(() => api.get('/customers', { q: dq || undefined, sort, element: showMenh ? element || undefined : undefined, shop_id: isAll ? undefined : shop?.id, limit: 100 }), [dq, sort, element, shop?.id, showMenh]);
+  return (
+    <div className="page stack">
+      <div className="page-head">
+        <div><h1>Khách hàng</h1><div className="muted small sub">{isAll ? 'Hồ sơ chung của mọi shop. Chọn một shop để xem thông tin riêng của shop đó.' : `Thông tin riêng đang hiển thị: ${shop?.name}`}</div></div>
+        <div className="row">
+          {!isAll && <button className="btn" onClick={() => setFieldsOpen(true)}><Icon name="cog" />Thông tin khách của shop</button>}
+          <button className="btn primary" onClick={() => setForm({ name: '', phone: '' })}><Icon name="plus" />Khách</button>
+        </div>
+      </div>
+      <div className="row wrap">
+        <SearchBox value={q} onChange={setQ} placeholder="Tìm tên, SĐT, mã khách…" />
+        <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: 170 }} aria-label="Sắp xếp"><option value="recent">Mới tạo</option><option value="spent">Chi tiêu cao</option><option value="last_order">Mua gần đây</option><option value="name">Tên A–Z</option></select>
+        {showMenh && <select value={element} onChange={(e) => setElement(e.target.value)} style={{ width: 130 }} aria-label="Mệnh"><option value="">Mọi mệnh</option>{ELEMENT_ORDER.map((e) => <option key={e}>{e}</option>)}</select>}
+      </div>
+      <Async state={state}>
+        {({ data }) => !data.length ? <Empty>Chưa có khách nào khớp.</Empty> : (
+          <Card flat><div className="table-wrap"><table className="stackable">
+            <thead><tr><th>Khách</th>{showMenh && <th>Mệnh</th>}<th className="num">Số đơn</th><th className="num">Chi tiêu</th><th>Mua gần nhất</th></tr></thead>
+            <tbody>{data.map((c) => (
+              <tr key={c.id} className="click" onClick={() => nav(`/customers/${c.id}`)}>
+                <td><b>{c.name}</b><div className="small muted">{c.code} · {c.phone || c.facebook_url || ''}</div></td>
+                {showMenh && <td className="hide-sm"><Element name={c.feng_shui?.element} />{c.feng_shui?.approximate && <span className="small muted"> (ước)</span>}</td>}
+                <td className="num hide-sm">{c.order_count}</td><td className="num">{vnd(c.total_spent)}</td><td className="small hide-sm">{fmtDate(c.last_order_at)}</td>
+              </tr>))}</tbody>
+          </table></div></Card>
+        )}
+      </Async>
+      {form && <CustomerForm init={form} onClose={() => setForm(null)} onSaved={(c) => { setForm(null); nav(`/customers/${c.id}`); }} />}
+      {fieldsOpen && <ShopFieldsManager shop={shop} onClose={() => { setFieldsOpen(false); state.reload(); }} />}
+    </div>
+  );
+}
+
+function CustomerForm({ init, onClose, onSaved }) {
+  const [f, setF] = useState(init);
+  const { busy, error, run } = useAction();
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = () => run(async () => {
+    const payload = { name: f.name, phone: f.phone || null, facebook_url: f.facebook_url || null, address: f.address || null, note: f.note || null };
+    const r = f.id ? await api.patch(`/customers/${f.id}`, payload) : await api.post('/customers', payload);
+    onSaved(r.data);
+  });
+  return (
+    <Modal title={f.id ? 'Sửa khách' : 'Thêm khách'} onClose={onClose} footer={<button className="btn primary" disabled={busy} onClick={save}>Lưu</button>}>
+      <p className="small muted" style={{ margin: 0 }}>Đây là thông tin chung, mọi shop đều thấy. Thông tin riêng của từng shop (mệnh, mùi yêu thích…) nhập ở hồ sơ khách sau khi lưu.</p>
+      <Field label="Tên"><input value={f.name} onChange={set('name')} autoFocus /></Field>
+      <div className="grid cols-2">
+        <Field label="Số điện thoại"><input inputMode="tel" value={f.phone || ''} onChange={set('phone')} /></Field>
+        <Field label="Link Facebook"><input value={f.facebook_url || ''} onChange={set('facebook_url')} /></Field>
+      </div>
+      <Field label="Địa chỉ"><input value={f.address || ''} onChange={set('address')} /></Field>
+      <ErrorBox error={error} />
+    </Modal>
+  );
+}
+
+/** Thông tin riêng của khách trong một shop: tạo form từ các trường của shop đó */
+function ShopProfile({ customerId, shop, profile, onSaved }) {
+  const [draft, setDraft] = useState(null);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const { busy, error, run } = useAction();
+  const fields = profile.fields.filter((f) => f.type !== 'formula');
+  const editing = draft !== null;
+  const save = () => run(async () => {
+    const changed = Object.fromEntries(Object.entries(draft).filter(([k, v]) => JSON.stringify(v ?? null) !== JSON.stringify(profile.values[k] ?? null)));
+    if (Object.keys(changed).length) await api.put(`/custom/values/customer/${customerId}?shop_id=${shop.id}`, changed);
+    setDraft(null); onSaved();
+  });
+  return (
+    <Card title={`Thông tin riêng · ${shop.name}`} actions={<>
+      <button className="btn sm" onClick={() => setFieldsOpen(true)}>Chỉnh các trường</button>
+      {!editing && fields.length > 0 && <button className="btn sm primary" onClick={() => setDraft({ ...profile.values })}>Sửa</button>}
+    </>}>
+      <p className="small muted" style={{ marginTop: 0 }}>Chỉ shop này thấy. Cùng khách này ở shop khác có thông tin riêng của shop đó.</p>
+      {profile.fields.length === 0 ? <span className="muted">Shop này chưa có trường nào. Bấm “Chỉnh các trường” để thêm.</span> : editing ? (
+        <div className="stack">
+          {fields.map((f) => <Field key={f.id} label={f.type === 'boolean' ? '' : f.label}><FieldInput field={f} value={draft[f.key]} onChange={(v) => setDraft({ ...draft, [f.key]: v })} /></Field>)}
+          <ErrorBox error={error} />
+          <div className="row"><button className="btn primary" disabled={busy} onClick={save}>Lưu</button><button className="btn" onClick={() => setDraft(null)}>Huỷ</button></div>
+        </div>
+      ) : (
+        profile.fields.map((f) => <div key={f.id} className="ledger-line"><span className="muted">{f.label}</span><b style={{ textAlign: 'right' }}>{fieldText(f, profile.values[f.key])}</b></div>)
+      )}
+      {fieldsOpen && <ShopFieldsManager shop={shop} onClose={() => { setFieldsOpen(false); onSaved(); }} />}
+    </Card>
+  );
+}
+
+/** Quản lý các trường thông tin khách của MỘT shop. Trường chỉ tồn tại trong shop này. */
+function ShopFieldsManager({ shop, onClose }) {
+  const state = useAsync(() => api.get('/custom/fields', { entity_type: 'customer', shop_id: shop.id }), [shop.id]);
+  const [f, setF] = useState(null);
+  const { busy, error, run } = useAction();
+  const save = () => run(async () => {
+    if (f.id) await api.patch(`/custom/fields/${f.id}`, { label: f.label, ...(['select', 'multiselect'].includes(f.type) ? { options: f.options.split(',').map((x) => x.trim()).filter(Boolean) } : {}) });
+    else await api.post('/custom/fields', { entity_type: 'customer', shop_id: shop.id, key: f.key || slugify(f.label), label: f.label, type: f.type, ...(['select', 'multiselect'].includes(f.type) ? { options: f.options.split(',').map((x) => x.trim()).filter(Boolean) } : {}) });
+    setF(null); state.reload();
+  });
+  return (
+    <Modal title={`Thông tin khách · ${shop.name}`} onClose={onClose}>
+      <p className="small muted" style={{ margin: 0 }}>Các trường này chỉ tồn tại ở <b>{shop.name}</b>. Shop khác không thấy, kể cả với cùng một khách.</p>
+      <Async state={state}>{({ data }) => (
+        <>
+          {!data.length && <Empty>Chưa có trường nào.</Empty>}
+          {data.map((x) => (
+            <div key={x.id} className="row between" style={{ padding: '8px 0', borderBottom: '1px dotted var(--rule)' }}>
+              <span><b>{x.label}</b><div className="small muted">{TYPES[x.type] || x.type}{x.options && `: ${x.options.join(', ')}`}{x.role && ' · dùng để tính mệnh/sinh nhật'}</div></span>
+              <span className="row"><button className="btn sm" onClick={() => setF({ ...x, options: (x.options || []).join(', ') })}>Sửa</button>
+                <button className="btn sm danger" onClick={() => confirm(`Ẩn trường “${x.label}”? Dữ liệu đã nhập vẫn được giữ.`) && run(async () => { await api.patch(`/custom/fields/${x.id}`, { archived: true }); state.reload(); })}>Ẩn</button></span>
+            </div>
+          ))}
+          <div><button className="btn" onClick={() => setF({ label: '', type: 'text', options: '' })}><Icon name="plus" />Thêm trường</button></div>
+        </>
+      )}</Async>
+      <ErrorBox error={error} />
+      {f && (
+        <Modal title={f.id ? 'Sửa trường' : 'Thêm trường'} onClose={() => setF(null)} footer={<button className="btn primary" disabled={busy || !f.label} onClick={save}>Lưu</button>}>
+          <Field label="Tên trường"><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} autoFocus /></Field>
+          {!f.id && <Field label="Kiểu"><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
+          {['select', 'multiselect'].includes(f.type) && <Field label="Các lựa chọn, ngăn bằng dấu phẩy"><input value={f.options} onChange={(e) => setF({ ...f, options: e.target.value })} /></Field>}
+          <ErrorBox error={error} />
+        </Modal>
+      )}
+    </Modal>
+  );
+}
+
+export function CustomerDetail() {
+  const { id } = useParams();
+  const { shop, isAll, has } = useSession();
+  const shopId = isAll ? undefined : shop?.id;
+  const state = useAsync(() => api.get(`/customers/${id}`, { shop_id: shopId }), [id, shopId]);
+  const orders = useAsync(() => api.get('/orders', { customer_id: id, limit: 20 }), [id]);
+  const loy = useAsync(() => api.get(`/loyalty/customers/${id}`), [id]);
+  const sug = useAsync(() => (has('feng_shui') && shopId ? api.get(`/loyalty/customers/${id}/suggestions`, { shop_id: shopId }) : Promise.resolve({ data: [] })), [id, shopId, has('feng_shui')]);
+  const [note, setNote] = useState('');
+  const [edit, setEdit] = useState(null);
+  const { busy, error, run } = useAction();
+  const reloadAll = () => { state.reload(); loy.reload(); sug.reload(); };
+  return (
+    <div className="page stack">
+      <Async state={state}>
+        {({ data: c }) => (
+          <>
+            <div className="page-head"><div><h1>{c.name}</h1><div className="muted small sub">{c.code} · {c.phone} {c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">Facebook</a>}</div></div><button className="btn" onClick={() => setEdit(c)}>Sửa thông tin chung</button></div>
+            <div className="grid cols-3">
+              {has('feng_shui') && (
+                <Card title="Mệnh">{c.feng_shui ? <><Element name={c.feng_shui.element} size="xl" />{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Ước tính từ năm sinh (chưa biết ngày)' : 'Tính từ ngày sinh theo âm lịch'}</div><div className="row wrap small" style={{ marginTop: 6 }}>Hợp: {c.feng_shui.compatible_elements.map((e) => <Element key={e} name={e} size="sm" />)}</div></> : <span className="muted small">Chưa có ngày/năm sinh trong thông tin riêng của shop.</span>}</Card>
+              )}
+              <Card title="Hạng"><Async state={loy}>{({ data: l }) => <><b style={{ fontSize: 20 }}>{l.tier.name}</b><div className="small">Chi tiêu 12 tháng: {vnd(l.spent_12m)}</div>{l.next_tier && <div className="small muted">Còn {vnd(l.to_next)} lên {l.next_tier.name}</div>}</>}</Async></Card>
+              <Card title="Tổng"><b style={{ fontSize: 20 }}>{vnd(c.total_spent)}</b><div className="small">{c.order_count} đơn</div><div className="small muted">Đầu: {fmtDate(c.first_order_at)} · Gần nhất: {fmtDate(c.last_order_at)}</div></Card>
+            </div>
+            {c.shop_profile ? <ShopProfile customerId={c.id} shop={shop} profile={c.shop_profile} onSaved={reloadAll} /> : (
+              <div className="alert warn">Đang xem tất cả shop. Chọn một shop ở góc trên để xem và sửa thông tin riêng của khách trong shop đó.</div>
+            )}
+            {c.by_shop.length > 0 && <Card title="Theo shop">{c.by_shop.map((s) => <div key={s.shop_id} className="row between small"><span>{s.shop_name}</span><span>{s.order_count} đơn · {vnd(s.spent)}</span></div>)}</Card>}
+            <Async state={sug}>{(r) => r.data?.length > 0 && (
+              <Card title={`Gợi ý theo mệnh ${r.element}`}>{r.data.map((p) => <div key={p.product_id} className="row between small"><span>{p.name} {p.elements.map((e) => <Element key={e} name={e} label={false} />)}</span><span className="muted">{vnd(p.price)}</span></div>)}{r.approximate && <div className="small muted" style={{ marginTop: 6 }}>Mệnh đang là ước tính.</div>}</Card>
+            )}</Async>
+            <Card title="Đơn gần đây" flat><Async state={orders}>{(r) => !r.data.length ? <Empty>Chưa có đơn.</Empty> : <div className="table-wrap"><table><tbody>{r.data.map((o) => <tr key={o.id}><td><Link to={`/orders/${o.id}`}>{o.code}</Link><div className="small muted">{o.shop_name}</div></td><td>{fmtDate(o.business_date)}</td><td><StatusBadge status={o.status} /></td><td className="num">{vnd(o.total_amount)}</td></tr>)}</tbody></table></div>}</Async></Card>
+            <Card title="Ghi chú">
+              {c.notes.map((n) => <div key={n.id} className="small" style={{ marginBottom: 6 }}><span className="muted">{fmtDate(n.created_at)}{n.shop_name && ` · ${n.shop_name}`}</span><br />{n.content}</div>)}
+              <div className="row"><input className="grow" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Thêm ghi chú…" aria-label="Ghi chú" /><button className="btn" disabled={busy || !note} onClick={() => run(async () => { await api.post(`/customers/${c.id}/notes`, { content: note, shop_id: shopId }); setNote(''); state.reload(); })}>Lưu</button></div>
+              <ErrorBox error={error} />
+            </Card>
+            {edit && <CustomerForm init={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reloadAll(); }} />}
+          </>
+        )}
+      </Async>
+    </div>
+  );
+}

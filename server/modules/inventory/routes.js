@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { tx } from '../../db/index.js';
 import { body, money, qty, query, optionalText } from '../../lib/http.js';
 import * as svc from './service.js';
+import * as counts from './counts.js';
 
 const r = new Hono();
 
@@ -79,5 +80,27 @@ r.get('/stock-integrity', (c) => {
   const issues = svc.verifyStockIntegrity();
   return c.json({ ok: issues.length === 0, issues });
 });
+
+// Phiếu kiểm kê nhiều bước
+r.get('/stock-counts', (c) => c.json({ data: counts.listCounts() }));
+r.get('/stock-counts/:id', (c) => c.json({ data: counts.getCount(c.req.param('id')) }));
+r.post('/stock-counts', async (c) => {
+  const input = await body(c, z.object({ warehouse_id: z.string(), note: optionalText, mode: z.enum(['in_stock', 'variants', 'empty']).default('in_stock'), variant_ids: z.array(z.string()).default([]) }));
+  return c.json({ data: tx(() => counts.createCount({ warehouseId: input.warehouse_id, note: input.note, mode: input.mode, variantIds: input.variant_ids }, c.get('actor'))) }, 201);
+});
+r.patch('/stock-counts/:id', async (c) => {
+  const input = await body(c, z.object({
+    lines: z.array(z.object({ variant_id: z.string(), counted_qty: z.coerce.number().int().min(0).nullable().optional(), unit_cost: money.nullable().optional(), note: optionalText.optional() })).default([]),
+    add_variant_ids: z.array(z.string()).default([]),
+    remove_variant_ids: z.array(z.string()).default([]),
+    note: optionalText.optional(),
+  }));
+  return c.json({ data: tx(() => counts.updateCount(c.req.param('id'), { lines: input.lines, addVariantIds: input.add_variant_ids, removeVariantIds: input.remove_variant_ids, note: input.note })) });
+});
+r.post('/stock-counts/:id/complete', async (c) => {
+  const input = await body(c, z.object({ uncounted: z.enum(['skip', 'zero']).default('skip') }));
+  return c.json({ data: tx(() => counts.completeCount(c.req.param('id'), { uncounted: input.uncounted }, c.get('actor'))) });
+});
+r.post('/stock-counts/:id/cancel', (c) => c.json({ data: tx(() => counts.cancelCount(c.req.param('id'), c.get('actor'))) }));
 
 export default r;

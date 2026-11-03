@@ -7,6 +7,7 @@ import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { dailyCode } from '../../lib/codes.js';
 import { applyMovement } from '../inventory/service.js';
 import { recordPayment, netPaid, listPaymentsFor } from '../payments/service.js';
+import { isBundle, componentsOf } from '../catalog/bundles.js';
 import { findOrCreateCustomer, recalcCustomerStats, getCustomer } from '../customers/service.js';
 import { getShop } from '../shops/service.js';
 
@@ -169,22 +170,38 @@ function deductStock(o, actor, allowNegative) {
   let warning = false;
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(o.id);
   for (const l of lines) {
-    const res = applyMovement({
-      warehouseId: o.warehouse_id,
-      variantId: l.variant_id,
-      type: 'sale_out',
-      qty: l.qty,
-      refType: 'order',
-      refId: o.id,
-      refLineId: l.id,
-      shopId: o.shop_id,
-      actorId: actor?.id,
-      allowNegative,
-    });
+    const move = (variantId, qty) =>
+      applyMovement({ warehouseId: o.warehouse_id, variantId, type: 'sale_out', qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative });
+    if (isBundle(l.variant_id)) {
+      // Combo: trừ từng thành phần, chụp thành phần + giá vốn từng cái để hoàn kho/trả hàng sau này đúng
+      const comps = componentsOf(l.variant_id);
+      if (!comps.length) throw conflict('BUNDLE_EMPTY', `Combo ${l.sku} chưa có thành phần nào`);
+      let cost = 0;
+      for (const c of comps) {
+        const res = move(c.component_variant_id, c.qty * l.qty);
+        if (res.negative) warning = true;
+        db().prepare('INSERT INTO order_line_components (id, order_line_id, variant_id, per_bundle_qty, unit_cost) VALUES (?,?,?,?,?)').run(newId('olc'), l.id, c.component_variant_id, c.qty, res.unitCost);
+        cost += c.qty * res.unitCost;
+      }
+      db().prepare('UPDATE order_lines SET unit_cost = ? WHERE id = ?').run(cost, l.id);
+      continue;
+    }
+    const res = move(l.variant_id, l.qty);
     if (res.negative) warning = true;
     db().prepare('UPDATE order_lines SET unit_cost = ? WHERE id = ?').run(res.unitCost, l.id);
   }
   if (warning) db().prepare('UPDATE orders SET stock_warning = 1 WHERE id = ?').run(o.id);
+}
+
+/** Nhập lại kho `qty` đơn vị của một dòng (combo: nhập lại từng thành phần theo ảnh chụp lúc bán) */
+function putBackLine(o, l, qty, { type, note, actor, at }) {
+  const base = { warehouseId: o.warehouse_id, type, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note, actorId: actor?.id, at };
+  const comps = db().prepare('SELECT * FROM order_line_components WHERE order_line_id = ?').all(l.id);
+  if (comps.length) {
+    for (const c of comps) applyMovement({ ...base, variantId: c.variant_id, qty: c.per_bundle_qty * qty, unitCost: c.unit_cost });
+  } else {
+    applyMovement({ ...base, variantId: l.variant_id, qty, unitCost: l.unit_cost });
+  }
 }
 
 function restoreStock(o, actor, note) {
@@ -192,19 +209,7 @@ function restoreStock(o, actor, note) {
   for (const l of lines) {
     const qty = l.qty - l.restocked_qty;
     if (qty <= 0) continue;
-    applyMovement({
-      warehouseId: o.warehouse_id,
-      variantId: l.variant_id,
-      type: 'sale_cancel_in',
-      qty,
-      unitCost: l.unit_cost,
-      refType: 'order',
-      refId: o.id,
-      refLineId: l.id,
-      shopId: o.shop_id,
-      note,
-      actorId: actor?.id,
-    });
+    putBackLine(o, l, qty, { type: 'sale_cancel_in', note, actor });
   }
 }
 
@@ -450,7 +455,7 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt }, act
     const value = Math.round(((l.line_total - l.allocated_order_discount) * r.qty) / l.qty);
     goods += value;
     if (r.restock) {
-      applyMovement({ warehouseId: o.warehouse_id, variantId: l.variant_id, type: 'sale_return_in', qty: r.qty, unitCost: l.unit_cost, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note: reason, actorId: actor?.id, at });
+      putBackLine(o, l, r.qty, { type: 'sale_return_in', note: reason, actor, at });
     }
     db()
       .prepare('UPDATE order_lines SET returned_qty = returned_qty + ?, restocked_qty = restocked_qty + ? WHERE id = ?')
