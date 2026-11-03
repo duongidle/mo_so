@@ -3,6 +3,7 @@ import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 import { parse, refsOf, evaluate, FormulaError } from '../../lib/formula.js';
+import { ROLES } from '../../lib/industries.js';
 
 const db = () => getDb();
 const TABLES = { product: 'products', customer: 'customers', order: 'orders', purchase: 'purchases' };
@@ -13,14 +14,22 @@ const columnsOf = (entityType) => db().prepare(`PRAGMA table_info(${TABLES[entit
 const shape = (f) => f && { ...f, options: f.options ? JSON.parse(f.options) : null };
 
 export function listFields(entityType, { shopId } = {}) {
+  // Trường của khách chỉ tồn tại trong phạm vi một shop: không có shop thì không có trường nào
+  if (entityType === 'customer') {
+    if (!shopId) return [];
+    return db()
+      .prepare(`SELECT * FROM custom_fields WHERE archived_at IS NULL AND entity_type = 'customer' AND shop_id = ? ORDER BY sort_order, created_at`)
+      .all(shopId)
+      .map(shape);
+  }
   const rows = db()
-    .prepare(`SELECT * FROM custom_fields WHERE archived_at IS NULL ${entityType ? 'AND entity_type = ?' : ''} ORDER BY entity_type, sort_order, created_at`)
+    .prepare(`SELECT * FROM custom_fields WHERE archived_at IS NULL ${entityType ? 'AND entity_type = ?' : "AND entity_type != 'customer'"} ORDER BY entity_type, sort_order, created_at`)
     .all(...(entityType ? [entityType] : []));
   // Trường riêng của shop khác không hiện khi đang làm việc ở shop này
   return rows.filter((f) => !shopId || !f.shop_id || f.shop_id === shopId).map(shape);
 }
 
-function parseFormula(entityType, key, formula) {
+function parseFormula(entityType, key, formula, shopId = null) {
   let tree;
   try {
     tree = parse(formula);
@@ -29,7 +38,7 @@ function parseFormula(entityType, key, formula) {
     throw e;
   }
   const cols = new Set(columnsOf(entityType));
-  const customs = new Map(listFields(entityType).map((f) => [f.key, f]));
+  const customs = new Map(listFields(entityType, { shopId }).map((f) => [f.key, f]));
   for (const ref of refsOf(tree)) {
     if (ref.startsWith('custom.')) {
       if (!customs.has(ref.slice(7)) && ref.slice(7) !== key) throw badRequest('INVALID_FORMULA', `Không có trường tuỳ chỉnh ${ref}`);
@@ -48,10 +57,20 @@ function parseFormula(entityType, key, formula) {
   return tree;
 }
 
+/** Trường mới nằm cuối danh sách của cùng đối tượng (và cùng shop) */
+function nextSortOrder(entityType, shopId) {
+  return db().prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM custom_fields WHERE entity_type = ? AND shop_id IS ? AND archived_at IS NULL').get(entityType, shopId).n;
+}
+
 export function createField(input) {
+  if (input.entity_type === 'customer') {
+    if (!input.shop_id) throw badRequest('SHOP_REQUIRED', 'Trường thông tin khách phải thuộc một shop');
+    if (!db().prepare('SELECT 1 FROM shops WHERE id = ?').get(input.shop_id)) throw notFound('Shop');
+  }
+  if (input.role && !ROLES.includes(input.role)) throw badRequest('INVALID_ROLE', `Vai trò không hợp lệ: ${input.role}`);
   if (input.type === 'formula') {
     if (!input.formula) throw badRequest('FORMULA_REQUIRED', 'Trường công thức cần có công thức');
-    parseFormula(input.entity_type, input.key, input.formula);
+    parseFormula(input.entity_type, input.key, input.formula, input.shop_id ?? null);
   }
   if (['select', 'multiselect'].includes(input.type) && !input.options?.length) throw badRequest('OPTIONS_REQUIRED', 'Trường chọn cần có danh sách lựa chọn');
   if (columnsOf(input.entity_type).includes(input.key)) throw badRequest('KEY_RESERVED', `"${input.key}" trùng tên cột có sẵn`);
@@ -59,10 +78,10 @@ export function createField(input) {
   const at = nowIso();
   db()
     .prepare(
-      `INSERT INTO custom_fields (id, entity_type, key, label, type, options, formula, shop_id, sort_order, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO custom_fields (id, entity_type, key, label, type, options, formula, shop_id, sort_order, role, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.entity_type, input.key, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.type === 'formula' ? input.formula : null, input.shop_id ?? null, input.sort_order ?? 0, at, at);
+    .run(id, input.entity_type, input.key, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.type === 'formula' ? input.formula : null, input.shop_id ?? null, input.sort_order ?? nextSortOrder(input.entity_type, input.shop_id ?? null), input.role ?? null, at, at);
   return shape(db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id));
 }
 
@@ -71,7 +90,7 @@ export function updateField(id, patch) {
   const f = db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
   if (!f) throw notFound('Trường tuỳ chỉnh');
   const formula = patch.formula ?? f.formula;
-  if (f.type === 'formula' && patch.formula) parseFormula(f.entity_type, f.key, formula);
+  if (f.type === 'formula' && patch.formula) parseFormula(f.entity_type, f.key, formula, f.shop_id);
   db()
     .prepare('UPDATE custom_fields SET label=?, options=?, formula=?, sort_order=?, archived_at=?, updated_at=? WHERE id=?')
     .run(
@@ -121,37 +140,46 @@ function entityRow(entityType, id) {
 }
 
 /** values: { key: giá trị }. Giá trị null xoá giá trị đã lưu. Khoá không tồn tại → báo lỗi, không bỏ qua im lặng. */
-export function setValues(entityType, entityId, values) {
+function needShop(entityType, shopId) {
+  if (entityType === 'customer' && !shopId) throw badRequest('SHOP_REQUIRED', 'Thông tin khách là của từng shop: cần chỉ rõ shop_id');
+}
+
+export function setValues(entityType, entityId, values, { shopId = null } = {}) {
+  needShop(entityType, shopId);
   entityRow(entityType, entityId);
-  const fields = new Map(listFields(entityType).map((f) => [f.key, f]));
+  const fields = new Map(listFields(entityType, { shopId }).map((f) => [f.key, f]));
   const up = db().prepare('INSERT INTO custom_values (entity_type, entity_id, field_id, value_text, value_num) VALUES (?,?,?,?,?) ON CONFLICT DO UPDATE SET value_text = excluded.value_text, value_num = excluded.value_num');
   const del = db().prepare('DELETE FROM custom_values WHERE entity_type = ? AND entity_id = ? AND field_id = ?');
   for (const [key, raw] of Object.entries(values)) {
     const f = fields.get(key);
-    if (!f) throw badRequest('UNKNOWN_FIELD', `Không có trường tuỳ chỉnh "${key}"`);
+    if (!f) throw badRequest('UNKNOWN_FIELD', `Không có trường tuỳ chỉnh "${key}"${entityType === 'customer' ? ' trong shop này' : ''}`);
     const v = coerce(f, raw);
     if (v.text === null && v.num === null) del.run(entityType, entityId, f.id);
     else up.run(entityType, entityId, f.id, v.text, v.num);
   }
-  return getValues(entityType, entityId);
+  return getValues(entityType, entityId, { shopId });
 }
 
-function rawValues(entityType, entityId) {
+function rawValues(entityType, entityId, shopId) {
   const out = {};
+  // Khách: chỉ lấy giá trị của các trường thuộc shop đang xem, để giá trị của shop khác không lọt sang
+  const scoped = entityType === 'customer';
   const rows = db()
-    .prepare('SELECT f.key, f.type, v.value_text, v.value_num FROM custom_values v JOIN custom_fields f ON f.id = v.field_id WHERE v.entity_type = ? AND v.entity_id = ? AND f.archived_at IS NULL')
-    .all(entityType, entityId);
+    .prepare(`SELECT f.key, f.type, v.value_text, v.value_num FROM custom_values v JOIN custom_fields f ON f.id = v.field_id
+              WHERE v.entity_type = ? AND v.entity_id = ? AND f.archived_at IS NULL ${scoped ? 'AND f.shop_id = ?' : ''}`)
+    .all(...(scoped ? [entityType, entityId, shopId] : [entityType, entityId]));
   for (const r of rows) {
     out[r.key] = r.type === 'boolean' ? r.value_num === 1 : r.value_num !== null ? r.value_num : r.type === 'multiselect' ? JSON.parse(r.value_text) : r.value_text;
   }
   return out;
 }
 
-/** Giá trị nhập tay + giá trị công thức đã tính cho bản ghi */
-export function getValues(entityType, entityId) {
+/** Giá trị nhập tay + giá trị công thức đã tính cho bản ghi. Với khách: chỉ của shop `shopId`. */
+export function getValues(entityType, entityId, { shopId = null } = {}) {
+  needShop(entityType, shopId);
   const row = entityRow(entityType, entityId);
-  const stored = rawValues(entityType, entityId);
-  const fields = listFields(entityType);
+  const stored = rawValues(entityType, entityId, shopId);
+  const fields = listFields(entityType, { shopId });
   const byKey = new Map(fields.map((f) => [f.key, f]));
   const cache = new Map();
   const lookup = (name) => {
@@ -168,6 +196,24 @@ export function getValues(entityType, entityId) {
   };
   const out = { ...stored };
   for (const f of fields) if (f.type === 'formula') out[f.key] = lookup(`custom.${f.key}`);
+  return out;
+}
+
+/**
+ * Giá trị theo vai trò (ngày sinh, năm sinh, mệnh ghi đè) của khách trong MỘT shop.
+ * Trả Map(customerId → { birth_date, birth_year, element }). ids rỗng/undefined = mọi khách có giá trị.
+ */
+export function roleValues(shopId, ids) {
+  const rows = db()
+    .prepare(`SELECT v.entity_id AS id, f.role, v.value_text, v.value_num FROM custom_values v JOIN custom_fields f ON f.id = v.field_id
+              WHERE v.entity_type = 'customer' AND f.shop_id = ? AND f.role IS NOT NULL AND f.archived_at IS NULL
+              ${ids?.length ? `AND v.entity_id IN (${ids.map(() => '?').join(',')})` : ''}`)
+    .all(shopId, ...(ids || []));
+  const out = new Map();
+  for (const r of rows) {
+    if (!out.has(r.id)) out.set(r.id, {});
+    out.get(r.id)[r.role] = r.role === 'birth_year' ? r.value_num : r.value_text;
+  }
   return out;
 }
 

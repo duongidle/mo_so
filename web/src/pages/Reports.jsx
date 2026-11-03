@@ -9,7 +9,7 @@ const TABS = [['revenue', 'Doanh thu'], ['profit', 'Lợi nhuận'], ['channels'
 const PRESETS = [['Tháng này', () => [monthStart(), today()]], ['7 ngày', () => [addDays(today(), -6), today()]], ['30 ngày', () => [addDays(today(), -29), today()]]];
 
 export default function Reports() {
-  const { shopId, isAll } = useSession();
+  const { shopId, isAll, has } = useSession();
   const [tab, setTab] = useState('revenue');
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const p = { from: range.from, to: range.to, shop_id: isAll ? undefined : shopId };
@@ -19,7 +19,7 @@ export default function Reports() {
       case 'revenue': return Promise.all([api.get('/reports/overview', p), api.get('/reports/revenue', p)]);
       case 'profit': return Promise.all([api.get('/reports/overview', p), api.get('/reports/shops', p)]);
       case 'channels': return api.get('/reports/channels', p);
-      case 'products': return Promise.all([api.get('/reports/products', p), api.get('/reports/elements', p)]);
+      case 'products': return Promise.all([api.get('/reports/products', p), has('feng_shui') ? api.get('/reports/elements', p) : Promise.resolve({ data: [] })]);
       case 'customers': return api.get('/reports/customers', p);
       case 'inventory': return api.get('/reports/inventory', { shop_id: p.shop_id });
       case 'cash': return api.get('/reports/cashflow', p);
@@ -33,14 +33,14 @@ export default function Reports() {
       <div className="page-head"><h1>Báo cáo</h1></div>
       <Tabs options={TABS} value={tab} onChange={setTab} />
       <div className="row wrap"><DateRange {...range} onChange={setRange} />{PRESETS.map(([l, f]) => <button key={l} className="btn sm" onClick={() => { const [from, to] = f(); setRange({ from, to }); }}>{l}</button>)}</div>
-      <Async state={state}>{(d) => <Body tab={tab} d={d} />}</Async>
+      <Async state={state}>{(d) => <Body tab={tab} d={d} elements={has('feng_shui')} />}</Async>
     </div>
   );
 }
 
 const Row = ({ l, v, bold, neg }) => <div className="row between" style={bold ? { fontWeight: 700, borderTop: '1px solid var(--champagne)', paddingTop: 6 } : undefined}><span>{l}</span><span className="num">{neg ? '− ' : ''}{vnd(v)}</span></div>;
 
-function Body({ tab, d }) {
+function Body({ tab, d, elements }) {
   if (tab === 'revenue') {
     const [{ data: ov }, series] = d;
     const c = ov.current;
@@ -83,7 +83,7 @@ function Body({ tab, d }) {
   );
   if (tab === 'products') return !d[0].data.length ? <Empty>Chưa bán sản phẩm nào trong kỳ.</Empty> : (
     <>
-    <Card title="Theo ngũ hành"><HBars items={ELEMENT_ORDER.map((e) => ({ label: e, value: d[1].data.find((x) => x.element === e)?.revenue || 0 }))} /><p className="small muted" style={{ marginBottom: 0 }}>Sản phẩm hợp nhiều hành được chia đều doanh thu cho các hành đó.</p></Card>
+    {elements && <Card title="Theo ngũ hành"><HBars items={ELEMENT_ORDER.map((e) => ({ label: e, value: d[1].data.find((x) => x.element === e)?.revenue || 0 }))} /><p className="small muted" style={{ marginBottom: 0 }}>Sản phẩm hợp nhiều hành được chia đều doanh thu cho các hành đó.</p></Card>}
     <Card flat><div className="table-wrap"><table>
       <thead><tr><th>Sản phẩm</th><th className="num">Đã bán</th><th className="num">Doanh thu</th><th className="num">Giá vốn</th><th className="num">LN gộp</th><th className="num">Biên</th></tr></thead>
       <tbody>{d[0].data.map((p) => <tr key={p.variant_id}><td>{p.product_name}{p.variant_name ? ` — ${p.variant_name}` : ''}<div className="small muted">{p.sku}</div></td><td className="num">{num(p.qty_sold)}</td><td className="num">{vnd(p.revenue)}</td><td className="num">{vnd(p.cogs)}</td><td className="num">{vnd(p.gross_profit)}</td><td className="num">{pct(p.margin_pct)}</td></tr>)}</tbody>

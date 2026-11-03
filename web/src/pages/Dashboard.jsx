@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, AreaChart, Card, Empty, Kpi, StatusBadge, useAsync } from '../components/ui.jsx';
 import { vnd, num, pct, today, addDays, monthStart } from '../lib.js';
-import { Compass, Element, ELEMENT_ORDER } from '../components/Motif.jsx';
+import { Compass, Ripple, Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 
 const MONTH = () => `tháng ${Number(today().slice(5, 7))}`;
 
@@ -14,17 +14,17 @@ function greeting(name) {
 }
 
 export default function Dashboard() {
-  const { shopId, user } = useSession();
+  const { shopId, user, theme, has } = useSession();
   const shop = shopId === 'all' ? undefined : shopId;
   const state = useAsync(async () => {
     const [dash, series, orders, elements] = await Promise.all([
       api.get('/reports/dashboard', { shop_id: shop }),
       api.get('/reports/revenue', { shop_id: shop, from: addDays(today(), -29), to: today() }),
       api.get('/orders', { shop_id: shop, from: today(), to: today(), limit: 8 }),
-      api.get('/reports/elements', { shop_id: shop, from: monthStart(), to: today() }),
+      has('feng_shui') ? api.get('/reports/elements', { shop_id: shop, from: monthStart(), to: today() }) : Promise.resolve({ data: [] }),
     ]);
     return { dash: dash.data, series: series.data, orders: orders.data, elements: elements.data };
-  }, [shopId]);
+  }, [shopId, theme]);
 
   return (
     <div className="page stack">
@@ -36,9 +36,10 @@ export default function Dashboard() {
           return (
             <>
               <section className="card hero">
-                <Compass className="hero-compass" size={300} />
-                <div className="hero-body">
-                <div className="hero-vert">Sổ hôm nay · {MONTH()}</div>
+                {theme === 'phongthuy' && <Compass className="hero-compass" size={300} />}
+                {theme === 'nuochoa' && <Ripple className="hero-ripple" size={300} />}
+                <div className={`hero-body ${theme === 'phongthuy' ? 'with-vert' : ''}`}>
+                {theme === 'phongthuy' && <div className="hero-vert">Sổ hôm nay · {MONTH()}</div>}
                 <div>
                 <div className="eyebrow">Doanh thu {MONTH()}</div>
                 <div className="big">{vnd(cur.net_revenue)}</div>
@@ -85,7 +86,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <Card title="Bán theo ngũ hành" actions={<Link to="/reports" className="small">Báo cáo</Link>}>
+              {has('feng_shui') && <Card title="Bán theo ngũ hành" actions={<Link to="/reports" className="small">Báo cáo</Link>}>
                 {(() => {
                   const total = elements.reduce((a, e) => a + e.revenue, 0);
                   const by = Object.fromEntries(elements.map((e) => [e.element, e.revenue]));
@@ -100,7 +101,7 @@ export default function Dashboard() {
                     </div>
                   );
                 })()}
-              </Card>
+              </Card>}
 
               <div className="grid split-57 collapse">
                 <Card title="Đang chờ xử lý" actions={<Link to="/orders" className="small">Xem đơn</Link>}>

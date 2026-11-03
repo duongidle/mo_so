@@ -33,13 +33,13 @@ r.patch('/fields/:id', async (c) => {
 r.get('/values/:entity/:id', (c) => {
   const e = entity.safeParse(c.req.param('entity'));
   if (!e.success) throw badRequest('INVALID_ENTITY', 'entity phải là product | customer | order | purchase');
-  return c.json({ data: svc.getValues(e.data, c.req.param('id')) });
+  return c.json({ data: svc.getValues(e.data, c.req.param('id'), { shopId: c.req.query('shop_id') }) });
 });
 r.put('/values/:entity/:id', async (c) => {
   const e = entity.safeParse(c.req.param('entity'));
   if (!e.success) throw badRequest('INVALID_ENTITY', 'entity phải là product | customer | order | purchase');
   const values = await body(c, z.record(z.string(), z.any()));
-  return c.json({ data: tx(() => svc.setValues(e.data, c.req.param('id'), values)) });
+  return c.json({ data: tx(() => svc.setValues(e.data, c.req.param('id'), values, { shopId: c.req.query('shop_id') })) });
 });
 
 r.get('/metrics', (c) => c.json({ data: svc.listMetrics() }));

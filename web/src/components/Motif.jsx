@@ -57,3 +57,13 @@ export function Dongson({ size = 120, className = '' }) {
 export function Seal({ children, size = 44 }) {
   return <span className="seal-sq" style={{ '--s': `${size}px` }} aria-hidden="true">{children}</span>;
 }
+
+/** Vòng lan toả: mùi hương toả ra từ một điểm. Các vòng đồng tâm mảnh, thưa dần ra ngoài. */
+export function Ripple({ size = 300, className = '' }) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="-100 -100 200 200" fill="none" stroke="currentColor" strokeWidth="0.8" aria-hidden="true">
+      {[10, 22, 38, 58, 82, 110].map((r, i) => <circle key={r} r={r} strokeOpacity={1 - i * 0.12} />)}
+      <circle r="3" fill="currentColor" />
+    </svg>
+  );
+}

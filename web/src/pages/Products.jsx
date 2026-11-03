@@ -9,7 +9,7 @@ const ELEMENTS = ['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ'];
 const blank = () => ({ name: '', unit: 'cái', consumption_days: '', elements: [], variants: [{ sku: '', name: '', default_price: 0, min_stock: 0 }], shop_ids: [] });
 
 export default function Products() {
-  const { shopId, shops, isAll } = useSession();
+  const { shopId, shops, isAll, has } = useSession();
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [edit, setEdit] = useState(null);
@@ -26,12 +26,12 @@ export default function Products() {
       <Async state={state}>
         {({ data }) => !data.length ? <Empty>Chưa có sản phẩm. Bấm “+ Sản phẩm” để thêm.</Empty> : (
           <Card flat><div className="table-wrap"><table>
-            <thead><tr><th>Sản phẩm</th><th>SKU</th><th>Ngũ hành</th><th className="num">Giá bán</th></tr></thead>
+            <thead><tr><th>Sản phẩm</th><th>SKU</th>{has('feng_shui') && <th>Ngũ hành</th>}<th className="num">Giá bán</th></tr></thead>
             <tbody>{data.map((p) => (
               <tr key={p.id} className="click" onClick={async () => { const full = await api.get(`/products/${p.id}`); setEdit({ ...full.data, consumption_days: full.data.consumption_days ?? '', shop_ids: (full.data.listings || []).map((l) => l.shop_id), _existing: true }); }}>
                 <td><b>{p.name}</b><div className="small muted">{p.variant_count ?? p.variants?.length ?? ''} biến thể</div></td>
                 <td className="small">{(p.variants || []).map((v) => v.sku).join(', ') || p.sku}</td>
-                <td><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>
+                {has('feng_shui') && <td><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>}
                 <td className="num">{p.min_price !== undefined ? vnd(p.min_price) : (p.variants || []).length ? vnd(p.variants[0].price ?? p.variants[0].default_price) : ''}</td>
               </tr>))}</tbody>
           </table></div></Card>
@@ -44,7 +44,7 @@ export default function Products() {
 }
 
 function ProductForm({ init, onClose, onSaved }) {
-  const { shops } = useSession();
+  const { shops, has } = useSession();
   const [f, setF] = useState(init);
   const { busy, error, run } = useAction();
   const setV = (i, k, v) => setF({ ...f, variants: f.variants.map((x, j) => (j === i ? { ...x, [k]: v } : x)) });
@@ -65,8 +65,8 @@ function ProductForm({ init, onClose, onSaved }) {
         <Field label="Đơn vị"><input value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></Field>
         <Field label="Chu kỳ dùng hết (ngày)" hint="Để nhắc khách mua lại"><input type="number" min="1" value={f.consumption_days} onChange={(e) => setF({ ...f, consumption_days: e.target.value })} /></Field>
       </div>
-      <div><div className="small muted" style={{ marginBottom: 4 }}>Ngũ hành hợp (vật phẩm phong thuỷ)</div>
-        <div className="row wrap">{ELEMENTS.map((e) => <label key={e} className="check"><input type="checkbox" checked={f.elements.includes(e)} onChange={() => setF({ ...f, elements: toggle(f.elements, e) })} />{e}</label>)}</div></div>
+      {has('feng_shui') && <div><div className="small muted" style={{ marginBottom: 4 }}>Ngũ hành hợp (vật phẩm phong thuỷ)</div>
+        <div className="row wrap">{ELEMENTS.map((e) => <label key={e} className="check"><input type="checkbox" checked={f.elements.includes(e)} onChange={() => setF({ ...f, elements: toggle(f.elements, e) })} />{e}</label>)}</div></div>}
       <h3>Biến thể</h3>
       {f.variants.map((v, i) => (
         <div key={i} className="grid cols-2" style={{ borderBottom: '1px solid var(--hairline)', paddingBottom: 10 }}>

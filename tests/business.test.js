@@ -107,13 +107,12 @@ test('M3: nhập hàng phân bổ phí, giá vốn bình quân, kiểm kê, hu�
   assert.equal(integrity.body.ok, true, JSON.stringify(integrity.body));
 });
 
-test('M4: khách hàng chung, chuẩn hoá SĐT, mệnh, gộp trùng', async () => {
+test('M4: khách hàng chung, chuẩn hoá SĐT, gộp trùng', async () => {
   const { api } = await setup();
-  const a = await api.post('/customers', { name: 'Trần Thị B', phone: '+84 901 234 567', birth_date: '1990-01-20' });
+  const a = await api.post('/customers', { name: 'Trần Thị B', phone: '+84 901 234 567' });
   assert.equal(a.status, 201, JSON.stringify(a.body));
   assert.equal(a.body.data.phone, '0901234567');
-  assert.equal(a.body.data.feng_shui.element, 'Mộc', 'Sinh trước Tết 1990 → năm Kỷ Tỵ, Đại Lâm Mộc');
-  assert.deepEqual(a.body.data.feng_shui.compatible_elements, ['Mộc', 'Thuỷ']);
+  assert.equal(a.body.data.feng_shui, undefined, 'mệnh không còn gắn chung vào hồ sơ khách');
 
   const dup = await api.post('/customers', { name: 'B', phone: '0901234567' });
   assert.equal(dup.status, 409);
