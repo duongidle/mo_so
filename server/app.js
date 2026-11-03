@@ -15,6 +15,10 @@ import purchaseRoutes from './modules/purchases/routes.js';
 import customerRoutes from './modules/customers/routes.js';
 import orderRoutes from './modules/orders/routes.js';
 import importRoutes from './modules/imports/routes.js';
+import expenseRoutes from './modules/expenses/routes.js';
+import reportRoutes from './modules/reports/routes.js';
+import systemRoutes from './modules/system/routes.js';
+import { docsRoutes } from './modules/system/docs.js';
 
 export function createApp() {
   const app = new Hono();
@@ -22,6 +26,7 @@ export function createApp() {
 
   const api = new Hono();
   api.route('/auth', authRoutes);
+  api.route('/docs', docsRoutes(() => app)); // công khai: chỉ liệt kê đường dẫn, không lộ dữ liệu
 
   // Mọi route bên dưới cần đăng nhập
   const secured = new Hono();
@@ -36,6 +41,9 @@ export function createApp() {
   secured.route('/customers', customerRoutes);
   secured.route('/orders', orderRoutes);
   secured.route('/imports', importRoutes);
+  secured.route('/', expenseRoutes); // /expenses, /expense-categories, /payments, /reconciliation
+  secured.route('/reports', reportRoutes);
+  secured.route('/system', systemRoutes); // /system/api-keys, /webhooks, /backups, /export, /events
   api.route('/', secured);
 
   app.route('/api/v1', api);
