@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num, fmtDate, MOVE_TYPES } from '../lib.js';
 
 export default function Stock() {
@@ -21,7 +21,7 @@ export default function Stock() {
   return (
     <div className="page stack">
       <div className="page-head"><h1>Kho</h1><button className="btn" onClick={() => setAdj({ kind: 'count', lines: [] })}>Kiểm kê / điều chỉnh</button></div>
-      <Chips options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động']]} value={tab} onChange={setTab} />
+      <Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động']]} value={tab} onChange={setTab} />
       <div className="row wrap">
         <select value={wh} onChange={(e) => setWh(e.target.value)} style={{ width: 200 }} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
         {tab === 'stock' && <input placeholder="Tìm SKU, tên…" value={q} onChange={(e) => setQ(e.target.value)} className="grow" aria-label="Tìm" />}

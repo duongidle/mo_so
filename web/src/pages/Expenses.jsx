@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate, monthStart, today, METHODS } from '../lib.js';
 
 export default function Expenses() {
@@ -9,7 +9,7 @@ export default function Expenses() {
   return (
     <div className="page stack">
       <div className="page-head"><h1>Chi phí & đối soát</h1></div>
-      <Chips options={[['expenses', 'Chi phí'], ['reconcile', 'Đối soát Shopee']]} value={tab} onChange={setTab} />
+      <Tabs options={[['expenses', 'Chi phí'], ['reconcile', 'Đối soát Shopee']]} value={tab} onChange={setTab} />
       {tab === 'expenses' ? <ExpenseList /> : <Reconcile />}
     </div>
   );

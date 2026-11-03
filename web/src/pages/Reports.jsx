@@ -1,20 +1,11 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, DateRange, Empty, Kpi, useAsync } from '../components/ui.jsx';
+import { Bars, HBars, Async, Card, Chips, Tabs, DateRange, Empty, Kpi, useAsync } from '../components/ui.jsx';
 import { vnd, num, pct, monthStart, today, fmtDate, addDays } from '../lib.js';
 
 const TABS = [['revenue', 'Doanh thu'], ['profit', 'Lợi nhuận'], ['channels', 'Kênh'], ['products', 'Sản phẩm'], ['customers', 'Khách'], ['inventory', 'Kho'], ['cash', 'Dòng tiền'], ['custom', 'Chỉ số tuỳ chỉnh'], ['health', 'Sức khoẻ']];
 const PRESETS = [['Tháng này', () => [monthStart(), today()]], ['7 ngày', () => [addDays(today(), -6), today()]], ['30 ngày', () => [addDays(today(), -29), today()]]];
-
-function Bars({ data, value, label }) {
-  const max = Math.max(1, ...data.map((d) => d[value]));
-  return (
-    <div role="img" aria-label="Biểu đồ cột doanh thu theo ngày" style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 120 }}>
-      {data.map((d) => <div key={d.date} title={`${fmtDate(d.date)}: ${vnd(d[value])}`} style={{ flex: 1, minWidth: 2, height: `${Math.max(2, (d[value] / max) * 100)}%`, background: d[value] ? 'var(--terracotta)' : 'var(--hairline)', borderRadius: '2px 2px 0 0' }} />)}
-    </div>
-  );
-}
 
 export default function Reports() {
   const { shopId, isAll } = useSession();
@@ -39,7 +30,7 @@ export default function Reports() {
   return (
     <div className="page stack">
       <div className="page-head"><h1>Báo cáo</h1></div>
-      <Chips options={TABS} value={tab} onChange={setTab} />
+      <Tabs options={TABS} value={tab} onChange={setTab} />
       <div className="row wrap"><DateRange {...range} onChange={setRange} />{PRESETS.map(([l, f]) => <button key={l} className="btn sm" onClick={() => { const [from, to] = f(); setRange({ from, to }); }}>{l}</button>)}</div>
       <Async state={state}>{(d) => <Body tab={tab} d={d} />}</Async>
     </div>

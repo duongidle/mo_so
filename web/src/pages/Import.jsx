@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, ErrorBox, Field, Kpi, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 
 const toInt = (v) => {
@@ -50,11 +50,12 @@ export function rowsToOrders(rows, map) {
 
 const ACTION = { created: ['Tạo mới', 'h-green'], updated: ['Cập nhật', 'h-yellow'], unchanged: ['Không đổi', 'muted'], error: ['Lỗi', 'h-red'] };
 
-export default function ImportPage() {
-  const { shops, shopId, channels } = useSession();
+/** Nhập đơn từ file Excel/CSV. Mở từ trang Đơn hàng. */
+export default function ImportPanel({ onClose, defaultShop }) {
+  const { shops, channels } = useSession();
   const profiles = useAsync(() => api.get('/imports/profiles'), []);
   const batches = useAsync(() => api.get('/imports/batches'), []);
-  const [shop, setShop] = useState(shopId === 'all' ? shops[0]?.id : shopId);
+  const [shop, setShop] = useState(defaultShop && defaultShop !== 'all' ? defaultShop : shops[0]?.id);
   const [profileId, setProfileId] = useState('imp_shopee');
   const [channel, setChannel] = useState('shopee');
   const [file, setFile] = useState(null);
@@ -94,8 +95,11 @@ export default function ImportPage() {
 
   const show = final || preview;
   return (
-    <div className="page stack">
-      <div className="page-head"><h1>Import đơn</h1><a className="btn" href="/api/v1/imports/template.csv">Tải file mẫu chuẩn</a></div>
+    <Modal title="Nhập đơn từ file" wide onClose={onClose}>
+      <div className="row between wrap">
+        <p className="muted small" style={{ margin: 0 }}>Dùng cho file xuất từ Shopee hoặc file theo mẫu chuẩn của Mở Sổ (Facebook, hàng loạt). Đơn đã có sẽ được cập nhật, không tạo trùng.</p>
+        <a className="btn sm" href="/api/v1/imports/template.csv">Tải file mẫu chuẩn</a>
+      </div>
       <Card title="1. Chọn file">
         <div className="grid cols-2">
           <Field label="Vào shop"><select value={shop} onChange={(e) => setShop(e.target.value)}>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
@@ -137,6 +141,6 @@ export default function ImportPage() {
           <div className="table-wrap"><table><tbody>{data.slice(0, 10).map((b) => <tr key={b.id}><td>{fmtDate(b.created_at)}</td><td>{b.shop_name}<div className="small muted">{b.file_name}</div></td><td className="small">+{b.created_count} · ~{b.updated_count} · ={b.unchanged_count} · ✕{b.error_count}</td></tr>)}</tbody></table></div>
         )}</Async>
       </Card>
-    </div>
+    </Modal>
   );
 }

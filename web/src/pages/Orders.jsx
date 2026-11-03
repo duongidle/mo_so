@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, StatusBadge, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, SearchBox, StatusBadge, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import Icon from '../components/Icon.jsx';
+import ImportPanel from './Import.jsx';
 import { vnd, num, fmtDate, STATUS, PAY_STATUS, METHODS } from '../lib.js';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
@@ -18,6 +20,8 @@ export function OrderList() {
   const [extra, setExtra] = useState([]);
   const [cursor, setCursor] = useState(null);
   const nav = useNavigate();
+  const showImport = sp.get('import') === '1';
+  const setImport = (on) => { const n = new URLSearchParams(sp); on ? n.set('import', '1') : n.delete('import'); setSp(n, { replace: true }); };
   const params = { shop_id: shopId === 'all' ? undefined : shopId, status: status || undefined, channel: channel || undefined, q: dq || undefined, from: range.from || undefined, to: range.to || undefined };
   const state = useAsync(async () => { setExtra([]); setCursor(null); return api.get('/orders', { ...params, limit: 50 }); }, [shopId, status, channel, dq, range.from, range.to]);
   const more = async (next) => {
@@ -28,10 +32,10 @@ export function OrderList() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><Link to="/import" className="btn">Import</Link><Link to="/pos" className="btn primary">+ Đơn mới</Link></div></div>
-      <Chips options={TABS} value={status} onChange={(v) => setSp(v ? { status: v } : {})} />
+      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/pos" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
+      <Chips options={TABS} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
       <div className="row wrap">
-        <input placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" value={text} onChange={(e) => setText(e.target.value)} className="grow" style={{ minWidth: 220 }} aria-label="Tìm đơn" />
+        <SearchBox value={text} onChange={setText} placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" />
         <select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 160 }} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
         <DateRange from={range.from} to={range.to} onChange={setRange} />
       </div>
@@ -39,20 +43,20 @@ export function OrderList() {
         {(res) => {
           const rows = [...res.data, ...extra];
           const next = extra.length || cursor ? cursor : res.next_cursor;
-          if (!rows.length) return <Empty>Chưa có đơn nào khớp bộ lọc.</Empty>;
+          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file Shopee</button><Link to="/pos" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
           return (
             <Card flat>
-              <div className="table-wrap"><table>
+              <div className="table-wrap"><table className="stackable">
                 <thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách</th><th>Kênh</th><th>Trạng thái</th><th>Thu tiền</th><th className="num">Tổng</th></tr></thead>
                 <tbody>
                   {rows.map((o) => (
                     <tr key={o.id} className="click" onClick={() => nav(`/orders/${o.id}`)}>
-                      <td><b>{o.code}</b>{o.external_id && <div className="small muted">{o.external_id}</div>}{o.stock_warning ? <div className="small h-yellow">⚠ âm kho</div> : null}</td>
-                      <td>{fmtDate(o.business_date)}</td>
-                      <td>{o.customer_name || <span className="muted">Khách lẻ</span>}<div className="small muted">{o.shop_name}</div></td>
-                      <td>{channels.find((c) => c.id === o.channel_id)?.name}</td>
+                      <td><b style={{ whiteSpace: 'nowrap' }}>{o.code}</b>{o.external_id && <div className="small muted">{o.external_id}</div>}{o.stock_warning ? <div className="small h-yellow">⚠ âm kho</div> : null}</td>
+                      <td className="hide-sm">{fmtDate(o.business_date)}</td>
+                      <td className="full">{o.customer_name || <span className="muted">Khách lẻ</span>}<div className="small muted">{o.shop_name}<span className="only-sm"> · {channels.find((c) => c.id === o.channel_id)?.name} · {fmtDate(o.business_date)}</span></div></td>
+                      <td className="hide-sm">{channels.find((c) => c.id === o.channel_id)?.name}</td>
                       <td><StatusBadge status={o.status} /></td>
-                      <td className="small">{PAY_STATUS[o.payment_status]}</td>
+                      <td className="small hide-sm">{PAY_STATUS[o.payment_status]}</td>
                       <td className="num"><b>{vnd(o.total_amount)}</b></td>
                     </tr>
                   ))}
@@ -63,6 +67,7 @@ export function OrderList() {
           );
         }}
       </Async>
+      {showImport && <ImportPanel defaultShop={shopId} onClose={() => { setImport(false); state.reload(); }} />}
     </div>
   );
 }
@@ -107,7 +112,7 @@ export function OrderDetail() {
                 <a className="btn" href={`/api/v1/orders/${o.id}/receipt`} target="_blank" rel="noreferrer">In phiếu</a>
               </div>
 
-              <div className="grid cols-2">
+              <div className="grid cols-2 collapse">
                 <Card title="Khách">
                   {o.customer_id ? <Link to={`/customers/${o.customer_id}`}>{o.customer_name}</Link> : <span>{o.customer_name || 'Khách lẻ'}</span>}
                   <div className="small muted">{o.customer_phone}</div><div className="small">{o.shipping_address}</div>
@@ -139,7 +144,7 @@ export function OrderDetail() {
                 </table></div>
               </Card>
 
-              <div className="grid cols-2">
+              <div className="grid cols-2 collapse">
                 <Card title="Thanh toán">
                   {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
                     <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {METHODS[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>

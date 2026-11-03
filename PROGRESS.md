@@ -12,7 +12,7 @@
 | M3 | Tồn kho, nhập hàng, NCC | ✅ | ✅ | ✅ | Kiểm kê dạng phiếu nhiều bước chưa làm (đang là điều chỉnh 1 bước). Chuyển kho có API, chưa có màn hình |
 | M4 | Khách hàng chung, mệnh | ✅ | ✅ | ✅ | Chưa có màn hình gộp hồ sơ trùng (API có) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
-| M6 | Import đơn | ✅ | ✅ | ✅ | Đọc Excel/CSV trong trình duyệt (SheetJS). Chưa có màn hình sửa mẫu map cột (API có) |
+| M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Chưa có màn hình sửa mẫu map cột (API có) |
 | M7 | Chi phí, đối soát Shopee | ✅ | ✅ | ✅ | Chi phí huỷ mềm; đối soát theo lô, báo lỗi từng đơn |
 | M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | Tính trực tiếp từ bảng đơn, chưa dùng `daily_stats` (xem nhật ký quyết định) |
 | M9 | Loyalty, nhắc mua lại | ✅ | ✅ | ✅ | Hạng, nhắc mua lại, sinh nhật, gợi ý theo mệnh, mẫu tin nhắn (chỉ soạn + sao chép, không tự gửi) |
@@ -26,6 +26,18 @@
 ---
 
 ## Nhật ký
+
+### 2026-11-03 — Phiên 4: gộp Import vào Đơn hàng, làm lại giao diện
+
+- **Import** nay là cửa sổ mở từ nút "Nhập từ file" ở trang Đơn hàng (cũng hiện ở trạng thái trống). Bỏ mục menu riêng.
+- **Giao diện làm lại** vì bản đầu trông như bài tập: thẻ viền mỏng giống hệt nhau, chữ hệ thống, không có điểm nhấn. Bản mới:
+  - Chữ: Noto Serif (cùng họ với logo) cho tiêu đề và số lớn, Be Vietnam Pro cho giao diện. Đóng gói trong app (`@fontsource`, chỉ subset latin + vietnamese) nên chạy được khi không có mạng.
+  - Bề mặt: nền Linen có hạt giấy rất nhẹ, tờ giấy nổi bằng bóng ấm, bảng kiểu sổ cái (kẻ đôi dưới tiêu đề, dòng kẻ chấm), tab gạch chân, trạng thái dạng chấm + nền nhạt.
+  - Tổng quan có thẻ chính màu Walnut viền Champagne mảnh (gợi ép kim) với doanh thu tháng và biểu đồ 30 ngày; đơn hôm nay; sức khoẻ; tiền.
+  - Sidebar nhóm theo việc, có icon; bộ chọn shop là menu riêng (thay select mặc định); điện thoại có thanh tab nổi dạng viên thuốc, bảng đơn thành danh sách thẻ.
+  - Biểu đồ dùng đường thẳng, không làm mượt: đường cong làm "phình" giữa các ngày doanh thu 0 và gây hiểu nhầm.
+  - Màu nhận diện shop mới (trong tông thương hiệu). Shop đã tạo trước đó giữ màu cũ, đổi được bằng API `PATCH /shops/:id {color}`.
+- Chạy lại toàn bộ luồng bằng trình duyệt (POS bán ngay trên điện thoại, sửa sản phẩm, import Excel từ trang Đơn, đối soát, menu shop): không lỗi.
 
 ### 2026-11-03 — Phiên 3: M7–M13
 

@@ -4,7 +4,8 @@ import { nowIso } from '../../lib/time.js';
 import { audit, emit } from '../../lib/events.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 
-const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#db2777', '#0891b2'];
+// Màu nhận diện shop: giữ trong tông giấy–gỗ–gốm của thương hiệu (đã giảm bão hoà), vẫn đủ khác nhau để phân biệt
+const PALETTE = ['#865C49', '#42633F', '#33566F', '#8A4E14', '#6A4A70', '#A23A30'];
 
 export function getShop(id) {
   const s = getDb().prepare('SELECT * FROM shops WHERE id = ?').get(id);
