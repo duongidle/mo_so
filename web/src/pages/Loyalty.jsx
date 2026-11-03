@@ -169,7 +169,7 @@ function Templates() {
 function Automation() {
   return (
     <Card title="Tự động hoá">
-      <div className="alert warn small">Chưa có gì chạy tự động. Hiện mọi việc ở đây đều do cậu bấm tay.</div>
+      <div className="alert warn small">Chưa có gì chạy tự động. Hiện mọi việc ở đây đều do bạn bấm tay.</div>
       <p style={{ marginBottom: 6 }}>Dự kiến làm ở module này:</p>
       <ul className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
         <li><b>Tự động nhắn tin</b>: gửi nhắc mua lại, lời chúc sinh nhật theo mẫu, khi đến hạn.</li>

@@ -120,6 +120,8 @@ moso/
 10. **Migration chỉ thêm file mới**, không sửa file đã chạy.
 11. **API trả lỗi thống nhất**: `{ "error": { "code": "STOCK_NOT_ENOUGH", "message": "…", "details": {...} } }`.
 12. Mỗi module xong phải có test API cho luồng chính và cập nhật `PROGRESS.md`.
+13. **Route PATCH dùng `patchOf(schema)`** (`server/lib/http.js`), không dùng `.partial()` trực tiếp: trong zod 4 `.partial()` vẫn áp giá trị `.default()` cho trường vắng, nên sửa một ô sẽ âm thầm đặt phí ship, phí sàn, đơn vị… về mặc định. Ràng buộc `.refine()` phải đặt *trước* `.default()` để `patchOf` giữ được.
+14. **Chia tiền dùng `allocate()`** (`server/lib/money.js`), không `Math.round(x * tỷ lệ)` từng phần: tổng các phần phải bằng đúng số gốc.
 
 ---
 
@@ -212,7 +214,10 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
 ### 5.8 Thu chi & Chi phí
 - **Chi phí** (`expenses`): danh mục (quảng cáo FB, phí sàn ngoài đơn, ship, bao bì, mặt bằng, khác), số tiền, ngày, gắn với shop (hoặc chung), kênh (tuỳ chọn).
 - Chi phí chung được **phân bổ** vào shop khi báo cáo theo quy tắc: theo doanh thu thuần (mặc định) / chia đều / tỷ lệ cố định.
-- **Thanh toán** (`payments`): thu từ đơn, trả nhà cung cấp, hoàn tiền khách. Phương thức: tiền mặt, chuyển khoản, Shopee payout, COD.
+- Chi phí chung được phân bổ về shop theo quy tắc **doanh thu thuần** (mặc định), **chia đều** hoặc **tỷ lệ cố định** (`expense_allocation_fixed`: % mỗi shop, không cần cộng đủ 100). Chia bằng `allocate()` nên tổng các shop luôn bằng đúng số chi phí. Chi phí của shop đã lưu trữ vẫn tính vào tổng.
+- Chi phí có **phương thức trả** (`method`): quyết định tiền chi ra khỏi quỹ nào, và được tính là tiền ra trong dòng tiền.
+- **Thanh toán** (`payments`): thu từ đơn, trả nhà cung cấp, hoàn tiền khách, NCC hoàn tiền. Phương thức: tiền mặt, chuyển khoản, Shopee payout, COD, thẻ, ví, khác. Huỷ phiếu nhập đã trả tiền NCC bắt buộc ghi nhận NCC hoàn tiền (`PURCHASE_PAID`).
+- **Quỹ tiền** (`cash_accounts`, `cash_entries`): két tiền mặt, tài khoản ngân hàng, ví. Mỗi phương thức thanh toán thuộc đúng một quỹ (mặc định: Tiền mặt = cash, cod; Ngân hàng = các phương thức còn lại). **Số dư không lưu, luôn tính từ sổ**: số dư đầu (tại `opening_date`) + thu − chi − chi phí theo phương thức ± chuyển quỹ ± điều chỉnh. Chuyển quỹ = hai dòng đối ứng (tổng không đổi, huỷ cả hai phía). **Kiểm đếm** ghi phần chênh thành một dòng điều chỉnh, không sửa thu chi cũ. Phương thức chưa gán quỹ được báo riêng (`unassigned`).
 - **Đối soát Shopee**: tiền đơn Shopee hoàn thành nhưng chưa ghi nhận payout = "tiền đang treo".
 
 ### 5.9 Báo cáo & Sức khoẻ kinh doanh
@@ -230,7 +235,18 @@ Chỉ số:
 
 **Sức khoẻ**: mỗi chỉ số có ngưỡng do người dùng đặt (xanh/vàng/đỏ). Trang tổng quan hiện các chỉ số đang đỏ lên đầu.
 
-Hiệu năng: bảng tổng hợp `daily_stats(business_date, shop_id, channel)` cập nhật khi đơn thay đổi; báo cáo đọc bảng này, chi tiết mới query bảng gốc.
+Hiệu năng: bảng đệm `daily_stats(business_date, shop_id, channel_id)` (migration 017). **Chống lệch bằng trigger SQLite**: mọi INSERT/UPDATE/DELETE trên `orders`, từ bất kỳ đường nào, đánh dấu ô tương ứng (cả ô cũ lẫn ô mới nếu đơn đổi ngày) là "bẩn" trong `daily_stats_dirty`; báo cáo tính lại các ô bẩn từ bảng `orders` trước khi đọc. Không phụ thuộc việc code nghiệp vụ có nhớ cập nhật. `npm run check-stats [-- --fix]` kiểm tra và dựng lại. Báo cáo theo sản phẩm, khách, kho vẫn query bảng gốc.
+
+**Quy tắc số liệu** (có test đối chiếu `tests/finance_integrity.test.js`): tổng theo shop, theo kênh, theo ngày, theo sản phẩm, theo ngũ hành, cộng các đơn lẻ, đều phải khớp tổng quan. Doanh thu theo sản phẩm/ngũ hành đã trừ hàng trả (từng dòng, theo giá trị ghi trên phiếu trả). Phí sàn khi trả hàng được **giả định sàn không hoàn**. Lọc kênh: chi phí gắn kênh khác bị bỏ, chi phí không gắn kênh chia cho các kênh theo doanh thu kênh của shop (cộng các kênh lại = tổng). Số ngày tồn dùng giá vốn bán 30 ngày của **đúng shop/kho đang xem**.
+
+**Bổ sung**:
+- **Báo cáo chi phí** (`/reports/expenses`): theo danh mục (tách phần của shop và phần chung đã chia), so kỳ trước, tỷ lệ trên doanh thu thuần, khoản chi lớn nhất.
+- **Tuổi nợ** (`/reports/aging`): khách nợ và tiền sàn chưa về (tính từ ngày đặt đơn), nợ NCC (từ ngày nhận hàng), chia 0–7, 8–30, 31–60, 61–90, trên 90 ngày.
+- **Lọc danh mục sản phẩm** (kể cả danh mục con) áp dụng cho báo cáo *sản phẩm* và *ngũ hành*. Chỉ số cấp đơn (doanh thu, phí ship, phí sàn, chi phí) không chia theo danh mục vì thuộc cả đơn.
+- **Dòng tiền** tính cả chi phí là tiền ra. Lọc theo shop: chi phí chung không thuộc shop nào nên báo riêng (`shared_expenses_not_included`).
+- **Ước tính thuế** (`tax_enabled`, `tax_rules`): **mặc định tắt và app không tự đặt mức thuế nào** vì mức thuế/ngưỡng của hộ kinh doanh thay đổi theo thời kỳ (các nguồn tra cứu còn mâu thuẫn nhau). Người dùng tự nhập các khoản (tỷ lệ %, cơ sở tính: doanh thu thuần / + phí ship / lợi nhuận ròng, ngưỡng miễn thuế cả năm). Ngưỡng tính cộng dồn từ đầu năm dương lịch, thuế một kỳ = thuế cộng dồn cuối kỳ − trước kỳ nên cộng các kỳ liền nhau ra đúng cả năm. Là thuế của cả hộ nên không tính khi lọc shop/kênh. Chỉ là ước tính để thấy lợi nhuận sau thuế, không phải tờ khai.
+- **Xuất Excel** từ mọi tab báo cáo (đúng cái đang xem, mỗi bảng một sheet, tiền và tỷ lệ là số).
+- **Cách đọc số liệu** (`/guide`, trong menu): thay vì nhìn hàng chục chỉ số, trả lời 5 câu hỏi (Tiền có đủ không? Bán có lời không? Hàng có kẹt/sắp hết không? Khách có quay lại không? Chi phí có phình ra không?), mỗi câu có màu xanh/vàng/đỏ, số chính và việc nên làm; kèm từ điển từng con số. Chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên (quỹ âm, đang lỗ); không bịa ngưỡng mới.
 
 ### 5.10 Loyalty & Campaign
 Một module gộp mọi việc chăm sóc khách (trước đây là trang Chăm sóc, Gợi ý theo mệnh và cài đặt Hạng khách), trang `/loyalty`, các tab: **Hôm nay · Gợi ý theo mệnh · Hạng khách · Mẫu tin nhắn · Tự động hoá**. `/care` chuyển hướng về đây. Chỗ để sau này thêm các việc tự động (mục dưới).
@@ -299,7 +315,8 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | `import_profiles`, `import_batches`, `import_rows` | import |
 | `custom_fields`, `custom_values`, `report_metrics` | tuỳ chỉnh |
 | `loyalty_tiers`, `reminders`, `message_templates` | loyalty |
-| `daily_stats` | tổng hợp báo cáo |
+| `daily_stats`, `daily_stats_dirty` | bảng đệm tổng hợp báo cáo + ô cần tính lại (trigger trên `orders`) |
+| `cash_accounts`, `cash_entries` | quỹ tiền; chuyển quỹ và điều chỉnh kiểm đếm |
 | `events`, `webhooks`, `webhook_deliveries` | sự kiện & webhook |
 | `audit_log` | ai sửa gì, khi nào, trước/sau |
 | `sequences` | bộ đếm sinh mã hiển thị |
@@ -327,13 +344,15 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | Nhập hàng | phiếu nhập, nhà cung cấp, công nợ NCC |
 | Khách hàng | danh sách theo shop (lọc nhãn, mệnh, cột riêng), thêm khách vào shop, hồ sơ (đơn, mệnh, hạng, nhãn, thông tin riêng, ghi chú), xoá khỏi shop, gộp trùng, xuất file |
 | Loyalty & Campaign | hôm nay nên liên hệ (nhắc mua lại, sinh nhật), gợi ý theo mệnh, hạng khách, mẫu tin nhắn, tự động hoá (chưa có) |
-| Chi phí | danh sách, thêm nhanh |
-| Báo cáo | các tab: Doanh thu, Lợi nhuận, Kênh, Sản phẩm, Khách, Kho, Dòng tiền, Chỉ số tuỳ chỉnh |
-| Cài đặt | shop, kho, kênh, ngưỡng sức khoẻ, trường tuỳ chỉnh, API key, webhook, sao lưu, mật khẩu |
+| Chi phí & đối soát | tab Chi phí (danh sách, thêm nhanh, chọn phương thức trả), Quỹ tiền (số dư, chuyển quỹ, kiểm đếm, sổ quỹ), Đối soát Shopee |
+| Báo cáo | các tab: Doanh thu, Lợi nhuận (kèm ước tính thuế), Chi phí, Kênh, Sản phẩm (lọc danh mục), Khách, Kho, Tiền & công nợ (số dư quỹ, dòng tiền, tuổi nợ), Chỉ số tuỳ chỉnh, Sức khoẻ; xuất Excel từng tab |
+| Cách đọc số liệu | 5 câu hỏi sức khoẻ kinh doanh có màu và việc nên làm, màu nghĩa là gì, từ điển các con số |
+| Cài đặt | shop, kho, kênh, ngưỡng sức khoẻ và cách chia chi phí chung, trường tuỳ chỉnh, thuế ước tính, API key, webhook, sao lưu, mật khẩu |
 
 ### Phong cách
 - Nhận diện, bảng màu và quy tắc dùng màu: xem mục 7A. Token màu nằm ở `brand/tokens.css`.
 - Số tiền căn phải, định dạng `1.250.000 ₫`.
+- Trang giao diện không dùng ngôi "cậu/tớ" (app nhiều tài khoản): dùng câu mệnh lệnh trung tính hoặc "bạn".
 - Màu trạng thái đơn là ngoại lệ chức năng (nháp xám, xác nhận xanh dương, đang giao tím, hoàn thành xanh lá, huỷ đỏ, trả hàng cam), đã giảm bão hoà trong `tokens.css` để hợp tông.
 - Nút bấm cao ≥ 44px trên điện thoại.
 
@@ -510,3 +529,10 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Nhãn khách là của từng shop (`customer_tags`), bỏ cột `customers.tags` chung | Cùng nguyên tắc với thông tin riêng theo shop: nhãn "VIP" ở shop này không có nghĩa ở shop kia. |
 | 2026-11-03 | Gộp Chăm sóc + Gợi ý theo mệnh + Hạng khách + Mẫu tin nhắn thành module "Loyalty & Campaign" | Các việc này cùng một mục đích (giữ chân khách, bán thêm) và sắp có thêm tự động hoá (nhắn tin, nâng hạng). Một chỗ thì dễ thêm hơn rải rác ở Cài đặt/hồ sơ khách. Tab "Tự động hoá" nói thẳng là chưa có gì chạy để không ai tưởng đã bật. |
 | 2026-11-03 | Terracotta của theme `oto` đậm hơn (`#946020`) | Bản đầu `#A2692C` chỉ 4.1:1 trên nền, dưới AA cho chữ nhỏ. |
+| 2026-11-03 | Làm `daily_stats` bằng trigger + đánh dấu ô bẩn + tính lại khi đọc (thay quyết định "chưa làm" trước đó) | Lý do cũ: đồng bộ qua mọi điểm sửa đơn dễ lệch. Trigger trên `orders` bắt mọi đường thay đổi (kể cả SQL trực tiếp) nên không thể quên; ô được tính lại bằng chính câu SQL tổng hợp từ bảng gốc nên không có hai bản logic. Có `verifyStats`, script `check-stats` và test chạy qua mọi loại thao tác. |
+| 2026-11-03 | Ước tính thuế do người dùng tự nhập, mặc định tắt, app không đặt sẵn mức nào | Tra cứu thấy nguồn mâu thuẫn (ngưỡng không chịu thuế 500 triệu hay 1 tỷ, tỷ lệ TNCN theo ngành không rõ). Số thuế sai trông vẫn hợp lý nên tệ hơn không có. Cơ chế đủ linh hoạt (tỷ lệ, cơ sở, ngưỡng năm) để nhập đúng quy định hiện hành. |
+| 2026-11-03 | Số dư quỹ luôn tính từ sổ, không lưu; kiểm đếm ghi dòng điều chỉnh | Số lưu sẽ lệch với thu chi. Dòng điều chỉnh làm chênh lệch nhìn thấy được thay vì sửa lặng lẽ thu chi cũ. |
+| 2026-11-03 | Chi phí là tiền ra theo phương thức trả; mỗi phương thức thuộc đúng một quỹ | Dòng tiền thiếu chi phí khiến tiền ròng cao hơn thực tế. Một phương thức một quỹ để mỗi đồng chỉ nằm ở một nơi. |
+| 2026-11-03 | Lọc danh mục chỉ áp dụng cho báo cáo sản phẩm và ngũ hành | Doanh thu, phí ship, phí sàn, chi phí thuộc cả đơn chứ không thuộc từng dòng; chia theo danh mục phải bịa tỷ lệ. |
+| 2026-11-03 | Route PATCH dùng `patchOf`; huỷ phiếu nhập đã trả tiền phải kèm NCC hoàn tiền | `.partial()` của zod 4 áp `.default()` làm sửa đơn nháp xoá phí ship/phí sàn/giảm giá và sửa đơn đã chốt luôn bị 409. Huỷ phiếu nhập đã trả để tiền đã chi nằm đó không hàng, không công nợ. |
+| 2026-11-03 | Trang "Cách đọc số liệu" chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên | Chủ shop nhìn nhiều chỉ số không biết xem gì. Ngưỡng bịa thêm sẽ gây báo động giả; quỹ âm hoặc đang lỗ thì đúng với mọi shop. |

@@ -79,7 +79,7 @@ export default function Dashboard({ progress, reopenGuide }) {
                 </Card>
 
                 <div className="stack">
-                  <Card title={flagged.length ? 'Cần để ý' : 'Sức khoẻ kinh doanh'} actions={<Link to="/reports" className="small">Chi tiết</Link>}>
+                  <Card title={flagged.length ? 'Cần để ý' : 'Sức khoẻ kinh doanh'} actions={<><Link to="/guide" className="small">Cách đọc</Link><Link to="/reports" className="small">Chi tiết</Link></>}>
                     {flagged.length === 0 ? <span className="muted">Mọi chỉ số đang trong ngưỡng an toàn.</span> : flagged.map((h) => (
                       <div key={h.key} className="meter">
                         <span className={`dot h-${h.status}`} />

@@ -4,7 +4,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 
-const TABS = [['shops', 'Shop & kho'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế (ước tính)'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
 export default function Settings() {
   const [tab, setTab] = useState('shops');
@@ -13,7 +13,7 @@ export default function Settings() {
       <div className="page-head"><h1>Cài đặt</h1></div>
       <Tabs options={TABS} value={tab} onChange={setTab} />
       {tab === 'shops' && <Shops />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
-      {tab === 'metrics' && <Metrics />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
+      {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>
   );
 }
@@ -56,7 +56,7 @@ function Shops() {
 }
 
 function Thresholds() {
-  const { settings, reload } = useSession();
+  const { settings, reload, shops } = useSession();
   const [s, setS] = useState(() => structuredClone(settings));
   const { busy, error, run } = useAction();
   const [saved, setSaved] = useState(false);
@@ -76,10 +76,55 @@ function Thresholds() {
           <Field label="Cảnh báo sắp hết khi còn ít hơn (ngày bán)"><input type="number" min="1" value={s.low_stock_days} onChange={(e) => setS({ ...s, low_stock_days: Number(e.target.value) })} /></Field>
           <Field label="Hàng bán chậm: không bán trong (ngày)"><input type="number" min="1" value={s.slow_moving_days} onChange={(e) => setS({ ...s, slow_moving_days: Number(e.target.value) })} /></Field>
         </div>
-        <Field label="Chi phí chung chia về shop theo"><select value={s.expense_allocation} onChange={(e) => setS({ ...s, expense_allocation: e.target.value })}><option value="revenue">Doanh thu thuần</option><option value="equal">Chia đều</option></select></Field>
+        <Field label="Chi phí chung chia về shop theo" hint="Chi phí không gắn shop nào (tiền thuê mặt bằng, phần mềm…) được chia về các shop khi xem báo cáo từng shop"><select value={s.expense_allocation} onChange={(e) => setS({ ...s, expense_allocation: e.target.value })}><option value="revenue">Doanh thu thuần (shop bán nhiều gánh nhiều)</option><option value="equal">Chia đều cho các shop</option><option value="fixed">Tỷ lệ cố định tự đặt</option></select></Field>
+        {s.expense_allocation === 'fixed' && (() => {
+          const fixed = s.expense_allocation_fixed || {};
+          const total = shops.reduce((a, x) => a + (Number(fixed[x.id]) || 0), 0);
+          return (
+            <div className="stack" style={{ gap: 6 }}>
+              {shops.map((x) => <div key={x.id} className="row between"><span>{x.name}</span><span className="row"><input type="number" min="0" max="100" style={{ width: 90 }} aria-label={`Tỷ lệ ${x.name}`} value={fixed[x.id] ?? ''} onChange={(e) => setS({ ...s, expense_allocation_fixed: { ...fixed, [x.id]: e.target.value === '' ? 0 : Number(e.target.value) } })} /><span className="muted">%</span></span></div>)}
+              <div className={`small ${total === 100 ? 'h-green' : 'h-yellow'}`}>Tổng {total}%{total === 100 ? '' : total === 0 ? ' (chưa đặt: app sẽ chia đều)' : ' (không cộng đủ 100% cũng được, app chia theo tỷ lệ tương đối)'}</div>
+            </div>
+          );
+        })()}
         <label className="check"><input type="checkbox" checked={s.allow_negative_stock} onChange={(e) => setS({ ...s, allow_negative_stock: e.target.checked })} />Cho phép bán âm kho (không khuyến khích)</label>
         <ErrorBox error={error} />{saved && <div className="alert ok">Đã lưu.</div>}
         <div><button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.patch('/settings', s); setSaved(true); reload(); })}>Lưu</button></div>
+      </div>
+    </Card>
+  );
+}
+
+const TAX_BASE = { net_revenue: 'Doanh thu thuần (hàng sau trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả', net_profit: 'Lợi nhuận ròng ước tính' };
+/** Ước tính thuế: app KHÔNG tự đặt mức thuế nào. Bạn (hoặc kế toán) nhập tỷ lệ theo quy định đang áp dụng với hộ kinh doanh của mình. */
+function Tax() {
+  const { settings, reload } = useSession();
+  const [enabled, setEnabled] = useState(!!settings.tax_enabled);
+  const [rules, setRules] = useState(() => structuredClone(settings.tax_rules || []));
+  const { busy, error, run } = useAction();
+  const [saved, setSaved] = useState(false);
+  const set = (i, k, v) => { setRules(rules.map((r, j) => (j === i ? { ...r, [k]: v } : r))); setSaved(false); };
+  return (
+    <Card title="Ước tính thuế">
+      <div className="stack">
+        <div className="alert warn small">Mức thuế và ngưỡng miễn thuế của hộ kinh doanh thay đổi theo từng thời kỳ nên app <b>không tự điền</b>. Nhập theo quy định đang áp dụng (hỏi kế toán hoặc chi cục thuế). Kết quả chỉ là <b>ước tính</b> để thấy lợi nhuận sau thuế, không phải tờ khai.</div>
+        <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); setSaved(false); }} />Hiện ước tính thuế trong báo cáo Lợi nhuận</label>
+        {rules.map((r, i) => (
+          <div key={i} className="card flat stack" style={{ gap: 8 }}>
+            <div className="grid cols-2">
+              <Field label="Tên khoản thuế"><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} placeholder="VD: Thuế GTGT" /></Field>
+              <Field label="Tỷ lệ (%)"><input type="number" min="0" max="100" step="0.01" value={r.rate_pct} onChange={(e) => set(i, 'rate_pct', Number(e.target.value))} /></Field>
+            </div>
+            <div className="grid cols-2">
+              <Field label="Tính trên"><select value={r.base} onChange={(e) => set(i, 'base', e.target.value)}>{Object.entries(TAX_BASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+              <Field label="Ngưỡng miễn thuế cả năm (₫)" hint="Chỉ phần vượt ngưỡng (cộng dồn từ đầu năm) mới chịu thuế. 0 = không có ngưỡng"><input type="number" min="0" value={r.exempt_threshold_year ?? 0} onChange={(e) => set(i, 'exempt_threshold_year', Number(e.target.value))} /></Field>
+            </div>
+            <div><button className="btn sm danger" onClick={() => { setRules(rules.filter((_, j) => j !== i)); setSaved(false); }}>Xoá khoản này</button></div>
+          </div>
+        ))}
+        <div><button className="btn sm" disabled={rules.length >= 10} onClick={() => { setRules([...rules, { name: '', rate_pct: 0, base: 'net_revenue', exempt_threshold_year: 0 }]); setSaved(false); }}>+ Khoản thuế</button></div>
+        <ErrorBox error={error} />{saved && <div className="alert ok">Đã lưu.</div>}
+        <div><button className="btn primary" disabled={busy || rules.some((r) => !r.name.trim())} onClick={() => run(async () => { await api.patch('/settings', { tax_enabled: enabled, tax_rules: rules }); setSaved(true); reload(); })}>Lưu</button></div>
       </div>
     </Card>
   );
