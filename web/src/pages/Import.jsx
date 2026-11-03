@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
+import ProfileEditor from '../components/ProfileEditor.jsx';
 
 const toInt = (v) => {
   if (v === undefined || v === null || v === '') return 0;
@@ -62,6 +63,7 @@ export default function ImportPanel({ onClose, defaultShop }) {
   const [parsed, setParsed] = useState(null);
   const [preview, setPreview] = useState(null);
   const [final, setFinal] = useState(null);
+  const [editing, setEditing] = useState(null); // { profile } | { profile: null } khi tạo mới
   const { busy, error, run } = useAction();
 
   const profile = profiles.data?.data?.find((p) => p.id === profileId);
@@ -103,7 +105,11 @@ export default function ImportPanel({ onClose, defaultShop }) {
       <Card title="1. Chọn file">
         <div className="grid cols-2">
           <Field label="Vào shop"><select value={shop} onChange={(e) => setShop(e.target.value)}>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-          <Field label="Mẫu map cột"><select value={profileId} onChange={(e) => { setProfileId(e.target.value); const p = profiles.data.data.find((x) => x.id === e.target.value); if (p) setChannel(p.channel_id); }}>{profiles.data?.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+          <Field label="Mẫu map cột">
+            <div className="row"><select value={profileId} onChange={(e) => { setProfileId(e.target.value); const p = profiles.data.data.find((x) => x.id === e.target.value); if (p) setChannel(p.channel_id); }}>{profiles.data?.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+              <button className="btn sm" type="button" onClick={() => setEditing({ profile })} disabled={!profile}>Sửa</button>
+              <button className="btn sm" type="button" onClick={() => setEditing({ profile: null })}>Mẫu mới</button></div>
+          </Field>
           <Field label="Kênh"><select value={channel} onChange={(e) => setChannel(e.target.value)}>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
           <Field label="File Excel / CSV" hint="File được đọc ngay trên máy này, không tải thô lên server."><input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => e.target.files[0] && onFile(e.target.files[0])} /></Field>
         </div>
@@ -113,6 +119,9 @@ export default function ImportPanel({ onClose, defaultShop }) {
         <ErrorBox error={error} />
         <div className="row" style={{ marginTop: 10 }}><button className="btn primary" disabled={!parsed || busy} onClick={() => send(false)}>{busy ? 'Đang xử lý…' : 'Xem thử (chưa ghi gì)'}</button></div>
       </Card>
+
+      {editing && <ProfileEditor profile={editing.profile} channels={channels} columns={parsed?.columns || []} rows={parsed?.rows || []} onClose={() => setEditing(null)}
+        onSaved={(p) => { setEditing(null); profiles.reload(); setProfileId(p.id); setChannel(p.channel_id); setPreview(null); }} />}
 
       {show && (
         <Card title={final ? '3. Kết quả' : '2. Xem thử'}>

@@ -8,6 +8,73 @@ import { vnd, fmtDate } from '../lib.js';
 import { Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 import Icon from '../components/Icon.jsx';
 
+/** So sánh hai hồ sơ và xác nhận gộp: `target` được giữ, `source` bị gộp vào (không hoàn tác được). */
+function MergeDialog({ targetId, sourceId, onClose, onDone }) {
+  const t = useAsync(() => api.get(`/customers/${targetId}`), [targetId]);
+  const sr = useAsync(() => api.get(`/customers/${sourceId}`), [sourceId]);
+  const { busy, error, run } = useAction();
+  const col = (c, role) => (
+    <div className="stack" style={{ gap: 4 }}>
+      <span className="eyebrow">{role}</span>
+      <b>{c.name}</b>
+      <span className="small muted">{c.code} · {c.phone || 'chưa có SĐT'}</span>
+      {c.facebook_url && <span className="small">{c.facebook_url}</span>}
+      <span className="small">{c.order_count} đơn · {vnd(c.total_spent)}</span>
+      <span className="small muted">Gần nhất: {fmtDate(c.last_order_at)} · {c.notes.length} ghi chú</span>
+    </div>
+  );
+  return (
+    <Modal title="Gộp hai hồ sơ khách" onClose={onClose} footer={<button className="btn primary" disabled={busy || !t.data || !sr.data} onClick={() => run(async () => { await api.post(`/customers/${targetId}/merge`, { source_id: sourceId }); onDone(); })}>Gộp</button>}>
+      <Async state={t}>{({ data: a }) => <Async state={sr}>{({ data: b }) => (
+        <>
+          <div className="grid cols-2 collapse">{col(a, 'Giữ lại')}{col(b, 'Gộp vào hồ sơ giữ lại')}</div>
+          <div className="alert warn small">Toàn bộ đơn hàng và ghi chú của hồ sơ bên phải chuyển sang hồ sơ bên trái. Thông tin còn thiếu (SĐT phụ, Facebook, địa chỉ, thông tin riêng từng shop) được bổ sung; nếu cả hai đã có thì giữ của hồ sơ bên trái. Hồ sơ bên phải bị đánh dấu đã gộp. <b>Không hoàn tác được.</b></div>
+        </>
+      )}</Async>}</Async>
+      <ErrorBox error={error} />
+    </Modal>
+  );
+}
+
+/** Danh sách khách nghi trùng (cùng tên hoặc SĐT chéo) để chọn giữ hồ sơ nào */
+function DuplicatesModal({ onClose }) {
+  const state = useAsync(() => api.get('/customers/duplicates'), []);
+  const [pair, setPair] = useState(null);
+  return (
+    <Modal title="Khách nghi trùng" wide onClose={onClose}>
+      <p className="small muted" style={{ margin: 0 }}>Cùng tên, hoặc SĐT của người này là SĐT phụ của người kia. Kiểm tra kỹ trước khi gộp: hai người trùng tên chưa chắc là một.</p>
+      <Async state={state}>{({ data }) => !data.length ? <Empty>Không có khách nào nghi trùng.</Empty> : (
+        <div className="table-wrap"><table>
+          <thead><tr><th>Hồ sơ A</th><th>Hồ sơ B</th><th>Lý do</th><th /></tr></thead>
+          <tbody>{data.map((d) => (
+            <tr key={`${d.a_id}${d.b_id}`}>
+              <td><b>{d.a_name}</b><div className="small muted">{d.a_code} · {d.a_phone || '—'}</div></td>
+              <td><b>{d.b_name}</b><div className="small muted">{d.b_code} · {d.b_phone || '—'}</div></td>
+              <td className="small">{d.reason === 'phone' ? 'SĐT trùng chéo' : 'Trùng tên'}</td>
+              <td><div className="row wrap"><button className="btn sm" onClick={() => setPair({ target: d.a_id, source: d.b_id })}>Giữ A, gộp B</button><button className="btn sm" onClick={() => setPair({ target: d.b_id, source: d.a_id })}>Giữ B, gộp A</button></div></td>
+            </tr>))}</tbody>
+        </table></div>
+      )}</Async>
+      {pair && <MergeDialog targetId={pair.target} sourceId={pair.source} onClose={() => setPair(null)} onDone={() => { setPair(null); state.reload(); }} />}
+    </Modal>
+  );
+}
+
+/** Từ hồ sơ khách: tìm một khách khác để gộp vào hồ sơ này */
+function MergeInto({ targetId, onClose, onDone }) {
+  const [q, setQ] = useState('');
+  const dq = useDebounced(q);
+  const found = useAsync(() => (dq ? api.get('/customers', { q: dq, limit: 8 }) : Promise.resolve({ data: [] })), [dq]);
+  const [source, setSource] = useState(null);
+  if (source) return <MergeDialog targetId={targetId} sourceId={source} onClose={() => setSource(null)} onDone={onDone} />;
+  return (
+    <Modal title="Gộp khách khác vào hồ sơ này" onClose={onClose}>
+      <SearchBox value={q} onChange={setQ} placeholder="Tìm khách cần gộp (tên, SĐT)…" autoFocus />
+      {found.data?.data?.filter((c) => c.id !== targetId).map((c) => <div key={c.id} className="pick" onClick={() => setSource(c.id)}><span><b>{c.name}</b><div className="small muted">{c.code} · {c.phone || '—'}</div></span><span className="small muted">{c.order_count} đơn</span></div>)}
+    </Modal>
+  );
+}
+
 const TYPES = { text: 'Văn bản', number: 'Số', money: 'Tiền', date: 'Ngày', select: 'Chọn một', multiselect: 'Chọn nhiều', boolean: 'Có/Không' };
 
 export function CustomerList() {
@@ -18,6 +85,8 @@ export function CustomerList() {
   const [element, setElement] = useState('');
   const [form, setForm] = useState(null);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [dupOpen, setDupOpen] = useState(false);
+  const dups = useAsync(() => api.get('/customers/duplicates'), []);
   const nav = useNavigate();
   const showMenh = has('feng_shui');
   const state = useAsync(() => api.get('/customers', { q: dq || undefined, sort, element: showMenh ? element || undefined : undefined, shop_id: isAll ? undefined : shop?.id, limit: 100 }), [dq, sort, element, shop?.id, showMenh]);
@@ -26,6 +95,7 @@ export function CustomerList() {
       <div className="page-head">
         <div><h1>Khách hàng</h1><div className="muted small sub">{isAll ? 'Hồ sơ chung của mọi shop. Chọn một shop để xem thông tin riêng của shop đó.' : `Thông tin riêng đang hiển thị: ${shop?.name}`}</div></div>
         <div className="row">
+          {dups.data?.data?.length > 0 && <button className="btn" onClick={() => setDupOpen(true)}>Khách trùng <span className="badge plain">{dups.data.data.length}</span></button>}
           {!isAll && <button className="btn" onClick={() => setFieldsOpen(true)}><Icon name="cog" />Thông tin khách của shop</button>}
           <button className="btn primary" onClick={() => setForm({ name: '', phone: '' })}><Icon name="plus" />Khách</button>
         </div>
@@ -50,6 +120,7 @@ export function CustomerList() {
       </Async>
       {form && <CustomerForm init={form} onClose={() => setForm(null)} onSaved={(c) => { setForm(null); nav(`/customers/${c.id}`); }} />}
       {fieldsOpen && <ShopFieldsManager shop={shop} onClose={() => { setFieldsOpen(false); state.reload(); }} />}
+      {dupOpen && <DuplicatesModal onClose={() => { setDupOpen(false); state.reload(); dups.reload(); }} />}
     </div>
   );
 }
@@ -158,6 +229,7 @@ export function CustomerDetail() {
   const sug = useAsync(() => (has('feng_shui') && shopId ? api.get(`/loyalty/customers/${id}/suggestions`, { shop_id: shopId }) : Promise.resolve({ data: [] })), [id, shopId, has('feng_shui')]);
   const [note, setNote] = useState('');
   const [edit, setEdit] = useState(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const { busy, error, run } = useAction();
   const reloadAll = () => { state.reload(); loy.reload(); sug.reload(); };
   return (
@@ -165,7 +237,7 @@ export function CustomerDetail() {
       <Async state={state}>
         {({ data: c }) => (
           <>
-            <div className="page-head"><div><h1>{c.name}</h1><div className="muted small sub">{c.code} · {c.phone} {c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">Facebook</a>}</div></div><button className="btn" onClick={() => setEdit(c)}>Sửa thông tin chung</button></div>
+            <div className="page-head"><div><h1>{c.name}</h1><div className="muted small sub">{c.code} · {c.phone} {c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">Facebook</a>}</div></div><div className="row wrap"><button className="btn" onClick={() => setMergeOpen(true)}>Gộp khách trùng</button><button className="btn" onClick={() => setEdit(c)}>Sửa thông tin chung</button></div></div>
             <div className="grid cols-3">
               {has('feng_shui') && (
                 <Card title="Mệnh">{c.feng_shui ? <><Element name={c.feng_shui.element} size="xl" />{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Ước tính từ năm sinh (chưa biết ngày)' : 'Tính từ ngày sinh theo âm lịch'}</div><div className="row wrap small" style={{ marginTop: 6 }}>Hợp: {c.feng_shui.compatible_elements.map((e) => <Element key={e} name={e} size="sm" />)}</div></> : <span className="muted small">Chưa có ngày/năm sinh trong thông tin riêng của shop.</span>}</Card>
@@ -186,6 +258,7 @@ export function CustomerDetail() {
               <div className="row"><input className="grow" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Thêm ghi chú…" aria-label="Ghi chú" /><button className="btn" disabled={busy || !note} onClick={() => run(async () => { await api.post(`/customers/${c.id}/notes`, { content: note, shop_id: shopId }); setNote(''); state.reload(); })}>Lưu</button></div>
               <ErrorBox error={error} />
             </Card>
+            {mergeOpen && <MergeInto targetId={c.id} onClose={() => setMergeOpen(false)} onDone={() => { setMergeOpen(false); reloadAll(); orders.reload(); }} />}
             {edit && <CustomerForm init={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reloadAll(); }} />}
           </>
         )}

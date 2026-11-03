@@ -5,6 +5,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, SearchBox, StatusBadge, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
+import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import { vnd, num, fmtDate, STATUS, PAY_STATUS, METHODS } from '../lib.js';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
@@ -155,6 +156,8 @@ export function OrderDetail() {
                   {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.reason && ` — ${r.reason}`}</div>)}
                 </Card>
               </div>
+
+              <CustomFieldsPanel entity="order" id={o.id} shopId={o.shop_id} />
 
               {modal === 'cancel' && (
                 <Modal title="Huỷ đơn" onClose={() => setModal(null)} footer={<button className="btn danger" disabled={act.busy} onClick={() => doStatus('cancelled', form.note)}>Xác nhận huỷ</button>}>
