@@ -1,0 +1,33 @@
+/* Mở Sổ — design tokens. Nguồn sự thật cho màu: CLAUDE.md mục 7A.
+   Giao diện web (web/src) nhập file này, không viết lại mã màu. */
+
+:root {
+  /* Bảng màu thương hiệu chính thức */
+  --linen: #ede3d2;       /* nền chính, giấy */
+  --walnut: #301f12;      /* chữ, màu tối chủ đạo */
+  --terracotta: #865c49;  /* điểm nhấn ấm */
+  --oxblood: #633d37;     /* dấu niêm, điểm nhấn cao cấp */
+  --champagne: #cdb58d;   /* nhấn bổ sung: nét mảnh, viền, ép kim. KHÔNG dùng làm chữ trên nền Linen */
+
+  /* Vai trò trong giao diện */
+  --bg: var(--linen);
+  --text: var(--walnut);
+  --text-muted: #5c4a3b;          /* Walnut nhạt đi, 6.6:1 trên Linen */
+  --accent: var(--terracotta);    /* 4.5:1 trên Linen: đủ cho chữ thường, dùng cho liên kết/nút phụ */
+  --seal: var(--oxblood);         /* nút chính, dấu nhấn cao cấp */
+  --hairline: color-mix(in srgb, var(--walnut) 18%, transparent);
+  --surface: color-mix(in srgb, var(--linen) 55%, white); /* thẻ/ô nhập nổi lên khỏi nền */
+
+  /* Màu trạng thái đơn hàng: ngoại lệ chức năng, đã giảm bão hoà cho hợp tông.
+     Mọi giá trị ≥ 4.5:1 trên Linen. */
+  --st-draft: #6e6558;
+  --st-confirmed: #33566f;
+  --st-shipping: #6a4a70;
+  --st-completed: #42633f;
+  --st-cancelled: #a23a30;
+  --st-returned: #8a4e14;
+
+  /* Chữ */
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  --font-ui: -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, system-ui, sans-serif;
+}
