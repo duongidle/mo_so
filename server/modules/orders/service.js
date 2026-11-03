@@ -65,7 +65,8 @@ function dueAmount(o) {
   return Math.max(0, base - o.returned_amount);
 }
 
-export function listOrders(f) {
+/** Bộ lọc đơn dùng chung cho danh sách và xuất file, để hai nơi luôn lọc giống hệt nhau */
+export function orderFilter(f) {
   const where = [];
   const params = [];
   if (f.shopIds?.length) (where.push(`o.shop_id IN (${f.shopIds.map(() => '?').join(',')})`), params.push(...f.shopIds));
@@ -79,6 +80,11 @@ export function listOrders(f) {
     where.push('(o.code LIKE ? OR o.external_id LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ? OR o.tracking_code LIKE ?)');
     params.push(...Array(5).fill(`%${f.q}%`));
   }
+  return { where, params };
+}
+
+export function listOrders(f) {
+  const { where, params } = orderFilter(f);
   if (f.cursor) (where.push('o.id < ?'), params.push(f.cursor));
   const limit = f.limit ?? 50;
   const rows = db()

@@ -199,3 +199,59 @@ test('trường thông tin khách hiện thành cột ở danh sách khách; tr�
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('xuất đơn hàng: tải CSV và Excel thật theo bộ lọc đang xem', { skip }, async () => {
+  const { page, errors, ctx } = await login();
+  await pickShop(page, 'Nước hoa');
+  await page.goto(`${base}/orders`);
+  await page.waitForSelector('tr.click');
+  const shown = await page.locator('tbody tr.click').count();
+
+  const readDownload = async (dl) => {
+    const file = path.join(os.tmpdir(), `moso-dl-${Date.now()}-${dl.suggestedFilename()}`);
+    await dl.saveAs(file);
+    return file;
+  };
+
+  // CSV
+  await page.click('button:has-text("Xuất file")');
+  await page.waitForSelector('text=Khớp');
+  await page.getByLabel(/CSV/).check();
+  const [csvDl] = await Promise.all([page.waitForEvent('download'), page.click('.modal button.primary')]);
+  assert.match(csvDl.suggestedFilename(), /^don-hang-tat-ca\.csv$/);
+  const csvFile = await readDownload(csvDl);
+  const buf = fs.readFileSync(csvFile);
+  assert.deepEqual([...buf.slice(0, 3)], [0xef, 0xbb, 0xbf], 'BOM');
+  const lines = buf.toString('utf8').replace('﻿', '').trim().split('\r\n');
+  assert.ok(lines[0].startsWith('Mã đơn,Mã đơn trên kênh,Shop,Kênh'));
+  assert.equal(lines.length - 1, shown, 'số dòng trong file = số đơn đang thấy trong danh sách');
+  assert.ok(lines.some((l) => l.includes('Hoàn thành')));
+
+  // Excel, kiểu mỗi sản phẩm một dòng
+  await page.click('button:has-text("Xuất file")');
+  await page.waitForSelector('text=Khớp');
+  await page.getByLabel(/Mỗi sản phẩm một dòng/).check();
+  await page.getByLabel(/Excel/).check();
+  const [xlDl] = await Promise.all([page.waitForEvent('download'), page.click('.modal button.primary')]);
+  assert.match(xlDl.suggestedFilename(), /^don-hang-chi-tiet-tat-ca\.xlsx$/);
+  const xlFile = await readDownload(xlDl);
+  const XLSX = require(path.resolve('web/node_modules/xlsx'));
+  const wb = XLSX.read(fs.readFileSync(xlFile));
+  assert.deepEqual(wb.SheetNames, ['Chi tiết hàng']);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets['Chi tiết hàng'], { header: 1 });
+  assert.equal(rows[0][8], 'SKU');
+  assert.ok(rows.length > 1);
+  const qtyCol = rows[0].indexOf('Số lượng');
+  assert.equal(typeof rows[1][qtyCol], 'number', 'số trong Excel là số, không phải chữ');
+
+  // Lọc theo trạng thái rồi xuất: file chỉ gồm đơn khớp
+  await page.click('button.chip:has-text("Đã huỷ")');
+  await page.waitForTimeout(600);
+  await page.click('button:has-text("Xuất file")');
+  await page.waitForSelector('text=Trạng thái: Đã huỷ');
+  await page.keyboard.press('Escape');
+
+  assert.deepEqual(errors, []);
+  for (const f of [csvFile, xlFile]) fs.rmSync(f, { force: true });
+  await ctx.close();
+});

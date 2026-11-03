@@ -40,7 +40,8 @@ describe('Giao diện và tính năng đổi theo shop đang chọn', () => {
   it('mặc định theo shop đầu tiên; chuyển shop thì theme và tính năng đổi theo ngành', async () => {
     renderApp();
     await waitFor(() => expect(screen.getByTestId('shop').textContent).toBe('Nước hoa ô tô'));
-    expect(document.documentElement.dataset.theme).toBe('nuochoa');
+    // theme được gán ở hiệu ứng chạy sau khi vẽ, nên phải chờ thay vì đọc ngay
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('nuochoa'));
     expect(screen.getByTestId('menh').textContent).toBe('false');
 
     fireEvent.click(screen.getByText('pt1'));

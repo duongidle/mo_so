@@ -51,3 +51,13 @@ export function lunarInfo(date = today()) {
     ...(() => { const e = elementOfLunarYear(l.year); return { yearCanChi: e.can_chi, yearElement: e.element, napAm: e.nap_am }; })(),
   };
 }
+
+/**
+ * Tham số xuất đơn từ bộ lọc đang xem ở trang Đơn hàng (cùng tên tham số với danh sách để file khớp danh sách).
+ * Bỏ các giá trị rỗng.
+ */
+export function exportQuery(filters, { layout = 'orders', format = 'csv' } = {}) {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...filters, layout, format })) if (v !== undefined && v !== null && v !== '') p.set(k, v);
+  return p.toString();
+}
