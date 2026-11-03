@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { tx } from '../../db/index.js';
-import { body, money, qty, query, optionalText, idempotent } from '../../lib/http.js';
+import { body, money, qty, query, optionalText, idempotent, patchOf } from '../../lib/http.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
 import { renderReceipt } from './receipt.js';
 import * as svc from './service.js';
@@ -111,9 +111,7 @@ r.post(
 r.patch('/:id', async (c) => {
   const input = await body(
     c,
-    orderInput
-      .omit({ shop_id: true, channel_id: true, status: true, payments: true, allow_negative_stock: true, external_id: true })
-      .partial(),
+    patchOf(orderInput.omit({ shop_id: true, channel_id: true, status: true, payments: true, allow_negative_stock: true, external_id: true })),
   );
   return c.json({ data: tx(() => svc.updateOrder(c.req.param('id'), input, c.get('actor'))) });
 });

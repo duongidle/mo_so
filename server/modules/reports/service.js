@@ -3,11 +3,10 @@ import { addDays, daysBetween, businessDate } from '../../lib/time.js';
 import { allocate } from '../../lib/money.js';
 import { getSettings } from '../settings/service.js';
 import { listStock } from '../inventory/service.js';
+import { COUNTED, readStats } from './stats.js';
 
 const db = () => getDb();
 
-// Đơn tính vào doanh thu: đã xác nhận trở đi (kể cả đã trả toàn phần, khi đó net_revenue = 0 nhưng vẫn là một đơn đã bán)
-const COUNTED = `('confirmed','shipping','completed','returned')`;
 
 /**
  * Chuẩn hoá bộ lọc. Khoảng ngày mặc định = tháng hiện tại (giờ VN).
@@ -16,7 +15,7 @@ export function normalizeFilter(f = {}) {
   const today = businessDate();
   const from = f.from || `${today.slice(0, 7)}-01`;
   const to = f.to || today;
-  return { from, to, shopIds: f.shopIds?.length ? f.shopIds : null, channel: f.channel || null };
+  return { from, to, shopIds: f.shopIds?.length ? f.shopIds : null, channel: f.channel || null, categoryId: f.categoryId || null };
 }
 
 function orderWhere(f, alias = 'o') {
@@ -27,81 +26,132 @@ function orderWhere(f, alias = 'o') {
   return { where, params };
 }
 
+// Giá trị hàng đã trả của từng dòng đơn (ghi trên phiếu trả lúc trả), để doanh thu theo sản phẩm/ngũ hành khớp doanh thu thuần của đơn
+const LINE_RETURNED = `COALESCE((SELECT SUM(json_extract(j.value, '$.value')) FROM order_returns rr, json_each(rr.lines) j
+  WHERE rr.order_id = l.order_id AND json_extract(j.value, '$.order_line_id') = l.id), 0)`;
+const LINE_NET = `(l.line_total - l.allocated_order_discount - ${LINE_RETURNED})`;
+
+/** Danh mục và mọi danh mục con của nó */
+function categoryTree(categoryId) {
+  return db()
+    .prepare(`WITH RECURSIVE t(id) AS (SELECT id FROM categories WHERE id = ? UNION SELECT c.id FROM categories c JOIN t ON c.parent_id = t.id) SELECT id FROM t`)
+    .all(categoryId)
+    .map((r) => r.id);
+}
+function categoryClause(f) {
+  if (!f.categoryId) return { sql: '', params: [] };
+  const ids = categoryTree(f.categoryId);
+  return { sql: ` AND p.category_id IN (${ids.map(() => '?').join(',')})`, params: ids };
+}
+
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
 
-/** Tổng hợp tiền theo đơn trong khoảng + lọc. Dùng chung cho tổng quan, so sánh kỳ trước, theo shop/kênh. */
-function sumOrders(f, groupBy = null) {
-  const { where, params } = orderWhere(f);
-  const sel = groupBy ? `${groupBy} AS k,` : '';
-  const rows = db()
-    .prepare(
-      `SELECT ${sel}
-        COUNT(CASE WHEN o.status IN ${COUNTED} THEN 1 END) AS order_count,
-        COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) AS cancelled_count,
-        COUNT(CASE WHEN o.status IN ${COUNTED} AND o.returned_amount > 0 THEN 1 END) AS returned_count,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.subtotal END),0) AS subtotal,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.line_discount_amount + o.discount_amount END),0) AS discount_amount,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.goods_revenue END),0) AS goods_revenue,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.returned_amount END),0) AS returned_amount,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.net_revenue END),0) AS net_revenue,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.shipping_fee END),0) AS shipping_fee,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.platform_fee_amount END),0) AS platform_fee,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.seller_shipping_amount END),0) AS seller_shipping,
-        COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.cogs_amount END),0) AS cogs
-       FROM orders o WHERE ${where.join(' AND ')} AND o.status != 'draft' ${groupBy ? 'GROUP BY k' : ''}`,
-    )
-    .all(...params);
-  const finish = (r) => {
-    const gross_profit = r.net_revenue + r.shipping_fee - r.platform_fee - r.seller_shipping - r.cogs;
-    return {
-      ...r,
-      gross_revenue: r.subtotal,
-      gross_profit,
-      gross_margin_pct: pct(gross_profit, r.net_revenue),
-      aov: r.order_count ? Math.round(r.net_revenue / r.order_count) : 0,
-      cancel_rate_pct: pct(r.cancelled_count, r.order_count + r.cancelled_count),
-      return_rate_pct: pct(r.returned_count, r.order_count),
-    };
+const finish = (r) => {
+  const gross_profit = r.net_revenue + r.shipping_fee - r.platform_fee - r.seller_shipping - r.cogs;
+  return {
+    ...r,
+    gross_revenue: r.subtotal,
+    gross_profit,
+    gross_margin_pct: pct(gross_profit, r.net_revenue),
+    aov: r.order_count ? Math.round(r.net_revenue / r.order_count) : 0,
+    cancel_rate_pct: pct(r.cancelled_count, r.order_count + r.cancelled_count),
+    return_rate_pct: pct(r.returned_count, r.order_count),
   };
-  return groupBy ? rows.map((r) => ({ ...finish(r) })) : finish(rows[0]);
+};
+
+/**
+ * Tổng hợp tiền theo đơn trong khoảng + lọc, đọc từ bảng đệm `daily_stats` (xem migration 017).
+ * Dùng chung cho tổng quan, so sánh kỳ trước, theo shop/kênh. groupBy: null | 'shop' | 'channel' | 'shop_channel'.
+ */
+function sumOrders(f, groupBy = null) {
+  const r = readStats(f, groupBy);
+  return groupBy ? r.map(finish) : finish(r);
+}
+
+// ---------- Chi phí ----------
+const activeShopIds = () => db().prepare('SELECT id FROM shops WHERE archived_at IS NULL ORDER BY id').all().map((s) => s.id);
+const allChannelIds = () => db().prepare('SELECT id FROM channels ORDER BY id').all().map((c) => c.id);
+
+function revenueByShop(f) {
+  // Doanh thu để phân bổ chi phí chung phải tính trên MỌI shop và MỌI kênh (không lọc), nếu không tỷ lệ sẽ sai
+  return new Map(sumOrders({ ...f, shopIds: null, channel: null }, 'shop').map((r) => [r.k, r.net_revenue]));
+}
+
+/** Trọng số chia chi phí chung cho các shop đang hoạt động, theo cài đặt. Không có căn cứ (mọi trọng số 0) thì chia đều. */
+function shopWeights(f, shops) {
+  const settings = getSettings();
+  let w = null;
+  if (settings.expense_allocation === 'fixed') {
+    const fixed = settings.expense_allocation_fixed || {};
+    w = shops.map((id) => fixed[id] || 0);
+  } else if (settings.expense_allocation === 'revenue') {
+    const rev = revenueByShop(f);
+    w = shops.map((id) => rev.get(id) || 0);
+  }
+  return w && w.some((x) => x > 0) ? w : shops.map(() => 1);
+}
+
+/** Trọng số chia theo kênh của một shop = doanh thu thuần từng kênh của shop đó trong kỳ (không có doanh thu thì chia đều) */
+function channelWeightsFor(f) {
+  const channels = allChannelIds();
+  const byShop = new Map();
+  for (const r of sumOrders({ ...f, shopIds: null, channel: null }, 'shop_channel')) {
+    const [shop, ch] = r.k.split('|');
+    if (!byShop.has(shop)) byShop.set(shop, new Map());
+    byShop.get(shop).set(ch, r.net_revenue);
+  }
+  return (shopId) => channels.map((id) => byShop.get(shopId)?.get(id) || 0);
 }
 
 /**
- * Chi phí trong khoảng, gồm phần chi phí chung phân bổ về từng shop.
- * Quy tắc: revenue (theo doanh thu thuần, mặc định) | equal (chia đều cho shop đang hoạt động).
- * Trả về { total, direct, shared, byShop: Map(shopId → số tiền) }.
+ * Chi phí trong khoảng, đã quy về từng shop (và từng kênh nếu lọc kênh), mỗi dòng một danh mục.
+ * - Chi phí của shop: về đúng shop. Chi phí chung (không shop): chia cho các shop đang hoạt động theo cài đặt (doanh thu / đều / cố định).
+ * - Lọc kênh: chi phí gắn đúng kênh đó tính đủ; chi phí gắn kênh khác bỏ; chi phí không gắn kênh chia cho các kênh theo doanh thu kênh của shop.
+ * Mọi phép chia dùng allocate() nên tổng các phần luôn bằng đúng số tiền gốc, không lệch đồng nào.
  */
-function expensesFor(f, byShopRevenue) {
+export function expenseItems(f) {
   const rows = db()
     .prepare(
-      `SELECT shop_id, COALESCE(SUM(amount),0) AS amt FROM expenses
-       WHERE voided_at IS NULL AND expense_date >= ? AND expense_date <= ? ${f.channel ? 'AND (channel_id = ? OR channel_id IS NULL)' : ''} GROUP BY shop_id`,
+      `SELECT shop_id, channel_id, category_id, SUM(amount) AS amt FROM expenses
+       WHERE voided_at IS NULL AND expense_date >= ? AND expense_date <= ?
+       GROUP BY shop_id, channel_id, category_id ORDER BY shop_id, channel_id, category_id`,
     )
-    .all(...(f.channel ? [f.from, f.to, f.channel] : [f.from, f.to]));
-  const shared = rows.find((r) => r.shop_id === null)?.amt || 0;
-  const byShop = new Map();
-  for (const r of rows) if (r.shop_id) byShop.set(r.shop_id, r.amt);
-
-  const allShops = db().prepare('SELECT id FROM shops WHERE archived_at IS NULL').all().map((s) => s.id);
-  const target = f.shopIds ?? allShops;
-  const mode = getSettings().expense_allocation;
-  const revTotal = allShops.reduce((a, id) => a + (byShopRevenue.get(id) || 0), 0);
-  const alloc = new Map();
-  for (const id of allShops) {
-    let share = 0;
-    if (mode === 'equal' || revTotal <= 0) share = Math.round(shared / (allShops.length || 1));
-    else share = Math.round((shared * (byShopRevenue.get(id) || 0)) / revTotal);
-    alloc.set(id, (byShop.get(id) || 0) + share);
+    .all(f.from, f.to);
+  const shops = activeShopIds();
+  const sw = rows.some((r) => !r.shop_id) ? shopWeights(f, shops) : null;
+  const cw = f.channel && rows.some((r) => r.channel_id === null) ? channelWeightsFor(f) : null;
+  const cIdx = f.channel ? allChannelIds().indexOf(f.channel) : -1;
+  const items = [];
+  for (const r of rows) {
+    const parts = r.shop_id
+      ? [{ shop_id: r.shop_id, amount: r.amt, kind: 'direct' }]
+      : shops.length
+        ? allocate(r.amt, sw).map((amount, i) => ({ shop_id: shops[i], amount, kind: 'shared' }))
+        : [];
+    for (const p of parts) {
+      if (p.amount <= 0) continue;
+      if (f.shopIds && !f.shopIds.includes(p.shop_id)) continue;
+      let amount = p.amount;
+      if (f.channel) {
+        if (r.channel_id === f.channel) amount = p.amount;
+        else if (r.channel_id !== null) continue;
+        else amount = cIdx >= 0 ? allocate(p.amount, cw(p.shop_id))[cIdx] : 0;
+      }
+      if (amount > 0) items.push({ shop_id: p.shop_id, category_id: r.category_id, channel_id: r.channel_id, kind: p.kind, amount });
+    }
   }
-  const total = target.reduce((a, id) => a + (alloc.get(id) || 0), 0);
-  const direct = target.reduce((a, id) => a + (byShop.get(id) || 0), 0);
-  return { total, direct, shared: total - direct, perShop: alloc };
+  return items;
 }
 
-function revenueByShop(f) {
-  // Doanh thu để phân bổ chi phí chung phải tính trên MỌI shop (không lọc shop), nếu không tỷ lệ sẽ sai
-  const all = { ...f, shopIds: null };
-  return new Map(sumOrders(all, 'o.shop_id').map((r) => [r.k, r.net_revenue]));
+/** Tổng chi phí trong phạm vi bộ lọc: { total, direct, shared, perShop: Map(shop → số tiền), items } */
+export function expensesFor(f) {
+  const items = expenseItems(f);
+  const sum = (arr) => arr.reduce((a, i) => a + i.amount, 0);
+  const perShop = new Map();
+  for (const i of items) perShop.set(i.shop_id, (perShop.get(i.shop_id) || 0) + i.amount);
+  const total = sum(items);
+  const direct = sum(items.filter((i) => i.kind === 'direct'));
+  return { total, direct, shared: total - direct, perShop, items };
 }
 
 export function previousPeriod(f) {
@@ -113,32 +163,73 @@ function withProfit(s, expenses) {
   return { ...s, expenses_amount: expenses, net_profit_estimate: s.gross_profit - expenses };
 }
 
+const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
+
+/** Cơ sở tính thuế cộng dồn từ `from` đến `to` (toàn bộ shop, mọi kênh) */
+function taxBase(base, from, to) {
+  if (from > to) return 0;
+  const all = { from, to, shopIds: null, channel: null };
+  const s = sumOrders(all);
+  if (base === 'net_revenue') return s.net_revenue;
+  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee;
+  return s.gross_profit - expensesFor(all).total;
+}
+
+/**
+ * Ước tính thuế theo các quy tắc người dùng tự cấu hình (mặc định tắt). Chỉ là ƯỚC TÍNH để thấy lợi nhuận sau thuế, không phải tờ khai.
+ * Ngưỡng miễn thuế tính theo năm dương lịch: thuế cộng dồn đến ngày X = tỷ lệ × max(0, cơ sở cộng dồn từ đầu năm − ngưỡng);
+ * thuế của một kỳ = thuế cộng dồn cuối kỳ − thuế cộng dồn trước kỳ (kỳ qua năm mới tự tách theo năm), nên cộng các kỳ liền nhau ra đúng cả năm.
+ * Thuế là của cả hộ kinh doanh nên không chia theo shop hay kênh: có lọc shop/kênh thì không tính.
+ */
+export function taxEstimate(f) {
+  const st = getSettings();
+  if (!st.tax_enabled || !st.tax_rules.length) return null;
+  if (f.shopIds || f.channel) return { enabled: true, applicable: false, reason: 'Thuế tính cho cả hộ kinh doanh, không chia theo shop hay kênh. Bỏ bộ lọc shop/kênh để xem.' };
+  const items = st.tax_rules.map((r) => {
+    const thr = r.exempt_threshold_year || 0;
+    let tax = 0;
+    let base = 0;
+    let taxable = 0;
+    for (let y = Number(f.from.slice(0, 4)); y <= Number(f.to.slice(0, 4)); y++) {
+      const yStart = `${y}-01-01`;
+      const segStart = f.from > yStart ? f.from : yStart;
+      const segEnd = f.to < `${y}-12-31` ? f.to : `${y}-12-31`;
+      const endBase = taxBase(r.base, yStart, segEnd);
+      const startBase = segStart > yStart ? taxBase(r.base, yStart, addDays(segStart, -1)) : 0;
+      const cum = (x) => Math.round((r.rate_pct * Math.max(0, x - thr)) / 100);
+      tax += cum(endBase) - cum(startBase);
+      base += endBase - startBase;
+      taxable += Math.max(0, endBase - thr) - Math.max(0, startBase - thr);
+    }
+    return { name: r.name, rate_pct: r.rate_pct, base: r.base, base_label: TAX_BASE_LABELS[r.base], exempt_threshold_year: thr, base_amount: base, taxable_amount: taxable, tax };
+  });
+  return { enabled: true, applicable: true, items, total: items.reduce((a, i) => a + i.tax, 0) };
+}
+
 export function overview(filter) {
   const f = normalizeFilter(filter);
   const cur = sumOrders(f);
-  const exp = expensesFor(f, revenueByShop(f));
+  const exp = expensesFor(f);
   const prevF = previousPeriod(f);
   const prev = sumOrders(prevF);
-  const prevExp = expensesFor(prevF, revenueByShop(prevF));
+  const prevExp = expensesFor(prevF);
   const current = withProfit(cur, exp.total);
   const previous = withProfit(prev, prevExp.total);
   const change = {};
   for (const k of ['net_revenue', 'gross_profit', 'order_count', 'net_profit_estimate', 'aov']) {
     change[k] = previous[k] ? Math.round(((current[k] - previous[k]) / Math.abs(previous[k])) * 1000) / 10 : null;
   }
-  return { filter: f, previous_filter: { from: prevF.from, to: prevF.to }, current, previous, change_pct: change };
+  const tax = taxEstimate(f);
+  if (tax?.applicable) {
+    current.tax_estimate_amount = tax.total;
+    current.profit_after_tax_estimate = current.net_profit_estimate - tax.total;
+  }
+  return { filter: f, previous_filter: { from: prevF.from, to: prevF.to }, current, previous, change_pct: change, tax };
 }
 
 export function revenueSeries(filter) {
   const f = normalizeFilter(filter);
-  const { where, params } = orderWhere(f);
-  const rows = db()
-    .prepare(
-      `SELECT o.business_date AS date, COUNT(*) AS order_count, COALESCE(SUM(o.net_revenue),0) AS net_revenue,
-              COALESCE(SUM(o.net_revenue + o.shipping_fee - o.platform_fee_amount - o.seller_shipping_amount - o.cogs_amount),0) AS gross_profit
-       FROM orders o WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED} GROUP BY o.business_date ORDER BY o.business_date`,
-    )
-    .all(...params);
+  const rows = readStats(f, 'date').map((r) => ({ date: r.k, order_count: r.order_count, net_revenue: r.net_revenue, gross_profit: finish(r).gross_profit }));
   // Điền ngày trống để biểu đồ liên tục
   const map = new Map(rows.map((r) => [r.date, r]));
   const out = [];
@@ -148,9 +239,13 @@ export function revenueSeries(filter) {
 
 export function byShop(filter) {
   const f = normalizeFilter(filter);
-  const rows = sumOrders({ ...f, shopIds: null }, 'o.shop_id');
-  const exp = expensesFor({ ...f, shopIds: null }, new Map(rows.map((r) => [r.k, r.net_revenue])));
-  const shops = db().prepare('SELECT id, code, name, color FROM shops WHERE archived_at IS NULL').all();
+  const rows = sumOrders({ ...f, shopIds: null }, 'shop');
+  const exp = expensesFor({ ...f, shopIds: null });
+  // Shop đã lưu trữ vẫn hiện nếu trong kỳ có đơn hoặc chi phí, để tổng theo shop luôn khớp tổng quan
+  const shops = db()
+    .prepare('SELECT id, code, name, color, archived_at FROM shops ORDER BY created_at, id')
+    .all()
+    .filter((s) => !s.archived_at || rows.some((x) => x.k === s.id) || exp.perShop.get(s.id));
   const data = shops
     .filter((s) => !f.shopIds || f.shopIds.includes(s.id))
     .map((s) => {
@@ -166,7 +261,7 @@ function sumOrdersEmpty() {
 
 export function byChannel(filter) {
   const f = normalizeFilter(filter);
-  const rows = sumOrders(f, 'o.channel_id');
+  const rows = sumOrders(f, 'channel');
   const names = new Map(db().prepare('SELECT id, name FROM channels').all().map((c) => [c.id, c.name]));
   return { filter: f, data: rows.map((r) => ({ channel_id: r.k, channel_name: names.get(r.k) || r.k, ...r })).sort((a, b) => b.net_revenue - a.net_revenue) };
 }
@@ -179,18 +274,19 @@ export function byChannel(filter) {
 export function byProduct(filter, { limit = 50 } = {}) {
   const f = normalizeFilter(filter);
   const { where, params } = orderWhere(f);
+  const cat = categoryClause(f);
   const rows = db()
     .prepare(
       `SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name,
               SUM(l.qty - l.returned_qty) AS qty_sold,
-              SUM(l.line_total - l.allocated_order_discount) AS revenue,
+              SUM(${LINE_NET}) AS revenue,
               SUM((l.qty - l.restocked_qty) * l.unit_cost) AS cogs
        FROM order_lines l JOIN orders o ON o.id = l.order_id
        JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
-       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}
+       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql}
        GROUP BY v.id ORDER BY revenue DESC LIMIT ?`,
     )
-    .all(...params, limit);
+    .all(...params, ...cat.params, limit);
   const inCombos = new Map(
     db()
       .prepare(
@@ -213,8 +309,8 @@ export function byProduct(filter, { limit = 50 } = {}) {
   const extra = [...inCombos.entries()].filter(([id]) => !seen.has(id));
   if (extra.length) {
     const info = db()
-      .prepare(`SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id IN (${extra.map(() => '?').join(',')})`)
-      .all(...extra.map(([id]) => id));
+      .prepare(`SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id IN (${extra.map(() => '?').join(',')})${cat.sql}`)
+      .all(...extra.map(([id]) => id), ...cat.params);
     for (const i of info) data.push({ ...i, is_bundle: false, qty_sold: 0, revenue: 0, cogs: 0, gross_profit: 0, margin_pct: null, qty_in_combos: inCombos.get(i.variant_id) });
   }
   const bundles = data.filter((d) => d.is_bundle);
@@ -230,13 +326,14 @@ export function byProduct(filter, { limit = 50 } = {}) {
 export function byElement(filter) {
   const f = normalizeFilter(filter);
   const { where, params } = orderWhere(f);
+  const cat = categoryClause(f);
   const rows = db()
     .prepare(
-      `SELECT p.elements, SUM(l.qty - l.returned_qty) AS qty, SUM(l.line_total - l.allocated_order_discount) AS revenue
+      `SELECT p.elements, SUM(l.qty - l.returned_qty) AS qty, SUM(${LINE_NET}) AS revenue
        FROM order_lines l JOIN orders o ON o.id = l.order_id JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
-       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED} GROUP BY p.id`,
+       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql} GROUP BY p.id`,
     )
-    .all(...params);
+    .all(...params, ...cat.params);
   const acc = new Map(['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ', null].map((e) => [e, { element: e, revenue: 0, qty: 0 }]));
   for (const r of rows) {
     const els = JSON.parse(r.elements || '[]');
@@ -282,12 +379,15 @@ export function customerMetrics(filter, { topLimit = 10 } = {}) {
 export function inventoryMetrics({ shopId, warehouseId } = {}) {
   const items = listStock({ shopId, warehouseId, limit: 5000 });
   const stockValue = items.reduce((a, i) => a + i.stock_value, 0);
-  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  // Giá vốn bán ra 30 ngày gần nhất, tính trên CÙNG phạm vi với giá trị tồn (cùng shop, cùng kho) để số ngày tồn không bị lệch
+  const today = businessDate();
+  const where = ['o.business_date > ?', `o.status IN ${COUNTED}`];
+  const params = [addDays(today, -30)];
+  if (shopId) (where.push('o.shop_id = ?'), params.push(shopId));
+  if (warehouseId) (where.push('o.warehouse_id = ?'), params.push(warehouseId));
   const cogs30 = db()
-    .prepare(
-      `SELECT COALESCE(SUM(-qty * unit_cost),0) AS v FROM stock_movements WHERE type = 'sale_out' AND created_at >= ?`,
-    )
-    .get(since).v;
+    .prepare(`SELECT COALESCE(SUM((l.qty - l.restocked_qty) * l.unit_cost),0) AS v FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE ${where.join(' AND ')}`)
+    .get(...params).v;
   const daily = cogs30 / 30;
   return {
     stock_value: stockValue,
@@ -308,7 +408,25 @@ export function cashflow(filter) {
        GROUP BY direction, method`,
     )
     .all(f.from, f.to, ...(f.shopIds || []));
+  // Chi phí cũng là tiền ra, vào ngày chi phí, theo phương thức đã chọn. Lọc shop: chỉ chi phí của đúng shop đó;
+  // chi phí chung không thuộc shop nào nên không tính vào (số tiền đó báo riêng ở shared_expenses_not_included).
+  const expRows = db()
+    .prepare(
+      `SELECT method, COALESCE(SUM(amount),0) AS amt FROM expenses
+       WHERE voided_at IS NULL AND expense_date >= ? AND expense_date <= ? ${f.shopIds ? `AND shop_id IN (${f.shopIds.map(() => '?').join(',')})` : ''}
+       GROUP BY method`,
+    )
+    .all(f.from, f.to, ...(f.shopIds || []));
+  const sharedNotIncluded = f.shopIds
+    ? db().prepare('SELECT COALESCE(SUM(amount),0) AS v FROM expenses WHERE voided_at IS NULL AND shop_id IS NULL AND expense_date >= ? AND expense_date <= ?').get(f.from, f.to).v
+    : 0;
+  const expensesOut = expRows.reduce((a, r) => a + r.amt, 0);
   const sum = (dir) => pay.filter((p) => p.direction === dir).reduce((a, p) => a + p.amt, 0);
+  const byMethod = new Map(pay.map((p) => [`${p.direction}|${p.method}`, { direction: p.direction, method: p.method, amt: p.amt }]));
+  for (const r of expRows) {
+    const k = `out|${r.method}`;
+    byMethod.set(k, { direction: 'out', method: r.method, amt: (byMethod.get(k)?.amt || 0) + r.amt });
+  }
   const shopFilter = f.shopIds ? `AND o.shop_id IN (${f.shopIds.map(() => '?').join(',')})` : '';
   // Công nợ khách: đơn kênh không phải sàn, đã xác nhận trở đi, còn thiếu tiền
   const receivable = db()
@@ -331,9 +449,12 @@ export function cashflow(filter) {
   return {
     filter: f,
     cash_in: sum('in'),
-    cash_out: sum('out'),
-    net_cash: sum('in') - sum('out'),
-    by_method: pay,
+    cash_out: sum('out') + expensesOut,
+    cash_out_expenses: expensesOut,
+    cash_out_other: sum('out'), // trả NCC, hoàn tiền khách
+    shared_expenses_not_included: sharedNotIncluded,
+    net_cash: sum('in') - sum('out') - expensesOut,
+    by_method: [...byMethod.values()],
     customer_receivable: receivable.v,
     customer_receivable_orders: receivable.n,
     marketplace_pending: hanging.v,
@@ -341,6 +462,118 @@ export function cashflow(filter) {
     supplier_payable: payable.v,
     supplier_payable_purchases: payable.n,
   };
+}
+
+/**
+ * Báo cáo chi phí: theo danh mục (tách phần của shop và phần chi phí chung đã phân bổ), theo shop, so với kỳ trước,
+ * tỷ lệ trên doanh thu thuần, và vài khoản chi lớn nhất để nhìn ra khoản bất thường.
+ */
+export function expenseReport(filter) {
+  const f = normalizeFilter(filter);
+  const names = new Map(db().prepare('SELECT id, name FROM expense_categories').all().map((c) => [c.id, c.name]));
+  const cur = expensesFor(f);
+  const prev = expensesFor(previousPeriod(f));
+  const aggregate = (items) => {
+    const m = new Map();
+    for (const i of items) {
+      const a = m.get(i.category_id) || { direct: 0, shared: 0 };
+      a[i.kind] += i.amount;
+      m.set(i.category_id, a);
+    }
+    return m;
+  };
+  const curCat = aggregate(cur.items);
+  const prevCat = aggregate(prev.items);
+  const ids = new Set([...curCat.keys(), ...prevCat.keys()]);
+  const byCategory = [...ids]
+    .map((id) => {
+      const c = curCat.get(id) || { direct: 0, shared: 0 };
+      const amount = c.direct + c.shared;
+      const p = prevCat.get(id);
+      const previous = p ? p.direct + p.shared : 0;
+      return { category_id: id, name: names.get(id) || id, amount, direct: c.direct, shared: c.shared, share_pct: pct(amount, cur.total), previous_amount: previous, change_pct: previous ? Math.round(((amount - previous) / previous) * 1000) / 10 : null };
+    })
+    .filter((r) => r.amount > 0 || r.previous_amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+  const shopNames = new Map(db().prepare('SELECT id, name, code FROM shops').all().map((s) => [s.id, s]));
+  const byShopRows = [...cur.perShop.entries()].map(([id, amount]) => ({ shop_id: id, shop_name: shopNames.get(id)?.name || id, amount, share_pct: pct(amount, cur.total) })).sort((a, b) => b.amount - a.amount);
+  const revenue = sumOrders(f).net_revenue;
+  const where = ['e.voided_at IS NULL', 'e.expense_date >= ?', 'e.expense_date <= ?'];
+  const params = [f.from, f.to];
+  if (f.shopIds) (where.push(`(e.shop_id IN (${f.shopIds.map(() => '?').join(',')}) OR e.shop_id IS NULL)`), params.push(...f.shopIds));
+  if (f.channel) (where.push('(e.channel_id = ? OR e.channel_id IS NULL)'), params.push(f.channel));
+  const largest = db()
+    .prepare(
+      `SELECT e.id, e.expense_date, e.amount, e.payee, e.note, e.shop_id, c.name AS category_name, s.name AS shop_name
+       FROM expenses e JOIN expense_categories c ON c.id = e.category_id LEFT JOIN shops s ON s.id = e.shop_id
+       WHERE ${where.join(' AND ')} ORDER BY e.amount DESC, e.id DESC LIMIT 5`,
+    )
+    .all(...params);
+  return {
+    filter: f,
+    total: cur.total,
+    direct: cur.direct,
+    shared: cur.shared,
+    previous_total: prev.total,
+    change_pct: prev.total ? Math.round(((cur.total - prev.total) / prev.total) * 1000) / 10 : null,
+    net_revenue: revenue,
+    expense_ratio_pct: pct(cur.total, revenue),
+    by_category: byCategory,
+    by_shop: byShopRows,
+    largest,
+  };
+}
+
+const AGE_BUCKETS = [
+  { label: '0–7 ngày', min: 0, max: 7 },
+  { label: '8–30 ngày', min: 8, max: 30 },
+  { label: '31–60 ngày', min: 31, max: 60 },
+  { label: '61–90 ngày', min: 61, max: 90 },
+  { label: 'Trên 90 ngày', min: 91, max: Infinity },
+];
+function ageBuckets(items) {
+  const buckets = AGE_BUCKETS.map((b) => ({ label: b.label, min: b.min, max: b.max === Infinity ? null : b.max, amount: 0, count: 0 }));
+  for (const i of items) {
+    const b = AGE_BUCKETS.findIndex((x) => i.age_days >= x.min && i.age_days <= x.max);
+    buckets[Math.max(0, b)].amount += i.owed;
+    buckets[Math.max(0, b)].count += 1;
+  }
+  return { total: items.reduce((a, i) => a + i.owed, 0), count: items.length, buckets, items: [...items].sort((a, b) => b.age_days - a.age_days).slice(0, 20) };
+}
+
+/**
+ * Tuổi nợ tại hôm nay: khách nợ (đơn ngoài sàn), tiền sàn chưa về, nợ nhà cung cấp.
+ * Tuổi = số ngày từ ngày đặt đơn (khách, sàn) hoặc ngày nhận hàng (NCC) đến hôm nay. Chỉ lọc theo shop.
+ */
+export function aging(filter) {
+  const f = normalizeFilter(filter);
+  const today = businessDate();
+  const sf = f.shopIds ? `AND o.shop_id IN (${f.shopIds.map(() => '?').join(',')})` : '';
+  const sp = f.shopIds || [];
+  const customer = db()
+    .prepare(
+      `SELECT o.id, o.code, COALESCE(o.customer_name, 'Khách lẻ') AS party, o.business_date AS date, o.total_amount - o.returned_amount - o.paid_amount AS owed
+       FROM orders o JOIN channels ch ON ch.id = o.channel_id
+       WHERE ch.is_marketplace = 0 AND o.status IN ('confirmed','shipping','completed') AND o.total_amount - o.returned_amount - o.paid_amount > 0 ${sf}`,
+    )
+    .all(...sp)
+    .map((r) => ({ ...r, age_days: Math.max(0, daysBetween(r.date, today)) }));
+  const marketplace = db()
+    .prepare(
+      `SELECT o.id, o.code, ch.name AS party, o.business_date AS date, o.net_amount - o.returned_amount - o.paid_amount AS owed
+       FROM orders o JOIN channels ch ON ch.id = o.channel_id
+       WHERE ch.is_marketplace = 1 AND o.status = 'completed' AND o.net_amount - o.returned_amount - o.paid_amount > 0 ${sf}`,
+    )
+    .all(...sp)
+    .map((r) => ({ ...r, age_days: Math.max(0, daysBetween(r.date, today)) }));
+  const supplier = db()
+    .prepare(
+      `SELECT p.id, p.code, COALESCE(s.name, 'Không rõ NCC') AS party, COALESCE(p.received_at, p.ordered_at) AS at, p.total_amount - p.paid_amount AS owed
+       FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id WHERE p.status = 'received' AND p.total_amount - p.paid_amount > 0`,
+    )
+    .all()
+    .map((r) => ({ id: r.id, code: r.code, party: r.party, owed: r.owed, date: businessDate(r.at), age_days: Math.max(0, daysBetween(businessDate(r.at), today)) }));
+  return { as_of: today, filter: f, customer: ageBuckets(customer), marketplace: ageBuckets(marketplace), supplier: ageBuckets(supplier) };
 }
 
 /** Đánh giá một chỉ số theo ngưỡng: green | yellow | red | null (chưa có dữ liệu) */

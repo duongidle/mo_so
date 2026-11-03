@@ -107,6 +107,7 @@ function PurchaseView({ id, onClose }) {
   const s = useAsync(() => api.get(`/purchases/${id}`), [id]);
   const { busy, error, run } = useAction();
   const [pay, setPay] = useState('');
+  const [refund, setRefund] = useState(null); // phương thức NCC hoàn tiền khi huỷ phiếu đã trả tiền
   return (
     <Modal title="Phiếu nhập" onClose={onClose}>
       <Async state={s}>{({ data: p }) => (
@@ -120,8 +121,19 @@ function PurchaseView({ id, onClose }) {
           <ErrorBox error={error} />
           <div className="row wrap">
             {p.status === 'draft' && <button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/receive`); s.reload(); })}>Nhận hàng</button>}
-            {p.status !== 'cancelled' && <button className="btn danger" disabled={busy} onClick={() => confirm('Huỷ phiếu? Nếu đã nhận, kho sẽ bị trừ lại.') && run(async () => { await api.post(`/purchases/${p.id}/cancel`, {}); s.reload(); })}>Huỷ phiếu</button>}
+            {p.status !== 'cancelled' && p.paid_amount === 0 && <button className="btn danger" disabled={busy} onClick={() => confirm('Huỷ phiếu? Nếu đã nhận, kho sẽ bị trừ lại.') && run(async () => { await api.post(`/purchases/${p.id}/cancel`, {}); s.reload(); })}>Huỷ phiếu</button>}
+            {p.status !== 'cancelled' && p.paid_amount > 0 && <button className="btn danger" disabled={busy} onClick={() => setRefund('bank')}>Huỷ phiếu</button>}
           </div>
+          {refund && (
+            <div className="alert warn stack small" style={{ gap: 8 }}>
+              <span>Phiếu đã trả nhà cung cấp <b>{vnd(p.paid_amount)}</b>. Huỷ phiếu nghĩa là nhà cung cấp hoàn lại số tiền này. Họ hoàn bằng cách nào?</span>
+              <div className="row wrap">
+                <select value={refund} onChange={(e) => setRefund(e.target.value)} aria-label="Phương thức hoàn tiền">{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+                <button className="btn danger" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/cancel`, { refund_method: refund }); setRefund(null); s.reload(); })}>Huỷ phiếu và ghi nhận hoàn tiền</button>
+                <button className="btn" onClick={() => setRefund(null)}>Không huỷ</button>
+              </div>
+            </div>
+          )}
           {p.status === 'received' && p.debt > 0 && (
             <div className="row"><input type="number" min="1" placeholder={`Trả nợ (còn ${p.debt})`} value={pay} onChange={(e) => setPay(e.target.value)} /><button className="btn" disabled={busy || !pay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay) }); setPay(''); s.reload(); })}>Ghi trả</button></div>
           )}

@@ -177,9 +177,13 @@ export function receivePurchase(id, actor) {
   return after;
 }
 
-export function cancelPurchase(id, reason, actor) {
+export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
   const p = getPurchase(id);
   if (p.status === 'cancelled') throw conflict('INVALID_STATUS', 'Phiếu nhập đã huỷ');
+  // Đã trả tiền NCC thì huỷ phiếu phải kèm việc NCC hoàn lại tiền, nếu không tiền đã chi nằm đó mà không có hàng, không có công nợ
+  if (p.paid_amount > 0 && !refundMethod) {
+    throw conflict('PURCHASE_PAID', `Phiếu đã trả NCC ${p.paid_amount} ₫. Huỷ phiếu cần ghi nhận NCC hoàn lại số tiền này (chọn phương thức hoàn).`, { paid_amount: p.paid_amount });
+  }
   const at = nowIso();
   if (p.status === 'received') {
     for (const l of p.lines) {
@@ -191,6 +195,10 @@ export function cancelPurchase(id, reason, actor) {
     for (const l of p.lines) {
       applyMovement({ warehouseId: p.warehouse_id, variantId: l.variant_id, type: 'purchase_cancel_out', qty: l.qty, unitCost: l.landed_unit_cost, refType: 'purchase', refId: id, refLineId: l.id, shopId: p.shop_id, note: reason, actorId: actor?.id, at });
     }
+  }
+  if (p.paid_amount > 0) {
+    recordPayment({ direction: 'in', refType: 'purchase', refId: id, shopId: p.shop_id, amount: p.paid_amount, method: refundMethod, paidAt: at, note: 'NCC hoàn tiền do huỷ phiếu nhập' }, actor);
+    db().prepare('UPDATE purchases SET paid_amount = 0 WHERE id = ?').run(id);
   }
   db().prepare("UPDATE purchases SET status='cancelled', cancelled_at=?, note=COALESCE(note || ' | ', '') || ?, updated_at=? WHERE id=?").run(at, `Huỷ: ${reason || ''}`, at, id);
   const after = getPurchase(id);

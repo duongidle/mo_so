@@ -13,6 +13,17 @@ export async function body(c, schema) {
   return schema.parse(data);
 }
 
+/**
+ * Schema dùng cho PATCH: mọi trường đều tuỳ chọn và trường vắng mặt thì KHÔNG có giá trị.
+ * Không dùng `.partial()` trực tiếp: trong zod 4 nó vẫn áp giá trị mặc định (`.default(0)`) cho trường vắng,
+ * nên sửa một ô sẽ âm thầm đặt phí ship, phí sàn, đơn vị… về mặc định.
+ */
+export function patchOf(schema) {
+  const shape = {};
+  for (const [k, f] of Object.entries(schema.shape)) shape[k] = (f instanceof z.ZodDefault ? f.unwrap() : f).optional();
+  return z.object(shape);
+}
+
 export function query(c, schema) {
   return schema.parse(c.req.query());
 }
