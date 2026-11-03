@@ -27,6 +27,15 @@
 
 ## Nhật ký
 
+### 2026-11-03 — Phiên 8: các việc còn lại trong danh sách
+
+- **Trường khách hiện thành cột ở danh sách khách** (migration 014): mỗi trường khách của shop có cờ "Cột", bật trong "Thông tin khách của shop" hoặc lúc thêm trường. Tối đa 4 cột mỗi shop (`TOO_MANY_COLUMNS`), chỉ trường khách mới có cột, trường công thức không hiện cột. Chỉ hiện khi xem theo một shop; xem "Tất cả shop" thì không có cột và không lộ giá trị.
+- **Báo cáo combo**: tab Sản phẩm có thẻ tổng riêng cho combo (số bán, doanh thu, giá vốn = tổng thành phần, LN gộp), dòng combo có nhãn, thêm cột "Qua combo" cho sản phẩm đơn (số đơn vị bán nằm trong combo, không cộng vào "Đã bán" để khỏi đếm hai lần). Thành phần chỉ bán qua combo vẫn hiện.
+- **Nợ kỹ thuật đã trả**: (1) lọc khách theo mệnh nay lọc trước khi phân trang, không bỏ sót khách ở trang sau; (2) đơn import từ sàn ghi biến động kho theo ngày đặt (không phải lúc bấm import) và không kéo "lần xuất/nhập gần nhất" về quá khứ, nên tốc độ bán 30 ngày không bị đơn cũ làm sai.
+- **Trống đồng** nay dùng ở trạng thái trống của theme phong thuỷ; nước hoa dùng vòng lan toả; theme chung giữ cuốn sổ mở.
+- Test: API 29, giao diện 47, smoke e2e 6. Test e2e cũ có một chỗ chờ sai (chữ "Thông tin riêng" cũng nằm ở phụ đề trang danh sách) nên chỉ qua nhờ may về thời gian; đã sửa.
+- **Cố ý không làm** (xem phần dưới): thử iPhone thật, kiểm tra file Shopee thật, `daily_stats`, tính hoàn trả theo ngày trả hàng, ngành thứ tư.
+
 ### 2026-11-03 — Phiên 7: làm nốt các việc còn thiếu
 
 - **Combo**: biến thể `bundle` (migration 012). Tồn khả dụng = min theo thành phần; bán trừ kho từng thành phần, giá vốn = tổng thành phần lúc bán; huỷ đơn/trả hàng hoàn đúng theo ảnh chụp (`order_line_components`) kể cả khi công thức combo hay giá vốn đổi sau. Chặn nhập/điều chỉnh/chuyển kho/kiểm kê trên combo. UI: tạo combo trong form sản phẩm (chọn thành phần + SL), POS và Kho hiện "combo, bán được N".
@@ -135,7 +144,14 @@
 
 **Nợ kỹ thuật**
 - `listStock` tính tốc độ bán 30 ngày bằng query trực tiếp; khi dữ liệu lớn nên đọc từ `daily_stats`.
-- Biến động kho của đơn import dùng thời điểm import, không phải ngày đặt trên sàn. Báo cáo doanh thu dùng ngày đặt nên không sai, nhưng sổ cái kho theo ngày sẽ lệch ngày.
-- Danh sách khách lọc theo mệnh đang lọc sau khi phân trang.
 - Báo cáo query thẳng bảng `orders` (có index theo shop/ngày), chưa dùng `daily_stats`. Khi dữ liệu lớn mới cần.
 - Hoàn trả tính vào ngày của đơn gốc, không phải ngày trả hàng.
+- Lọc khách theo mệnh lấy hết khách khớp điều kiện rồi mới phân trang (đúng nhưng không tối ưu). Với hàng chục nghìn khách thì cần chuyển mệnh thành cột tính sẵn.
+- Ngày biến động kho của đơn import là ngày đặt; huỷ/trả hàng của đơn import vẫn ghi theo lúc thao tác (không biết ngày huỷ thật trên sàn).
+
+**Chưa làm, cần người thật hoặc quyết định của chủ shop**
+- Thử trên iPhone thật qua wifi (cần thiết bị).
+- Kiểm tra với file xuất Shopee thật: tên cột, phí ship shop chịu có bị trừ vào payout không (cần file thật).
+- Điền "chu kỳ dùng hết" cho từng sản phẩm thì mới có nhắc mua lại.
+- Chưa có ngành thứ tư: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
+- `daily_stats` và tính hoàn trả theo ngày trả hàng: đã quyết định chưa làm (xem nhật ký quyết định trong `CLAUDE.md`).

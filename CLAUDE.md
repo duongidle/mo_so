@@ -145,6 +145,7 @@ moso/
 - **Gộp hồ sơ trùng**: chuyển toàn bộ đơn/ghi chú sang hồ sơ giữ lại, hồ sơ bị gộp đánh dấu `merged_into`.
 - **Thông tin riêng theo shop**: hồ sơ khách chỉ giữ thông tin chung (tên, SĐT, Facebook, địa chỉ, ghi chú). Mọi thông tin khác (ngày sinh, mệnh, mùi yêu thích, dòng xe…) là **trường tuỳ chỉnh của từng shop** (mục 5.11): trường của shop này không xuất hiện ở shop kia, kể cả cùng một khách. Mệnh (ngũ hành nạp âm theo năm âm lịch) chỉ có ở shop thuộc ngành phong thuỷ, tính từ trường ngày/năm sinh của shop đó, ghi đè tay được. Cột `birth_date`, `birth_year`, `element_override`, `gender` cũ trên bảng `customers` không còn dùng; khi một shop bật ngành phong thuỷ, giá trị cũ được chép sang trường của shop cho những khách đã mua ở shop đó.
 - Chỉ số tự tính: tổng chi tiêu, số đơn, đơn đầu, đơn gần nhất, hạng.
+- **Cột ở danh sách khách**: mỗi trường khách của shop có thể bật `show_in_list` để hiện thành cột ở danh sách khách (tối đa 4 cột mỗi shop). Chỉ hiện khi xem theo một shop.
 
 ### 5.6 Đơn bán (Order)
 - Thuộc 1 shop, 1 kênh, 0–1 khách hàng (khách lẻ được phép), kho xuất = kho mặc định của shop (đổi được).
@@ -469,3 +470,5 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Combo không có tồn riêng, tồn khả dụng tính từ thành phần; chụp thành phần + giá vốn lúc bán | Tồn riêng của combo sẽ lệch khi bán lẻ thành phần. Ảnh chụp giúp huỷ/trả hàng hoàn đúng cả khi công thức combo đổi hay giá vốn thành phần đổi. |
 | 2026-11-03 | Kiểm kê: chênh lệch tính theo tồn hệ thống tại lúc nhập số đếm từng dòng, không phải lúc tạo phiếu | Đếm cả kho mất nhiều giờ, trong lúc đó vẫn bán hàng. Tính theo tồn lúc tạo phiếu sẽ ghi đè mất các đơn bán sau đó. Giả định: người đếm nhập số ngay sau khi đếm. |
 | 2026-11-03 | Giao diện có 3 lớp test: vitest (hàm thuần, component), test API, smoke e2e bằng trình duyệt thật (tự bỏ qua nếu thiếu Playwright/dist) | Lớp e2e bắt được lỗi mà hai lớp kia không thấy (trang sập khi chuyển sang "Tất cả shop" vì dữ liệu cũ + shop rỗng). |
+| 2026-11-03 | Tối đa 4 cột trường khách ở danh sách khách mỗi shop | Nhiều hơn thì bảng vỡ trên máy tính và vô dụng trên điện thoại (cột ẩn ở màn nhỏ). |
+| 2026-11-03 | Biến động kho của đơn import ghi theo ngày đặt trên sàn, và "lần xuất/nhập gần nhất" chỉ tiến, không lùi | Sổ cái kho theo ngày và tốc độ bán 30 ngày phải phản ánh lúc hàng thực sự đi, không phải lúc bấm import. Sổ cái vẫn sắp theo thứ tự ghi nên số dư từng dòng luôn đúng. |

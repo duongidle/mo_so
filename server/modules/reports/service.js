@@ -171,12 +171,17 @@ export function byChannel(filter) {
   return { filter: f, data: rows.map((r) => ({ channel_id: r.k, channel_name: names.get(r.k) || r.k, ...r })).sort((a, b) => b.net_revenue - a.net_revenue) };
 }
 
+/**
+ * Báo cáo theo sản phẩm. Combo hiện thành dòng riêng (doanh thu theo combo, giá vốn = tổng giá vốn thành phần lúc bán).
+ * Sản phẩm đơn có thêm `qty_in_combos`: số đơn vị đã bán nằm trong combo (không nằm trong `qty_sold`, để không đếm hai lần).
+ * `combos` là tổng riêng của mọi combo trong kỳ.
+ */
 export function byProduct(filter, { limit = 50 } = {}) {
   const f = normalizeFilter(filter);
   const { where, params } = orderWhere(f);
   const rows = db()
     .prepare(
-      `SELECT v.id AS variant_id, v.sku, p.name AS product_name, v.name AS variant_name,
+      `SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name,
               SUM(l.qty - l.returned_qty) AS qty_sold,
               SUM(l.line_total - l.allocated_order_discount) AS revenue,
               SUM((l.qty - l.restocked_qty) * l.unit_cost) AS cogs
@@ -186,7 +191,36 @@ export function byProduct(filter, { limit = 50 } = {}) {
        GROUP BY v.id ORDER BY revenue DESC LIMIT ?`,
     )
     .all(...params, limit);
-  return { filter: f, data: rows.map((r) => ({ ...r, gross_profit: r.revenue - r.cogs, margin_pct: pct(r.revenue - r.cogs, r.revenue) })) };
+  const inCombos = new Map(
+    db()
+      .prepare(
+        `SELECT c.variant_id, SUM(c.per_bundle_qty * (l.qty - l.returned_qty)) AS n
+         FROM order_line_components c JOIN order_lines l ON l.id = c.order_line_id JOIN orders o ON o.id = l.order_id
+         WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED} GROUP BY c.variant_id`,
+      )
+      .all(...params)
+      .map((r) => [r.variant_id, r.n]),
+  );
+  const data = rows.map((r) => ({
+    ...r,
+    is_bundle: r.kind === 'bundle',
+    gross_profit: r.revenue - r.cogs,
+    margin_pct: pct(r.revenue - r.cogs, r.revenue),
+    ...(r.kind === 'bundle' ? {} : { qty_in_combos: inCombos.get(r.variant_id) || 0 }),
+  }));
+  // Thành phần chỉ bán qua combo (không bán lẻ) vẫn phải hiện để biết hàng đó đi đâu
+  const seen = new Set(rows.map((r) => r.variant_id));
+  const extra = [...inCombos.entries()].filter(([id]) => !seen.has(id));
+  if (extra.length) {
+    const info = db()
+      .prepare(`SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id IN (${extra.map(() => '?').join(',')})`)
+      .all(...extra.map(([id]) => id));
+    for (const i of info) data.push({ ...i, is_bundle: false, qty_sold: 0, revenue: 0, cogs: 0, gross_profit: 0, margin_pct: null, qty_in_combos: inCombos.get(i.variant_id) });
+  }
+  const bundles = data.filter((d) => d.is_bundle);
+  const sum = (k) => bundles.reduce((a, d) => a + d[k], 0);
+  const combos = { count: bundles.length, qty: sum('qty_sold'), revenue: sum('revenue'), cogs: sum('cogs'), gross_profit: sum('gross_profit') };
+  return { filter: f, data, combos };
 }
 
 /**

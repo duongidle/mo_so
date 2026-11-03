@@ -168,10 +168,12 @@ function refreshDerived(orderId) {
 // ---------- Tồn kho theo trạng thái ----------
 function deductStock(o, actor, allowNegative) {
   let warning = false;
+  // Đơn import từ sàn đã xảy ra ở quá khứ: ghi biến động kho theo ngày đặt, không phải lúc bấm import
+  const at = o.source === 'import' ? o.ordered_at : undefined;
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(o.id);
   for (const l of lines) {
     const move = (variantId, qty) =>
-      applyMovement({ warehouseId: o.warehouse_id, variantId, type: 'sale_out', qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative });
+      applyMovement({ warehouseId: o.warehouse_id, variantId, type: 'sale_out', qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at });
     if (isBundle(l.variant_id)) {
       // Combo: trừ từng thành phần, chụp thành phần + giá vốn từng cái để hoàn kho/trả hàng sau này đúng
       const comps = componentsOf(l.variant_id);

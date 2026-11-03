@@ -11,7 +11,14 @@ export const ENTITY_TYPES = Object.keys(TABLES);
 export const FIELD_TYPES = ['text', 'number', 'money', 'date', 'select', 'multiselect', 'boolean', 'formula'];
 
 const columnsOf = (entityType) => db().prepare(`PRAGMA table_info(${TABLES[entityType]})`).all().map((c) => c.name);
-const shape = (f) => f && { ...f, options: f.options ? JSON.parse(f.options) : null };
+const shape = (f) => f && { ...f, options: f.options ? JSON.parse(f.options) : null, show_in_list: !!f.show_in_list };
+export const MAX_LIST_COLUMNS = 4;
+
+/** Mỗi shop hiện tối đa vài cột trường khách ở danh sách khách: nhiều hơn thì bảng vỡ trên máy tính và vô dụng trên điện thoại */
+function assertColumnRoom(shopId, exceptId) {
+  const n = db().prepare("SELECT COUNT(*) AS n FROM custom_fields WHERE entity_type = 'customer' AND shop_id = ? AND show_in_list = 1 AND archived_at IS NULL AND id IS NOT ?").get(shopId, exceptId ?? null).n;
+  if (n >= MAX_LIST_COLUMNS) throw badRequest('TOO_MANY_COLUMNS', `Mỗi shop hiện tối đa ${MAX_LIST_COLUMNS} cột thông tin khách ở danh sách. Bỏ bớt một cột trước.`);
+}
 
 export function listFields(entityType, { shopId } = {}) {
   // Trường của khách chỉ tồn tại trong phạm vi một shop: không có shop thì không có trường nào
@@ -67,6 +74,10 @@ export function createField(input) {
     if (!input.shop_id) throw badRequest('SHOP_REQUIRED', 'Trường thông tin khách phải thuộc một shop');
     if (!db().prepare('SELECT 1 FROM shops WHERE id = ?').get(input.shop_id)) throw notFound('Shop');
   }
+  if (input.show_in_list) {
+    if (input.entity_type !== 'customer') throw badRequest('NOT_CUSTOMER', 'Chỉ trường thông tin khách mới hiện thành cột ở danh sách khách');
+    assertColumnRoom(input.shop_id);
+  }
   if (input.role && !ROLES.includes(input.role)) throw badRequest('INVALID_ROLE', `Vai trò không hợp lệ: ${input.role}`);
   if (input.type === 'formula') {
     if (!input.formula) throw badRequest('FORMULA_REQUIRED', 'Trường công thức cần có công thức');
@@ -78,10 +89,10 @@ export function createField(input) {
   const at = nowIso();
   db()
     .prepare(
-      `INSERT INTO custom_fields (id, entity_type, key, label, type, options, formula, shop_id, sort_order, role, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO custom_fields (id, entity_type, key, label, type, options, formula, shop_id, sort_order, role, show_in_list, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.entity_type, input.key, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.type === 'formula' ? input.formula : null, input.shop_id ?? null, input.sort_order ?? nextSortOrder(input.entity_type, input.shop_id ?? null), input.role ?? null, at, at);
+    .run(id, input.entity_type, input.key, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.type === 'formula' ? input.formula : null, input.shop_id ?? null, input.sort_order ?? nextSortOrder(input.entity_type, input.shop_id ?? null), input.role ?? null, input.show_in_list ? 1 : 0, at, at);
   return shape(db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id));
 }
 
@@ -91,14 +102,19 @@ export function updateField(id, patch) {
   if (!f) throw notFound('Trường tuỳ chỉnh');
   const formula = patch.formula ?? f.formula;
   if (f.type === 'formula' && patch.formula) parseFormula(f.entity_type, f.key, formula, f.shop_id);
+  if (patch.show_in_list !== undefined && patch.show_in_list && !f.show_in_list) {
+    if (f.entity_type !== 'customer') throw badRequest('NOT_CUSTOMER', 'Chỉ trường thông tin khách mới hiện thành cột ở danh sách khách');
+    assertColumnRoom(f.shop_id, f.id);
+  }
   db()
-    .prepare('UPDATE custom_fields SET label=?, options=?, formula=?, sort_order=?, archived_at=?, updated_at=? WHERE id=?')
+    .prepare('UPDATE custom_fields SET label=?, options=?, formula=?, sort_order=?, archived_at=?, show_in_list=?, updated_at=? WHERE id=?')
     .run(
       patch.label ?? f.label,
       patch.options ? JSON.stringify(patch.options) : f.options,
       formula,
       patch.sort_order ?? f.sort_order,
       patch.archived === undefined ? f.archived_at : patch.archived ? nowIso() : null,
+      patch.show_in_list === undefined ? f.show_in_list : patch.show_in_list ? 1 : 0,
       nowIso(),
       id,
     );
@@ -254,4 +270,27 @@ export function evaluateMetrics(summary, shopIds) {
       }
       return { id: m.id, key: m.key, name: m.name, format: m.format, value, error };
     });
+}
+
+/**
+ * Giá trị của các trường "hiện ở danh sách" cho một lô khách trong một shop.
+ * Trả { columns: [trường], values: Map(customerId → { key: giá trị }) }.
+ */
+export function listColumnValues(shopId, customerIds) {
+  const columns = db()
+    .prepare(`SELECT * FROM custom_fields WHERE entity_type = 'customer' AND shop_id = ? AND show_in_list = 1 AND archived_at IS NULL AND type != 'formula' ORDER BY sort_order, created_at`)
+    .all(shopId)
+    .map(shape);
+  const values = new Map();
+  if (!columns.length || !customerIds.length) return { columns, values };
+  const byId = new Map(columns.map((c) => [c.id, c]));
+  const rows = db()
+    .prepare(`SELECT entity_id, field_id, value_text, value_num FROM custom_values WHERE entity_type = 'customer' AND field_id IN (${columns.map(() => '?').join(',')}) AND entity_id IN (${customerIds.map(() => '?').join(',')})`)
+    .all(...columns.map((c) => c.id), ...customerIds);
+  for (const r of rows) {
+    const f = byId.get(r.field_id);
+    if (!values.has(r.entity_id)) values.set(r.entity_id, {});
+    values.get(r.entity_id)[f.key] = f.type === 'boolean' ? r.value_num === 1 : r.value_num !== null ? r.value_num : f.type === 'multiselect' ? JSON.parse(r.value_text) : r.value_text;
+  }
+  return { columns, values };
 }

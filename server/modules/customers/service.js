@@ -5,7 +5,7 @@ import { audit, emit } from '../../lib/events.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { runningCode } from '../../lib/codes.js';
 import { elementOfBirth, compatibleElements } from '../../lib/lunar.js';
-import { listFields, getValues, roleValues } from '../custom/service.js';
+import { listFields, getValues, roleValues, listColumnValues } from '../custom/service.js';
 import { shopHasFeature } from '../shops/service.js';
 
 const db = () => getDb();
@@ -95,23 +95,33 @@ export function listCustomers({ q, tag, element, shopId, limit = 50, cursor, sor
   }
   if (tag) (where.push(`EXISTS (SELECT 1 FROM json_each(customers.tags) WHERE value = ?)`), params.push(tag));
   const orderBy = { recent: 'id DESC', spent: 'total_spent DESC, id DESC', last_order: 'last_order_at DESC NULLS LAST, id DESC', name: 'name, id' }[sort] || 'id DESC';
-  // Phân trang bằng offset khi sắp xếp khác mặc định (đơn giản, đủ cho quy mô nhỏ)
-  const offset = cursor && sort !== 'recent' ? Number(cursor) : 0;
-  if (cursor && sort === 'recent') (where.push('id < ?'), params.push(cursor));
+  // Lọc theo mệnh phải lọc TRƯỚC khi phân trang (mệnh tính từ trường của shop, không nằm trong SQL):
+  // lấy hết khách khớp điều kiện rồi lọc, phân trang theo offset. Quy mô một chủ shop nên đủ nhanh.
+  const byElement = !!element && shopHasFengShui(shopId);
+  // Phân trang bằng offset khi sắp xếp khác mặc định hoặc khi lọc theo mệnh; mặc định dùng con trỏ id
+  const useOffset = sort !== 'recent' || byElement;
+  const offset = cursor && useOffset ? Number(cursor) : 0;
+  if (cursor && !useOffset) (where.push('id < ?'), params.push(cursor));
   let rows = db()
-    .prepare(`SELECT * FROM customers WHERE ${where.join(' AND ')} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
-    .all(...params, limit + 1, offset)
+    .prepare(`SELECT * FROM customers WHERE ${where.join(' AND ')} ORDER BY ${orderBy} ${byElement ? '' : 'LIMIT ? OFFSET ?'}`)
+    .all(...params, ...(byElement ? [] : [limit + 1, offset]))
     .map(enrich);
-  // Mệnh chỉ có trong ngữ cảnh một shop phong thuỷ
   if (shopHasFengShui(shopId)) {
     const rv = roleValues(shopId, rows.map((r) => r.id));
     rows = rows.map((r) => ({ ...r, feng_shui: fengShuiOf(rv.get(r.id)) }));
-    if (element) rows = rows.filter((r) => r.feng_shui?.element === element);
+    if (byElement) rows = rows.filter((r) => r.feng_shui?.element === element).slice(offset, offset + limit + 1);
   }
   const hasMore = rows.length > limit;
-  const data = hasMore ? rows.slice(0, limit) : rows;
-  const next = hasMore ? (sort === 'recent' ? data[data.length - 1].id : String(offset + limit)) : null;
-  return { data, next_cursor: next };
+  let data = hasMore ? rows.slice(0, limit) : rows;
+  const next = hasMore ? (useOffset ? String(offset + limit) : data[data.length - 1].id) : null;
+  // Cột thông tin riêng của shop (chỉ khi xem theo một shop)
+  let columns = [];
+  if (shopId) {
+    const cv = listColumnValues(shopId, data.map((r) => r.id));
+    columns = cv.columns;
+    data = data.map((r) => ({ ...r, shop_values: cv.values.get(r.id) || {} }));
+  }
+  return { data, next_cursor: next, columns };
 }
 
 const FIELDS = ['name', 'phone', 'phone2', 'email', 'facebook_url', 'shopee_username', 'address', 'note', 'tags', 'source_channel', 'archived_at'];

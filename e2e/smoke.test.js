@@ -61,7 +61,12 @@ async function login(viewport = { width: 1280, height: 860 }) {
   await page.waitForSelector('.topbar');
   return { page, errors, ctx };
 }
-const pickShop = async (page, name) => { await page.click('.shop-btn'); await page.click(`.shop-menu >> text=${name}`); await page.waitForTimeout(500); };
+const pickShop = async (page, name) => {
+  await page.click('.shop-btn');
+  await page.click(`.shop-menu >> text=${name}`);
+  await page.locator('.shop-btn', { hasText: name }).waitFor(); // chờ đến khi bộ chọn shop thật sự đổi, không chờ cố định
+};
+const themeIs = (page, want) => page.waitForFunction((w) => document.documentElement.dataset.theme === w, want, { timeout: 5000 });
 
 test('đăng nhập sai mật khẩu báo lỗi, đúng thì vào được', { skip }, async () => {
   const ctx = await browser.newContext();
@@ -80,16 +85,15 @@ test('đăng nhập sai mật khẩu báo lỗi, đúng thì vào được', { s
 
 test('chuyển shop đổi giao diện, tính năng và trường khách đúng theo ngành', { skip }, async () => {
   const { page, errors, ctx } = await login();
-  const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
   await pickShop(page, 'Nước hoa');
-  assert.equal(await theme(), 'nuochoa');
+  await themeIs(page, 'nuochoa');
   assert.equal(await page.locator('.lunar').count(), 0, 'shop nước hoa không có âm lịch');
   await page.goto(`${base}/customers`);
   await page.waitForSelector('tr.click');
   assert.equal(await page.locator('th:has-text("Mệnh")').count(), 0);
 
   await page.click('tr.click >> nth=0');
-  await page.waitForSelector('text=Thông tin riêng');
+  await page.waitForSelector('text=Chỉ shop này thấy');
   assert.ok(await page.locator('text=Nhóm hương yêu thích').count(), 'trường của ngành nước hoa');
   await page.click('section:has-text("Thông tin riêng") >> button:has-text("Sửa")');
   await page.fill('label:has-text("Dòng xe") input', 'Mazda CX-5');
@@ -98,16 +102,16 @@ test('chuyển shop đổi giao diện, tính năng và trường khách đúng 
   const url = page.url();
 
   await pickShop(page, 'Phong thuỷ');
-  assert.equal(await theme(), 'phongthuy');
+  await themeIs(page, 'phongthuy');
   assert.ok(await page.locator('.lunar').count(), 'shop phong thuỷ có âm lịch');
   await page.goto(url);
-  await page.waitForSelector('text=Thông tin riêng');
+  await page.waitForSelector('text=Chỉ shop này thấy');
   assert.equal(await page.locator('text=Mazda CX-5').count(), 0, 'dữ liệu của shop kia không lọt sang');
   assert.ok(await page.locator('text=Ngày sinh (dương lịch)').count());
   assert.equal(await page.locator('text=Dòng xe').count(), 0);
 
   await pickShop(page, 'Tất cả shop');
-  assert.equal(await theme(), 'general');
+  await themeIs(page, 'general');
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -169,5 +173,29 @@ test('import đơn từ trang Đơn hàng: xem thử rồi ghi, dòng lỗi đư
   assert.equal(orders.length, 1, 'đơn lỗi không được ghi');
   assert.deepEqual(errors, []);
   fs.rmSync(file, { force: true });
+  await ctx.close();
+});
+
+test('trường thông tin khách hiện thành cột ở danh sách khách; trạng thái trống có hình theo theme', { skip }, async () => {
+  const { page, errors, ctx } = await login();
+  await pickShop(page, 'Nước hoa');
+  await page.goto(`${base}/customers`);
+  await page.waitForSelector('tr.click');
+  assert.equal(await page.locator('th:has-text("Dòng xe")').count(), 0, 'chưa bật cột nào');
+  await page.click('button:has-text("Thông tin khách của shop")');
+  await page.waitForSelector('.modal >> text=Dòng xe');
+  // ô "Cột" nằm cùng hàng với tên trường "Dòng xe"
+  await page.locator('.modal .row.between', { hasText: 'Dòng xe' }).locator('input[type=checkbox]').click();
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('th:has-text("Dòng xe")');
+  assert.ok(await page.locator('td:has-text("Mazda CX-5")').count(), 'giá trị đã nhập hiện trong cột');
+
+  // Shop phong thuỷ chưa có đơn: trạng thái trống dùng trống đồng
+  await pickShop(page, 'Phong thuỷ');
+  await page.goto(`${base}/orders`);
+  await page.waitForSelector('.empty');
+  assert.ok(await page.locator('.empty svg.empty-art').count(), 'trống đồng ở shop phong thuỷ');
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
