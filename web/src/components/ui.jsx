@@ -175,8 +175,7 @@ export function AreaChart({ data, color = 'var(--champagne)' }) {
   const last = pts[pts.length - 1];
   return (
     <svg className="chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Biểu đồ doanh thu theo ngày">
-      <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".38" /><stop offset="1" stopColor={color} stopOpacity="0" /></linearGradient></defs>
-      <path d={`${line} L${W},${H} L0,${H} Z`} fill="url(#ag)" />
+      <path d={`${line} L${W},${H} L0,${H} Z`} fill={color} fillOpacity=".16" />
       <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={last[0]} cy={last[1]} r="4" fill={color} vectorEffect="non-scaling-stroke" />
     </svg>
