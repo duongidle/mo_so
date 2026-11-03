@@ -37,6 +37,7 @@
   - Sidebar nhóm theo việc, có icon; bộ chọn shop là menu riêng (thay select mặc định); điện thoại có thanh tab nổi dạng viên thuốc, bảng đơn thành danh sách thẻ.
   - Biểu đồ dùng đường thẳng, không làm mượt: đường cong làm "phình" giữa các ngày doanh thu 0 và gây hiểu nhầm.
   - Màu nhận diện shop mới (trong tông thương hiệu). Shop đã tạo trước đó giữ màu cũ, đổi được bằng API `PATCH /shops/:id {color}`.
+- Sidebar đổi từ cột walnut kín 252px thành dải icon nổi 68px bo tròn; rê chuột/focus thì bung ra 236px đè lên nội dung (không đẩy layout); nút "Ghim thanh bên" giữ luôn mở, nhớ qua lần tải lại.
 - Chạy lại toàn bộ luồng bằng trình duyệt (POS bán ngay trên điện thoại, sửa sản phẩm, import Excel từ trang Đơn, đối soát, menu shop): không lỗi.
 
 ### 2026-11-03 — Phiên 3: M7–M13
