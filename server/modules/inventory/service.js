@@ -5,6 +5,7 @@ import { conflict, badRequest, notFound } from '../../lib/errors.js';
 import { emit, audit } from '../../lib/events.js';
 import { runningCode } from '../../lib/codes.js';
 import { getSetting } from '../settings/service.js';
+import { availableBundles } from '../catalog/bundles.js';
 
 const db = () => getDb();
 
@@ -36,6 +37,9 @@ export function getLevel(warehouseId, variantId) {
  */
 export function applyMovement(m) {
   if (!Number.isInteger(m.qty) || m.qty <= 0) throw badRequest('INVALID_QTY', 'Số lượng phải là số nguyên dương');
+  if (db().prepare("SELECT 1 FROM variants WHERE id = ? AND kind = 'bundle'").get(m.variantId)) {
+    throw badRequest('BUNDLE_NO_STOCK', 'Combo không có tồn kho riêng. Nhập, điều chỉnh, chuyển kho cho từng sản phẩm thành phần.', { variant_id: m.variantId });
+  }
   const isIn = IN_TYPES.has(m.type);
   const level = getLevel(m.warehouseId, m.variantId);
   const at = m.at || nowIso();
@@ -139,7 +143,7 @@ export function listStock({ warehouseId, shopId, q, filter, limit = 200 }) {
   }
   const rows = db()
     .prepare(
-      `SELECT v.id AS variant_id, v.sku, v.name AS variant_name, v.min_stock, p.id AS product_id, p.name AS product_name, p.unit,
+      `SELECT v.id AS variant_id, v.sku, v.kind, v.name AS variant_name, v.min_stock, p.id AS product_id, p.name AS product_name, p.unit,
               COALESCE(SUM(s.on_hand),0) AS on_hand,
               CASE WHEN SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand END) > 0
                    THEN ROUND(SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand * s.avg_cost END) * 1.0 / SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand END))
@@ -163,6 +167,11 @@ export function listStock({ warehouseId, shopId, q, filter, limit = 200 }) {
   const slowDays = getSetting('slow_moving_days');
   const slowBefore = new Date(Date.now() - slowDays * 86400000).toISOString();
   let out = rows.map((r) => {
+    // Combo không có tồn riêng: số bán được = min theo thành phần; giá trị tồn nằm ở thành phần nên không cộng lần nữa
+    if (r.kind === 'bundle') {
+      const avail = availableBundles(r.variant_id, warehouseId);
+      return { ...r, is_bundle: true, on_hand: avail, avg_cost: 0, stock_value: 0, sold_30d: 0, days_left: null, is_low: false, is_slow: false, is_negative: false };
+    }
     const sold30 = soldMap.get(r.variant_id) || 0;
     const perDay = sold30 / 30;
     const daysLeft = perDay > 0 ? Math.floor(r.on_hand / perDay) : null;

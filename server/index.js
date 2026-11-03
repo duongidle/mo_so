@@ -3,9 +3,13 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { config } from './lib/config.js';
 import { getDb } from './db/index.js';
+import { startBackupScheduler } from './jobs/backup.js';
+import { startWebhookWorker } from './jobs/webhooks.js';
 
 getDb(); // mở DB + chạy migration
 const app = createApp();
+startBackupScheduler();
+startWebhookWorker();
 
 serve({ fetch: app.fetch, port: config.port, hostname: config.host }, () => {
   const lan = Object.values(os.networkInterfaces())

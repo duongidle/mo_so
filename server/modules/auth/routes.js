@@ -11,6 +11,7 @@ import { config } from '../../lib/config.js';
 import { audit } from '../../lib/events.js';
 import { createWarehouse } from '../warehouses/service.js';
 import { createShop } from '../shops/service.js';
+import { INDUSTRY_IDS } from '../../lib/industries.js';
 
 const r = new Hono();
 
@@ -44,7 +45,7 @@ r.post('/setup', async (c) => {
       password: z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự').max(200),
       warehouse_name: z.string().trim().min(1).default('Kho chính'),
       shops: z
-        .array(z.object({ name: z.string().trim().min(1), code: z.string().trim().min(1).max(6) }))
+        .array(z.object({ name: z.string().trim().min(1), code: z.string().trim().min(1).max(6), industry: z.enum(INDUSTRY_IDS).optional() }))
         .min(1)
         .default([{ name: 'Shop chính', code: 'S1' }]),
     }),

@@ -1,15 +1,23 @@
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
+import { applyIndustry } from './industry.js';
+import { hasFeature } from '../../lib/industries.js';
 import { audit, emit } from '../../lib/events.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 
-const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#db2777', '#0891b2'];
+// Màu nhận diện shop: giữ trong tông giấy–gỗ–gốm của thương hiệu (đã giảm bão hoà), vẫn đủ khác nhau để phân biệt
+const PALETTE = ['#865C49', '#42633F', '#33566F', '#8A4E14', '#6A4A70', '#A23A30'];
 
 export function getShop(id) {
   const s = getDb().prepare('SELECT * FROM shops WHERE id = ?').get(id);
   if (!s) throw notFound('Shop');
   return s;
+}
+
+export function shopHasFeature(shopId, feature) {
+  const s = getDb().prepare('SELECT industry FROM shops WHERE id = ?').get(shopId);
+  return !!s && hasFeature(s.industry, feature);
 }
 
 export function listShops({ includeArchived = false } = {}) {
@@ -31,8 +39,8 @@ export function createShop(input, actor) {
   const at = nowIso();
   const count = db.prepare('SELECT COUNT(*) n FROM shops').get().n;
   db.prepare(
-    `INSERT INTO shops (id, code, name, description, color, default_warehouse_id, phone, address, receipt_footer, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO shops (id, code, name, description, color, default_warehouse_id, phone, address, receipt_footer, industry, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id,
     input.code.toUpperCase(),
@@ -43,16 +51,18 @@ export function createShop(input, actor) {
     input.phone ?? null,
     input.address ?? null,
     input.receipt_footer ?? 'Cảm ơn quý khách!',
+    input.industry ?? 'general',
     at,
     at,
   );
+  applyIndustry(id);
   const s = getShop(id);
   audit(actor, 'shop.created', 'shop', id, null, s);
   emit('shop.created', { entityType: 'shop', entityId: id, shopId: id, data: s });
   return s;
 }
 
-const FIELDS = ['code', 'name', 'description', 'color', 'default_warehouse_id', 'phone', 'address', 'receipt_footer', 'archived_at'];
+const FIELDS = ['code', 'name', 'description', 'color', 'default_warehouse_id', 'phone', 'address', 'receipt_footer', 'industry', 'archived_at'];
 
 export function updateShop(id, input, actor) {
   const before = getShop(id);
@@ -64,6 +74,7 @@ export function updateShop(id, input, actor) {
   getDb()
     .prepare(`UPDATE shops SET ${FIELDS.map((f) => `${f}=?`).join(', ')}, updated_at=? WHERE id=?`)
     .run(...FIELDS.map((f) => next[f]), next.updated_at, id);
+  if (next.industry !== before.industry) applyIndustry(id);
   const after = getShop(id);
   audit(actor, 'shop.updated', 'shop', id, before, after);
   emit('shop.updated', { entityType: 'shop', entityId: id, shopId: id, data: after });

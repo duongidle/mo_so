@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Mở Sổ">
+  <title>Mở Sổ</title>
+  <!-- Nền: Walnut -->
+  <rect width="128" height="128" rx="28" fill="#301F12"/>
+  <!-- Viền ép kim mảnh: Champagne -->
+  <rect x="6" y="6" width="116" height="116" rx="22" fill="none" stroke="#CDB58D" stroke-opacity=".4" stroke-width="1"/>
+  <!-- Tờ trái (phía bóng): Terracotta. Tờ phải (đang mở lên): Linen -->
+  <rect x="25" y="37" width="38" height="60" rx="3" fill="#865C49"/>
+  <rect x="67" y="31" width="38" height="60" rx="3" fill="#EDE3D2"/>
+  <!-- Dòng kẻ sổ: dấu vết ghi chép -->
+  <g stroke="#EDE3D2" stroke-opacity=".5" stroke-width="2" stroke-linecap="round">
+    <path d="M33 52H55"/><path d="M33 62H55"/><path d="M33 72H55"/><path d="M33 82H48"/>
+  </g>
+  <g stroke="#301F12" stroke-opacity=".4" stroke-width="2" stroke-linecap="round">
+    <path d="M75 46H97"/><path d="M75 56H97"/><path d="M75 66H88"/>
+  </g>
+  <!-- Gáy sổ: Champagne -->
+  <path d="M65 31V97" stroke="#CDB58D" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- Dấu niêm: Oxblood, hơi lệch như đóng tay -->
+  <rect x="88" y="72" width="19" height="19" rx="3.5" fill="#633D37" transform="rotate(-5 97.5 81.5)"/>
+</svg>

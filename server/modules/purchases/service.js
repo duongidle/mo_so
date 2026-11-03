@@ -106,8 +106,9 @@ function writeLines(purchaseId, lines) {
      VALUES (?,?,?,?,?,?,?,?,?)`,
   );
   lines.forEach((l, i) => {
-    const v = db().prepare('SELECT id FROM variants WHERE id = ?').get(l.variant_id);
+    const v = db().prepare('SELECT id, kind FROM variants WHERE id = ?').get(l.variant_id);
     if (!v) throw notFound(`Biến thể ${l.variant_id}`);
+    if (v.kind === 'bundle') throw badRequest('BUNDLE_NO_STOCK', 'Không nhập hàng cho combo. Nhập từng sản phẩm thành phần.');
     ins.run(newId('pul'), purchaseId, l.variant_id, l.qty, l.unit_cost, l.line_total, l.allocated_cost, l.landed_unit_cost, i);
   });
 }

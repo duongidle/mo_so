@@ -30,6 +30,7 @@ export async function setup() {
     post: (p, d, h) => call('POST', p, d ?? {}, h),
     patch: (p, d) => call('PATCH', p, d),
     put: (p, d) => call('PUT', p, d),
+    delete: (p) => call('DELETE', p),
   };
   const s = await api.post('/auth/setup', {
     username: 'duong',

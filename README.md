@@ -8,7 +8,7 @@ Thiết kế đầy đủ ở [`CLAUDE.md`](CLAUDE.md), tiến độ ở [`PROGR
 
 ## Trạng thái
 
-Backend (API) đã xong các phần: shop, kho, sản phẩm, nhập hàng, tồn kho, khách hàng, đơn bán, import đơn. Chưa có giao diện web, báo cáo, chi phí. Chi tiết từng module ở `PROGRESS.md`.
+Đã có backend và giao diện web cho: shop, kho, sản phẩm, nhập hàng, tồn kho, khách hàng, đơn bán (POS), import đơn, chi phí và đối soát Shopee, báo cáo và sức khoẻ kinh doanh, chăm sóc khách, trường tuỳ chỉnh, API key, webhook, sao lưu. Các điểm còn thiếu ghi ở `PROGRESS.md`.
 
 ## Chạy trên máy
 
@@ -16,12 +16,13 @@ Cần Node.js 20 trở lên (`node -v`).
 
 ```bash
 npm install
+npm run build     # build giao diện web (lần đầu)
 npm run seed      # (tuỳ chọn) dữ liệu mẫu, đăng nhập admin / matkhau123
 npm start         # http://localhost:3000
 npm test
 ```
 
-Sao lưu tay: `npm run backup` → `data/backups/`. Quên mật khẩu: `npm run reset-password -- admin matkhaumoi`.
+Sao lưu tự động mỗi ngày vào `data/backups/` (giữ 14 bản ngày + 8 bản tuần). Sao lưu tay: `npm run backup`. Khôi phục (tắt server trước): `npm run restore -- <file>`. Phát triển giao diện: chạy `npm run dev` và `npm run dev:web` song song. Quên mật khẩu: `npm run reset-password -- admin matkhaumoi`.
 
 ## Nhận diện
 
