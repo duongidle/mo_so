@@ -10,13 +10,10 @@ test('allocate chia tiền không lệch đồng nào', () => {
   assert.equal(allocate(10001, [3, 7]).reduce((a, b) => a + b, 0), 10001);
 });
 
-test('M0/M1: thiết lập, đăng nhập, shop, kho', async () => {
+test('M0/M1: đăng ký, đăng nhập, shop, kho', async () => {
   const { api, shops, wh } = await setup();
   assert.equal(shops.length, 2);
   assert.equal(shops[0].default_warehouse_id, wh.id);
-
-  const again = await api.post('/auth/setup', { username: 'x', display_name: 'x', password: '12345678' });
-  assert.equal(again.status, 409);
 
   const me = await api.get('/auth/me');
   assert.equal(me.body.data.username, 'duong');

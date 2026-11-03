@@ -83,10 +83,13 @@ export function applyMovement(m) {
   } else {
     db()
       .prepare(
-        `UPDATE stock_levels SET on_hand = ?, avg_cost = ?, ${isIn ? 'last_in_at' : 'last_out_at'} = ?, updated_at = ?
+        // Biến động ghi lùi ngày (đơn import đặt từ trước) không được kéo "lần nhập/xuất gần nhất" về quá khứ
+        `UPDATE stock_levels SET on_hand = ?, avg_cost = ?,
+           ${isIn ? 'last_in_at' : 'last_out_at'} = CASE WHEN ${isIn ? 'last_in_at' : 'last_out_at'} IS NULL OR ${isIn ? 'last_in_at' : 'last_out_at'} < ? THEN ? ELSE ${isIn ? 'last_in_at' : 'last_out_at'} END,
+           updated_at = ?
          WHERE warehouse_id = ? AND variant_id = ?`,
       )
-      .run(newOnHand, newAvg, at, at, m.warehouseId, m.variantId);
+      .run(newOnHand, newAvg, at, at, nowIso(), m.warehouseId, m.variantId);
   }
 
   db()

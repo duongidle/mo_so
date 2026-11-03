@@ -84,9 +84,17 @@ function Body({ tab, d, elements }) {
   if (tab === 'products') return !d[0].data.length ? <Empty>Chưa bán sản phẩm nào trong kỳ.</Empty> : (
     <>
     {elements && <Card title="Theo ngũ hành"><HBars items={ELEMENT_ORDER.map((e) => ({ label: e, value: d[1].data.find((x) => x.element === e)?.revenue || 0 }))} /><p className="small muted" style={{ marginBottom: 0 }}>Sản phẩm hợp nhiều hành được chia đều doanh thu cho các hành đó.</p></Card>}
+    {d[0].combos.count > 0 && (
+      <div className="grid cols-4">
+        <Kpi label="Combo đã bán" value={num(d[0].combos.qty)} hint={`${d[0].combos.count} loại combo`} />
+        <Kpi label="Doanh thu combo" value={vnd(d[0].combos.revenue)} />
+        <Kpi label="Giá vốn combo" value={vnd(d[0].combos.cogs)} hint="Tổng giá vốn thành phần lúc bán" />
+        <Kpi label="LN gộp combo" value={vnd(d[0].combos.gross_profit)} />
+      </div>
+    )}
     <Card flat><div className="table-wrap"><table>
-      <thead><tr><th>Sản phẩm</th><th className="num">Đã bán</th><th className="num">Doanh thu</th><th className="num">Giá vốn</th><th className="num">LN gộp</th><th className="num">Biên</th></tr></thead>
-      <tbody>{d[0].data.map((p) => <tr key={p.variant_id}><td>{p.product_name}{p.variant_name ? ` — ${p.variant_name}` : ''}<div className="small muted">{p.sku}</div></td><td className="num">{num(p.qty_sold)}</td><td className="num">{vnd(p.revenue)}</td><td className="num">{vnd(p.cogs)}</td><td className="num">{vnd(p.gross_profit)}</td><td className="num">{pct(p.margin_pct)}</td></tr>)}</tbody>
+      <thead><tr><th>Sản phẩm</th><th className="num">Đã bán</th>{d[0].combos.count > 0 && <th className="num" title="Số đơn vị bán nằm trong combo, không cộng vào cột Đã bán">Qua combo</th>}<th className="num">Doanh thu</th><th className="num">Giá vốn</th><th className="num">LN gộp</th><th className="num">Biên</th></tr></thead>
+      <tbody>{d[0].data.map((p) => <tr key={p.variant_id}><td>{p.product_name}{p.variant_name ? ` — ${p.variant_name}` : ''}{p.is_bundle && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<div className="small muted">{p.sku}</div></td><td className="num">{num(p.qty_sold)}</td>{d[0].combos.count > 0 && <td className="num muted">{p.is_bundle ? '—' : num(p.qty_in_combos)}</td>}<td className="num">{vnd(p.revenue)}</td><td className="num">{vnd(p.cogs)}</td><td className="num">{vnd(p.gross_profit)}</td><td className="num">{pct(p.margin_pct)}</td></tr>)}</tbody>
     </table></div></Card>
     </>
   );

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup } from './helpers.js';
+import { getDb } from '../server/db/index.js';
 
 async function seedCatalog(api, nh, pt, wh) {
   const perfume = await api.post('/products', {
@@ -299,4 +300,32 @@ test('M6: import đơn — xem thử, tạo, chống trùng, cập nhật trạn
   assert.equal(batches.length, 4);
   const integrity = await api.get('/stock-integrity');
   assert.equal(integrity.body.ok, true);
+});
+
+test('Đơn import từ sàn ghi biến động kho theo ngày đặt, không kéo "lần xuất gần nhất" về quá khứ', async () => {
+  const { api, nh, wh } = await setup();
+  const v = (await api.post('/products', { name: 'Nước hoa', variants: [{ sku: 'NH-1', default_price: 100000 }], shop_ids: [nh.id] })).body.data.variants[0];
+  await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: v.id, qty: 20, unit_cost: 40000 }] });
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
+  const day = (iso) => new Date(new Date(iso).getTime() + 7 * 3600000).toISOString().slice(0, 10);
+
+  // Bán trực tiếp hôm nay → last_out_at = hôm nay
+  await api.post('/orders', { shop_id: nh.id, lines: [{ sku: 'NH-1', qty: 1 }], status: 'completed' });
+  const lastOut = async () => (await getDb().prepare('SELECT last_out_at FROM stock_levels WHERE variant_id = ?').get(v.id)).last_out_at;
+  const before = await lastOut();
+
+  // Import đơn Shopee đặt cách đây 45 ngày
+  const old = daysAgo(45);
+  const imp = await api.post('/imports/orders/commit', { shop_id: nh.id, channel_id: 'shopee', orders: [{ external_id: 'SP-OLD', status: 'completed', ordered_at: old, lines: [{ sku: 'NH-1', qty: 3 }] }] });
+  assert.equal(imp.status, 200, JSON.stringify(imp.body));
+  assert.equal(imp.body.data.summary.created, 1);
+
+  const mv = (await api.get('/stock-movements?ref_type=order')).body.data.find((m) => m.qty === -3);
+  assert.equal(mv.business_date, day(old), 'ngày biến động = ngày đặt trên sàn');
+  assert.equal(mv.created_at, old);
+  assert.equal(await lastOut(), before, 'lần xuất gần nhất không bị kéo lùi về 45 ngày trước');
+  const s = (await api.get('/stock')).body.data.find((r) => r.sku === 'NH-1');
+  assert.equal(s.sold_30d, 1, 'đơn cũ hơn 30 ngày không tính vào tốc độ bán');
+  assert.equal(s.on_hand, 16);
+  assert.deepEqual((await api.get('/stock-integrity')).body, { ok: true, issues: [] });
 });

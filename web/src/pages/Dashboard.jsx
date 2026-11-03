@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, AreaChart, Card, Empty, Kpi, StatusBadge, useAsync } from '../components/ui.jsx';
 import { vnd, num, pct, today, addDays, monthStart } from '../lib.js';
-import { Compass, Ripple, Element, ELEMENT_ORDER } from '../components/Motif.jsx';
+import { Compass, Ripple, Gauge, Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 
 const MONTH = () => `tháng ${Number(today().slice(5, 7))}`;
 
@@ -13,7 +13,7 @@ function greeting(name) {
   return `Chào ${part}, ${name}`;
 }
 
-export default function Dashboard() {
+export default function Dashboard({ progress, reopenGuide }) {
   const { shopId, user, theme, has } = useSession();
   const shop = shopId === 'all' ? undefined : shopId;
   const state = useAsync(async () => {
@@ -29,6 +29,16 @@ export default function Dashboard() {
   return (
     <div className="page stack">
       <div className="page-head"><div><div className="eyebrow">Sổ hôm nay</div><h1>{greeting(user.displayName)}</h1></div></div>
+      {progress?.step && (
+        <section className="card" aria-label="Hoàn tất thiết lập">
+          <div className="card-head"><h3>Hoàn tất thiết lập</h3><button className="btn sm primary" onClick={reopenGuide}>Tiếp tục</button></div>
+          <ol className="stepper">
+            <li className="done"><span>✓</span>Tạo shop</li>
+            <li className={progress.hasWarehouse ? 'done' : 'on'}><span>{progress.hasWarehouse ? '✓' : 2}</span>Tạo kho</li>
+            <li className={progress.hasProduct ? 'done' : progress.hasWarehouse ? 'on' : ''}><span>{progress.hasProduct ? '✓' : 3}</span>Tạo sản phẩm</li>
+          </ol>
+        </section>
+      )}
       <Async state={state}>
         {({ dash: d, series, orders, elements }) => {
           const cur = d.period.current;
@@ -38,6 +48,7 @@ export default function Dashboard() {
               <section className="card hero">
                 {theme === 'phongthuy' && <Compass className="hero-compass" size={300} />}
                 {theme === 'nuochoa' && <Ripple className="hero-ripple" size={300} />}
+                {theme === 'oto' && <Gauge className="hero-gauge" size={300} />}
                 <div className={`hero-body ${theme === 'phongthuy' ? 'with-vert' : ''}`}>
                 {theme === 'phongthuy' && <div className="hero-vert">Sổ hôm nay · {MONTH()}</div>}
                 <div>

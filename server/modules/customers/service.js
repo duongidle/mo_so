@@ -5,7 +5,7 @@ import { audit, emit } from '../../lib/events.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { runningCode } from '../../lib/codes.js';
 import { elementOfBirth, compatibleElements } from '../../lib/lunar.js';
-import { listFields, getValues, roleValues } from '../custom/service.js';
+import { listFields, getValues, roleValues, listColumnValues } from '../custom/service.js';
 import { shopHasFeature } from '../shops/service.js';
 
 const db = () => getDb();
@@ -22,7 +22,8 @@ export function normalizePhone(raw) {
 
 function enrich(c) {
   if (!c) return null;
-  return { ...c, tags: JSON.parse(c.tags || '[]') };
+  const { tags: _legacy, ...rest } = c; // cột `tags` chung cũ không còn dùng: nhãn là của từng shop (bảng customer_tags)
+  return rest;
 }
 
 /**
@@ -44,6 +45,98 @@ export function fengShuiOf(values) {
   };
 }
 
+// ---------- Thành viên shop ----------
+/** Khách này thuộc danh sách khách của shop. Gọi khi khách mua ở shop, được thêm vào shop, hoặc nhập thông tin riêng. */
+export function ensureMember(customerId, shopId) {
+  db()
+    .prepare('INSERT INTO customer_shops (customer_id, shop_id, added_at) VALUES (?,?,?) ON CONFLICT(customer_id, shop_id) DO UPDATE SET removed_at = NULL')
+    .run(customerId, shopId, nowIso());
+  db().prepare('UPDATE customers SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL AND merged_into IS NULL').run(customerId);
+}
+
+export const isMember = (customerId, shopId) =>
+  !!db().prepare('SELECT 1 FROM customer_shops WHERE customer_id = ? AND shop_id = ? AND removed_at IS NULL').get(customerId, shopId);
+
+function assertShop(shopId) {
+  const s = db().prepare('SELECT id FROM shops WHERE id = ?').get(shopId);
+  if (!s) throw notFound('Shop');
+}
+
+/** Thêm một khách có sẵn (đang ở shop khác hoặc chưa thuộc shop nào) vào danh sách khách của shop */
+export function addToShop(customerId, shopId, actor) {
+  const c = getCustomer(customerId);
+  assertShop(shopId);
+  ensureMember(c.id, shopId);
+  audit(actor, 'customer.added_to_shop', 'customer', c.id, null, { shop_id: shopId });
+  return { customer_id: c.id, shop_id: shopId, is_member: true };
+}
+
+/**
+ * Xoá khách khỏi MỘT shop. Chỉ đụng dữ liệu của shop đó: thông tin riêng, nhãn, ghi chú của shop.
+ * Khách ở shop khác, hồ sơ chung và lịch sử đơn hàng (đơn vẫn lưu tên/SĐT lúc mua) giữ nguyên.
+ * Khách không còn ở shop nào và chưa từng có đơn thì được lưu trữ (ẩn), không xoá cứng.
+ * Dữ liệu bị xoá được ghi vào nhật ký (audit_log) để khôi phục tay nếu xoá nhầm.
+ */
+export function removeFromShop(customerId, shopId, actor) {
+  const c = getCustomer(customerId);
+  assertShop(shopId);
+  if (!isMember(c.id, shopId)) throw conflict('NOT_MEMBER', 'Khách này không có trong danh sách của shop');
+  const before = {
+    values: getValues('customer', c.id, { shopId }),
+    tags: shopTags(c.id, shopId),
+    notes: db().prepare('SELECT content, created_at FROM customer_notes WHERE customer_id = ? AND shop_id = ?').all(c.id, shopId),
+  };
+  db().prepare(`DELETE FROM custom_values WHERE entity_type = 'customer' AND entity_id = ? AND field_id IN (SELECT id FROM custom_fields WHERE entity_type = 'customer' AND shop_id = ?)`).run(c.id, shopId);
+  db().prepare('DELETE FROM customer_tags WHERE customer_id = ? AND shop_id = ?').run(c.id, shopId);
+  db().prepare('DELETE FROM customer_notes WHERE customer_id = ? AND shop_id = ?').run(c.id, shopId);
+  db().prepare('UPDATE customer_shops SET removed_at = ? WHERE customer_id = ? AND shop_id = ?').run(nowIso(), c.id, shopId);
+  const stillIn = db().prepare('SELECT COUNT(*) AS n FROM customer_shops WHERE customer_id = ? AND removed_at IS NULL').get(c.id).n;
+  const orders = db().prepare('SELECT COUNT(*) AS n FROM orders WHERE customer_id = ?').get(c.id).n;
+  const archived = stillIn === 0 && orders === 0;
+  if (archived) db().prepare('UPDATE customers SET archived_at = ?, updated_at = ? WHERE id = ?').run(nowIso(), nowIso(), c.id);
+  audit(actor, 'customer.removed_from_shop', 'customer', c.id, { shop_id: shopId, ...before }, null);
+  emit('customer.removed', { entityType: 'customer', entityId: c.id, shopId, data: { customer_id: c.id, shop_id: shopId, archived } });
+  return { removed: true, archived, still_in_shops: stillIn, orders_kept: orders };
+}
+
+// ---------- Nhãn khách (của từng shop) ----------
+const MAX_TAGS = 20;
+const normTag = (t) => String(t).normalize('NFC').trim().replace(/\s+/g, ' ').slice(0, 30);
+
+export const shopTags = (customerId, shopId) =>
+  db().prepare('SELECT tag FROM customer_tags WHERE customer_id = ? AND shop_id = ? ORDER BY tag COLLATE NOCASE').all(customerId, shopId).map((r) => r.tag);
+
+/** Đặt lại toàn bộ nhãn của khách trong một shop. Trùng (không phân biệt hoa thường) và rỗng bị bỏ. */
+export function setShopTags(customerId, shopId, tags, actor) {
+  const c = getCustomer(customerId);
+  assertShop(shopId);
+  const seen = new Set();
+  const clean = [];
+  for (const t of tags.map(normTag)) {
+    if (!t || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase());
+    clean.push(t);
+  }
+  if (clean.length > MAX_TAGS) throw badRequest('TOO_MANY_TAGS', `Mỗi khách tối đa ${MAX_TAGS} nhãn trong một shop`);
+  ensureMember(c.id, shopId);
+  const before = shopTags(c.id, shopId);
+  db().prepare('DELETE FROM customer_tags WHERE customer_id = ? AND shop_id = ?').run(c.id, shopId);
+  const ins = db().prepare('INSERT INTO customer_tags (customer_id, shop_id, tag) VALUES (?,?,?)');
+  for (const t of clean) ins.run(c.id, shopId, t);
+  audit(actor, 'customer.tags_changed', 'customer', c.id, { shop_id: shopId, tags: before }, { shop_id: shopId, tags: clean });
+  return shopTags(c.id, shopId);
+}
+
+/** Các nhãn đang dùng trong shop kèm số khách (chỉ khách còn trong shop) */
+export const listShopTagCounts = (shopId) =>
+  db()
+    .prepare(
+      `SELECT t.tag, COUNT(*) AS count FROM customer_tags t
+       JOIN customer_shops m ON m.customer_id = t.customer_id AND m.shop_id = t.shop_id AND m.removed_at IS NULL
+       WHERE t.shop_id = ? GROUP BY t.tag COLLATE NOCASE ORDER BY count DESC, t.tag COLLATE NOCASE`,
+    )
+    .all(shopId);
+
 const shopHasFengShui = (shopId) => !!shopId && shopHasFeature(shopId, 'feng_shui');
 
 export function getCustomer(id) {
@@ -57,10 +150,12 @@ export function getCustomerDetail(id, { shopId } = {}) {
   const c = getCustomer(id);
   if (shopId) {
     // Phần thông tin riêng của shop đang xem; shop khác không lọt vào
+    c.is_member = isMember(c.id, shopId);
     c.shop_profile = {
       shop_id: shopId,
       fields: listFields('customer', { shopId }),
       values: getValues('customer', c.id, { shopId }),
+      tags: shopTags(c.id, shopId),
     };
     c.feng_shui = shopHasFengShui(shopId) ? fengShuiOf(roleValues(shopId, [c.id]).get(c.id)) : null;
   }
@@ -93,28 +188,52 @@ export function listCustomers({ q, tag, element, shopId, limit = 50, cursor, sor
     params.push(`%${q}%`, `%${q}%`, `%${q.replace(/\D/g, '') || q}%`, `%${q}%`, `%${q}%`);
     if (p) params.push(p, p);
   }
-  if (tag) (where.push(`EXISTS (SELECT 1 FROM json_each(customers.tags) WHERE value = ?)`), params.push(tag));
+  if (shopId) {
+    // Danh sách khách của một shop = khách còn là thành viên của shop đó
+    where.push('EXISTS (SELECT 1 FROM customer_shops m WHERE m.customer_id = customers.id AND m.shop_id = ? AND m.removed_at IS NULL)');
+    params.push(shopId);
+  }
+  if (tag) {
+    if (!shopId) throw badRequest('SHOP_REQUIRED', 'Nhãn là của từng shop: cần chỉ rõ shop_id khi lọc theo nhãn');
+    where.push('EXISTS (SELECT 1 FROM customer_tags t WHERE t.customer_id = customers.id AND t.shop_id = ? AND t.tag = ? COLLATE NOCASE)');
+    params.push(shopId, tag);
+  }
   const orderBy = { recent: 'id DESC', spent: 'total_spent DESC, id DESC', last_order: 'last_order_at DESC NULLS LAST, id DESC', name: 'name, id' }[sort] || 'id DESC';
-  // Phân trang bằng offset khi sắp xếp khác mặc định (đơn giản, đủ cho quy mô nhỏ)
-  const offset = cursor && sort !== 'recent' ? Number(cursor) : 0;
-  if (cursor && sort === 'recent') (where.push('id < ?'), params.push(cursor));
+  // Lọc theo mệnh phải lọc TRƯỚC khi phân trang (mệnh tính từ trường của shop, không nằm trong SQL):
+  // lấy hết khách khớp điều kiện rồi lọc, phân trang theo offset. Quy mô một chủ shop nên đủ nhanh.
+  const byElement = !!element && shopHasFengShui(shopId);
+  // Phân trang bằng offset khi sắp xếp khác mặc định hoặc khi lọc theo mệnh; mặc định dùng con trỏ id
+  const useOffset = sort !== 'recent' || byElement;
+  const offset = cursor && useOffset ? Number(cursor) : 0;
+  if (cursor && !useOffset) (where.push('id < ?'), params.push(cursor));
   let rows = db()
-    .prepare(`SELECT * FROM customers WHERE ${where.join(' AND ')} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
-    .all(...params, limit + 1, offset)
+    .prepare(`SELECT * FROM customers WHERE ${where.join(' AND ')} ORDER BY ${orderBy} ${byElement ? '' : 'LIMIT ? OFFSET ?'}`)
+    .all(...params, ...(byElement ? [] : [limit + 1, offset]))
     .map(enrich);
-  // Mệnh chỉ có trong ngữ cảnh một shop phong thuỷ
   if (shopHasFengShui(shopId)) {
     const rv = roleValues(shopId, rows.map((r) => r.id));
     rows = rows.map((r) => ({ ...r, feng_shui: fengShuiOf(rv.get(r.id)) }));
-    if (element) rows = rows.filter((r) => r.feng_shui?.element === element);
+    if (byElement) rows = rows.filter((r) => r.feng_shui?.element === element).slice(offset, offset + limit + 1);
   }
   const hasMore = rows.length > limit;
-  const data = hasMore ? rows.slice(0, limit) : rows;
-  const next = hasMore ? (sort === 'recent' ? data[data.length - 1].id : String(offset + limit)) : null;
-  return { data, next_cursor: next };
+  let data = hasMore ? rows.slice(0, limit) : rows;
+  const next = hasMore ? (useOffset ? String(offset + limit) : data[data.length - 1].id) : null;
+  // Cột thông tin riêng của shop (chỉ khi xem theo một shop)
+  let columns = [];
+  if (shopId) {
+    const cv = listColumnValues(shopId, data.map((r) => r.id));
+    columns = cv.columns;
+    const tagRows = data.length
+      ? db().prepare(`SELECT customer_id, tag FROM customer_tags WHERE shop_id = ? AND customer_id IN (${data.map(() => '?').join(',')}) ORDER BY tag COLLATE NOCASE`).all(shopId, ...data.map((r) => r.id))
+      : [];
+    const tagMap = new Map();
+    for (const t of tagRows) tagMap.set(t.customer_id, [...(tagMap.get(t.customer_id) || []), t.tag]);
+    data = data.map((r) => ({ ...r, shop_values: cv.values.get(r.id) || {}, shop_tags: tagMap.get(r.id) || [] }));
+  }
+  return { data, next_cursor: next, columns };
 }
 
-const FIELDS = ['name', 'phone', 'phone2', 'email', 'facebook_url', 'shopee_username', 'address', 'note', 'tags', 'source_channel', 'archived_at'];
+const FIELDS = ['name', 'phone', 'phone2', 'email', 'facebook_url', 'shopee_username', 'address', 'note', 'source_channel', 'archived_at'];
 
 function prepare(input) {
   const out = { ...input };
@@ -123,21 +242,34 @@ function prepare(input) {
     if (input.phone && !out.phone) throw badRequest('INVALID_PHONE', `Số điện thoại không hợp lệ: ${input.phone}`);
   }
   if (out.phone2 !== undefined) out.phone2 = out.phone2 ? normalizePhone(out.phone2) : null;
-  if (out.tags !== undefined) out.tags = JSON.stringify(out.tags ?? []);
   return out;
 }
 
-export function createCustomer(input, actor) {
-  const data = prepare(input);
+export function createCustomer(input, actor, { shopId = null } = {}) {
+  const { shop_id: _ignored, ...rest } = input;
+  const data = prepare(rest);
+  if (shopId) assertShop(shopId);
   if (data.phone) {
     const dup = findByPhone(data.phone);
-    if (dup) throw conflict('CUSTOMER_EXISTS', `Số ${data.phone} đã thuộc khách ${dup.name} (${dup.code})`, { customer_id: dup.id });
+    if (dup?.archived_at) {
+      // Khách này từng bị xoá khỏi mọi shop: dùng lại hồ sơ cũ thay vì báo trùng
+      const back = updateCustomer(dup.id, { ...rest, archived_at: null }, actor);
+      if (shopId) ensureMember(dup.id, shopId);
+      return back;
+    }
+    if (dup) {
+      throw conflict('CUSTOMER_EXISTS', `Số ${data.phone} đã thuộc khách ${dup.name} (${dup.code})`, {
+        customer_id: dup.id,
+        ...(shopId ? { is_member: isMember(dup.id, shopId) } : {}),
+      });
+    }
   }
   const id = newId('cus');
   const at = nowIso();
   const cols = ['id', 'code', ...FIELDS.filter((f) => data[f] !== undefined), 'created_at', 'updated_at'];
   const vals = [id, runningCode('KH', 5), ...FIELDS.filter((f) => data[f] !== undefined).map((f) => data[f]), at, at];
   db().prepare(`INSERT INTO customers (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...vals);
+  if (shopId) ensureMember(id, shopId);
   const c = getCustomer(id);
   audit(actor, 'customer.created', 'customer', id, null, c);
   emit('customer.created', { entityType: 'customer', entityId: id, data: c });
@@ -199,6 +331,12 @@ export function mergeCustomers(targetId, sourceId, actor) {
   const at = nowIso();
   db().prepare('UPDATE orders SET customer_id = ?, updated_at = ? WHERE customer_id = ?').run(target.id, at, source.id);
   db().prepare('UPDATE customer_notes SET customer_id = ? WHERE customer_id = ?').run(target.id, source.id);
+  // Thành viên shop và nhãn của từng shop: hợp lại. Shop nào hồ sơ bị gộp còn hoạt động thì hồ sơ giữ lại cũng hoạt động ở shop đó.
+  db().prepare(`INSERT OR IGNORE INTO customer_shops (customer_id, shop_id, added_at, removed_at) SELECT ?, shop_id, added_at, removed_at FROM customer_shops WHERE customer_id = ?`).run(target.id, source.id);
+  db().prepare(`UPDATE customer_shops SET removed_at = NULL WHERE customer_id = ? AND shop_id IN (SELECT shop_id FROM customer_shops WHERE customer_id = ? AND removed_at IS NULL)`).run(target.id, source.id);
+  db().prepare('DELETE FROM customer_shops WHERE customer_id = ?').run(source.id);
+  db().prepare('INSERT OR IGNORE INTO customer_tags (customer_id, shop_id, tag) SELECT ?, shop_id, tag FROM customer_tags WHERE customer_id = ?').run(target.id, source.id);
+  db().prepare('DELETE FROM customer_tags WHERE customer_id = ?').run(source.id);
   // Thông tin riêng theo shop: chuyển giá trị sang hồ sơ giữ lại, giá trị đã có ở hồ sơ giữ lại thì thắng. Vẫn tách theo từng shop.
   db()
     .prepare(`UPDATE OR IGNORE custom_values SET entity_id = ? WHERE entity_type = 'customer' AND entity_id = ?`)
@@ -208,7 +346,6 @@ export function mergeCustomers(targetId, sourceId, actor) {
     if (!target[f] && source[f]) fill[f] = source[f];
   }
   if (!target.phone2 && source.phone && source.phone !== target.phone) fill.phone2 = source.phone;
-  fill.tags = [...new Set([...target.tags, ...source.tags])];
   // Giải phóng SĐT của hồ sơ bị gộp trước khi gán vào hồ sơ giữ lại (tránh trùng unique)
   db().prepare('UPDATE customers SET merged_into = ?, archived_at = ?, updated_at = ? WHERE id = ?').run(target.id, at, at, source.id);
   updateCustomer(target.id, fill, actor);

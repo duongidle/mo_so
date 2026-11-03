@@ -7,25 +7,67 @@
 | # | Module | Backend | Giao diện | Test | Ghi chú |
 |---|---|---|---|---|---|
 | M0 | Nền tảng | ✅ | — | ✅ | |
-| M1 | Shop, kho, kênh, cài đặt | ✅ | ✅ | ✅ | |
-| M2 | Sản phẩm, niêm yết, đồng bộ | ✅ | ✅ | ✅ | Combo chưa làm |
-| M3 | Tồn kho, nhập hàng, NCC | ✅ | ✅ | ✅ | Kiểm kê dạng phiếu nhiều bước chưa làm (đang là điều chỉnh 1 bước). Chuyển kho có API, chưa có màn hình |
-| M4 | Khách hàng chung, mệnh | ✅ | ✅ | ✅ | Chưa có màn hình gộp hồ sơ trùng (API có) |
+| M1 | Shop, kho, kênh, cài đặt, tài khoản | ✅ | ✅ | ✅ | Nhiều tài khoản, mỗi tài khoản một DB riêng; đăng ký; thiết lập lần đầu (shop → kho → sản phẩm) |
+| M2 | Sản phẩm, niêm yết, đồng bộ | ✅ | ✅ | ✅ | Combo xong (tồn khả dụng theo thành phần) |
+| M3 | Tồn kho, nhập hàng, NCC | ✅ | ✅ | ✅ | Kiểm kê nhiều bước, chuyển kho, điều chỉnh nhanh |
+| M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng. Danh sách khách theo shop, xoá khỏi một shop, nhãn theo shop, xuất danh sách khách (Excel/CSV) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
-| M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Chưa có màn hình sửa mẫu map cột (API có) |
+| M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Có trình sửa mẫu map cột (gợi ý cột từ file, ánh xạ trạng thái) |
 | M7 | Chi phí, đối soát Shopee | ✅ | ✅ | ✅ | Chi phí huỷ mềm; đối soát theo lô, báo lỗi từng đơn |
 | M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | Tính trực tiếp từ bảng đơn, chưa dùng `daily_stats` (xem nhật ký quyết định) |
-| M9 | Loyalty, nhắc mua lại | ✅ | ✅ | ✅ | Hạng, nhắc mua lại, sinh nhật, gợi ý theo mệnh, mẫu tin nhắn (chỉ soạn + sao chép, không tự gửi) |
-| M10 | Trường tuỳ chỉnh, công thức | ✅ | 🟡 | ✅ | Có màn hình tạo trường/chỉ số; chưa có ô nhập trường tuỳ chỉnh trong form đơn/sản phẩm/khách (API `/custom/values` có) |
+| M9 | Loyalty & Campaign | ✅ | ✅ | ✅ | Một module `/loyalty`: hôm nay (nhắc mua lại, sinh nhật), gợi ý theo mệnh (shop phong thuỷ), hạng khách, mẫu tin nhắn (soạn + sao chép, không tự gửi). Tự động hoá: chưa làm |
+| M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
-| M13 | Giao diện web | | 🟡 | | Đủ các màn hình chính, chạy được trên điện thoại và máy tính. Còn các điểm ghi ở từng module |
+| M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 48, vitest 80, smoke e2e 9 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
 
 ---
 
 ## Nhật ký
+
+### 2026-11-03 — Phiên 10: nhiều tài khoản, tách ngành nước hoa, khách theo shop, Loyalty & Campaign
+
+- **Nhiều tài khoản**: mỗi tài khoản một file SQLite riêng (`data/accounts/<id>.db`) + `data/master.db` giữ tài khoản/phiên/chỉ mục API key. Request chạy trong ngữ cảnh DB của tài khoản (`AsyncLocalStorage`); `getDb()` ngoài ngữ cảnh báo lỗi. Đăng ký (`/auth/register`, đóng được bằng `REGISTRATION=closed`), giới hạn đăng ký theo IP. Bản cài cũ (`moso.db`) tự thành tài khoản đầu tiên. Sao lưu/webhook/script chạy theo từng tài khoản. Cả 33 test cũ chạy nguyên trên helper mới; thêm 7 test cách ly.
+- **Thiết lập lần đầu**: đăng ký → tạo shop (4 ngành) → popup tạo kho → tạo sản phẩm đầu tiên; trang chủ nhắc tiếp nếu còn thiếu.
+- **Tách ngành**: `nuoc_hoa_o_to` (theme `oto`: xám than + hổ phách, đồng hồ tốc độ) và `nuoc_hoa` (theme `nuochoa`: mận + hồng đồng, vòng lan toả; trường nhóm hương, nồng độ, thương hiệu, phong cách, dịp dùng, ngân sách, sinh nhật). Migration 015 chuyển shop `nuoc_hoa` cũ sang `nuoc_hoa_o_to`. Chỉnh terracotta của `oto` cho đạt AA (4.1 → 4.7).
+- **Khách theo shop** (migration 016): `customer_shops` (thành viên, kèm `removed_at`) và `customer_tags`. Xoá khách = xoá khỏi một shop (mất thông tin riêng/nhãn/ghi chú của shop đó; giữ hồ sơ, shop khác, lịch sử đơn); hồ sơ không còn shop nào và chưa có đơn thì lưu trữ, tạo lại cùng SĐT dùng lại hồ sơ cũ. Nhãn riêng từng shop (UI: thẻ nhãn ở hồ sơ khách, bộ lọc nhãn ở danh sách). Thêm khách vào shop từ SĐT trùng. Nhắc mua lại không nhắc khách đã xoá khỏi shop.
+- **Xuất danh sách khách**: `GET /customers/export` dùng chung bộ lọc với danh sách; theo shop có đủ trường riêng + nhãn + mệnh + số liệu tại shop, không chọn shop thì chỉ thông tin chung. Excel/CSV, chống công thức độc.
+- **Loyalty & Campaign**: gộp Chăm sóc, Gợi ý theo mệnh, Hạng khách (chuyển từ Cài đặt), Mẫu tin nhắn (thêm sửa/xoá) thành `/loyalty`; `/care` chuyển hướng. API mới `GET /loyalty/element-campaign`, `DELETE /loyalty/templates/:id`. Tab Tự động hoá chỉ ghi rõ là chưa làm.
+- Test: API 48, giao diện 80, smoke e2e 9. Đã chụp màn hình kiểm tra bằng mắt: đăng ký, tạo shop, theme nước hoa/ô tô, danh sách + hồ sơ khách, hộp xuất file, Loyalty.
+
+**Cần chủ shop quyết định / chưa làm**
+- Tự động nhắn tin và tự động nâng hạng: cần chọn kênh gửi (Zalo OA, SMS…) và quy định tin nhắn quảng cáo trước.
+- Nhân viên trong một tài khoản (phân quyền): chưa làm; mỗi tài khoản hiện là một chủ.
+- Chưa có "quên mật khẩu" qua email (không có email trong hồ sơ tài khoản); dùng `npm run reset-password -- <tên_đăng_nhập> <mật_khẩu_mới>` trên máy chủ.
+- Cột `customers.tags` cũ (chung mọi shop, chưa từng có giao diện nhập) không còn dùng; dữ liệu nếu có vẫn nằm trong DB.
+
+### 2026-11-03 — Phiên 9: xuất đơn hàng
+
+- **Xuất đơn** ở trang Đơn hàng ("Xuất file"): theo đúng bộ lọc đang xem, hai kiểu (mỗi đơn một dòng: tiền, phí sàn, thực nhận, giá vốn, lợi nhuận; mỗi sản phẩm một dòng: SKU, SL, giá, giá vốn), hai định dạng (Excel dựng ở trình duyệt, CSV tải thẳng từ server). Có đếm trước số dòng, báo khi không có đơn hoặc vượt 50.000 dòng. API `GET /orders/export` (`layout`, `format=csv|json|count`), API key chỉ đọc dùng được.
+- Bộ lọc đơn tách thành `orderFilter` dùng chung với danh sách; test đối chiếu số dòng file với danh sách cho 9 kiểu lọc.
+- Test: API 32, giao diện 55, smoke e2e 7 (tải thật CSV và Excel về rồi đọc nội dung). Test giao diện bắt được lỗi tên file Excel ("tatca" thay vì "tat-ca") và một test theme đua thời gian (đã sửa, chạy 15 lần liên tiếp không hỏng).
+
+### 2026-11-03 — Phiên 8: các việc còn lại trong danh sách
+
+- **Trường khách hiện thành cột ở danh sách khách** (migration 014): mỗi trường khách của shop có cờ "Cột", bật trong "Thông tin khách của shop" hoặc lúc thêm trường. Tối đa 4 cột mỗi shop (`TOO_MANY_COLUMNS`), chỉ trường khách mới có cột, trường công thức không hiện cột. Chỉ hiện khi xem theo một shop; xem "Tất cả shop" thì không có cột và không lộ giá trị.
+- **Báo cáo combo**: tab Sản phẩm có thẻ tổng riêng cho combo (số bán, doanh thu, giá vốn = tổng thành phần, LN gộp), dòng combo có nhãn, thêm cột "Qua combo" cho sản phẩm đơn (số đơn vị bán nằm trong combo, không cộng vào "Đã bán" để khỏi đếm hai lần). Thành phần chỉ bán qua combo vẫn hiện.
+- **Nợ kỹ thuật đã trả**: (1) lọc khách theo mệnh nay lọc trước khi phân trang, không bỏ sót khách ở trang sau; (2) đơn import từ sàn ghi biến động kho theo ngày đặt (không phải lúc bấm import) và không kéo "lần xuất/nhập gần nhất" về quá khứ, nên tốc độ bán 30 ngày không bị đơn cũ làm sai.
+- **Trống đồng** nay dùng ở trạng thái trống của theme phong thuỷ; nước hoa dùng vòng lan toả; theme chung giữ cuốn sổ mở.
+- Test: API 29, giao diện 47, smoke e2e 6. Test e2e cũ có một chỗ chờ sai (chữ "Thông tin riêng" cũng nằm ở phụ đề trang danh sách) nên chỉ qua nhờ may về thời gian; đã sửa.
+- **Cố ý không làm** (xem phần dưới): thử iPhone thật, kiểm tra file Shopee thật, `daily_stats`, tính hoàn trả theo ngày trả hàng, ngành thứ tư.
+
+### 2026-11-03 — Phiên 7: làm nốt các việc còn thiếu
+
+- **Combo**: biến thể `bundle` (migration 012). Tồn khả dụng = min theo thành phần; bán trừ kho từng thành phần, giá vốn = tổng thành phần lúc bán; huỷ đơn/trả hàng hoàn đúng theo ảnh chụp (`order_line_components`) kể cả khi công thức combo hay giá vốn đổi sau. Chặn nhập/điều chỉnh/chuyển kho/kiểm kê trên combo. UI: tạo combo trong form sản phẩm (chọn thành phần + SL), POS và Kho hiện "combo, bán được N".
+- **Kiểm kê nhiều bước** (migration 013): phiếu → đếm dần → hoàn tất. Chênh lệch tính theo tồn tại lúc nhập số đếm từng dòng. Tab "Kiểm kê" trong Kho; nút cũ đổi tên "Điều chỉnh nhanh".
+- **Trường tuỳ chỉnh có ô nhập** trong chi tiết đơn, form sản phẩm (khi sửa), phiếu nhập (component `CustomFieldsPanel`; công thức chỉ đọc). Sửa luôn lỗi hiển thị số công thức thiếu dấu phân cách nghìn.
+- **Gộp khách trùng**: danh sách nghi trùng, so sánh hai hồ sơ, gộp (không hoàn tác); gộp thủ công từ hồ sơ khách.
+- **Chuyển kho** (nút ở trang Kho, hiện khi có từ 2 kho). **Trình sửa mẫu import**: gợi ý cột từ file đang mở, cảnh báo cột mất, lấy sẵn giá trị trạng thái từ file.
+- **Test giao diện**: vitest + Testing Library (43 test: hàm thuần, gom dòng import, trình sửa mẫu, panel trường tuỳ chỉnh, theme/tính năng theo shop) và smoke e2e bằng Chromium thật (5 luồng). Tổng cộng test API 25.
+- **Lỗi bắt được nhờ test**: trang sập khi chuyển sang "Tất cả shop" lúc đang xem hồ sơ khách (dữ liệu cũ của shop + shop rỗng). Đã sửa.
+- Còn lại: trường khách chưa hiện thành cột ở danh sách khách; trống đồng chưa dùng; chưa thử iPhone thật; combo chưa có báo cáo riêng (doanh thu tính theo combo, giá vốn theo thành phần).
 
 ### 2026-11-03 — Phiên 6: ngành bán, giao diện và trường khách theo shop
 
@@ -124,7 +166,14 @@
 
 **Nợ kỹ thuật**
 - `listStock` tính tốc độ bán 30 ngày bằng query trực tiếp; khi dữ liệu lớn nên đọc từ `daily_stats`.
-- Biến động kho của đơn import dùng thời điểm import, không phải ngày đặt trên sàn. Báo cáo doanh thu dùng ngày đặt nên không sai, nhưng sổ cái kho theo ngày sẽ lệch ngày.
-- Danh sách khách lọc theo mệnh đang lọc sau khi phân trang.
 - Báo cáo query thẳng bảng `orders` (có index theo shop/ngày), chưa dùng `daily_stats`. Khi dữ liệu lớn mới cần.
 - Hoàn trả tính vào ngày của đơn gốc, không phải ngày trả hàng.
+- Lọc khách theo mệnh lấy hết khách khớp điều kiện rồi mới phân trang (đúng nhưng không tối ưu). Với hàng chục nghìn khách thì cần chuyển mệnh thành cột tính sẵn.
+- Ngày biến động kho của đơn import là ngày đặt; huỷ/trả hàng của đơn import vẫn ghi theo lúc thao tác (không biết ngày huỷ thật trên sàn).
+
+**Chưa làm, cần người thật hoặc quyết định của chủ shop**
+- Thử trên iPhone thật qua wifi (cần thiết bị).
+- Kiểm tra với file xuất Shopee thật: tên cột, phí ship shop chịu có bị trừ vào payout không (cần file thật).
+- Điền "chu kỳ dùng hết" cho từng sản phẩm thì mới có nhắc mua lại.
+- Chưa có ngành thứ năm: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
+- `daily_stats` và tính hoàn trả theo ngày trả hàng: đã quyết định chưa làm (xem nhật ký quyết định trong `CLAUDE.md`).
