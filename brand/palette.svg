@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 48" width="600" height="48" role="img" aria-label="Tỷ lệ màu: Linen 45%, Walnut 30%, Terracotta 15%, Oxblood 10%, nét Champagne">
+  <title>Bảng màu Mở Sổ</title>
+  <clipPath id="c"><rect width="600" height="48" rx="10"/></clipPath>
+  <g clip-path="url(#c)">
+    <rect width="600" height="48" fill="#EDE3D2"/>
+    <rect x="270" width="180" height="48" fill="#301F12"/>
+    <rect x="450" width="90" height="48" fill="#865C49"/>
+    <rect x="540" width="60" height="48" fill="#633D37"/>
+    <rect x="270" y="44" width="330" height="1.6" fill="#CDB58D"/>
+  </g>
+  <rect x=".5" y=".5" width="599" height="47" rx="9.5" fill="none" stroke="#301F12" stroke-opacity=".25"/>
+</svg>
