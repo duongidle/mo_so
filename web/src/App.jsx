@@ -68,23 +68,29 @@ function ShopSwitcher() {
 function Shell() {
   const { onLogout, user } = useSession();
   const { pathname } = useLocation();
+  const [pinned, setPinned] = useState(() => { try { return localStorage.getItem('moso.pin') === '1'; } catch { return false; } });
+  const togglePin = () => setPinned((p) => { try { localStorage.setItem('moso.pin', p ? '0' : '1'); } catch { /* bỏ qua */ } return !p; });
   const dateText = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
   const tab = (to, label, icon) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}><Icon name={icon} />{label}</NavLink>
   );
   return (
     <div className="shell">
-      <nav className="sidebar" aria-label="Điều hướng chính">
-        <div className="brand"><img src="/logo-mark.svg" alt="" /><div><b>Mở Sổ</b><span>Dấu vết của thời gian</span></div></div>
+      <div className={`rail-space ${pinned ? 'pinned' : ''}`} aria-hidden="true" />
+      <nav className={`sidebar ${pinned ? 'pinned' : ''}`} aria-label="Điều hướng chính">
+        <div className="brand"><img src="/logo-mark.svg" alt="" /><div className="lbl"><b>Mở Sổ</b><span className="tag">Dấu vết của thời gian</span></div></div>
         {NAV.map((g, i) => (
           <div key={i}>
-            {g.group && <div className="nav-label">{g.group}</div>}
+            {i > 0 && <div className="nav-sep" />}
             {g.items.map(([to, label, icon, end]) => (
-              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} />{label}</NavLink>
+              <NavLink key={to} to={to} end={end} title={label} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
             ))}
           </div>
         ))}
-        <div className="me"><span>{user.displayName}</span><button onClick={onLogout} aria-label="Đăng xuất" title="Đăng xuất"><Icon name="out" size={18} /></button></div>
+        <div className="me">
+          <button className="pin" onClick={togglePin} title={pinned ? 'Thu gọn thanh bên' : 'Ghim thanh bên luôn mở'}><Icon name="panel" /><span className="lbl">{pinned ? 'Thu gọn' : 'Ghim thanh bên'}</span></button>
+          <button onClick={onLogout} title="Đăng xuất"><Icon name="out" /><span className="lbl">Đăng xuất · {user.displayName}</span></button>
+        </div>
       </nav>
       <div className="main">
         <header className="topbar">

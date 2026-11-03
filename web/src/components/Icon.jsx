@@ -14,6 +14,8 @@ const P = {
   plus: 'M12 5v14M5 12h14',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14ZM20 20l-4-4',
   upload: 'M12 16V4M7 9l5-5 5 5M4.5 15v4.5h15V15',
+  pin: 'M9 4.5l-4 4M15 4.5l4 4M7 7l10 10M12 12l-7 7',
+  panel: 'M4.5 5h15v14h-15zM9.5 5v14',
   chevron: 'M6 9l6 6 6-6',
   out: 'M14 4h5.5v16H14M10 8l-4 4 4 4M6 12h10',
   more: 'M5 12h.01M12 12h.01M19 12h.01',

@@ -53,24 +53,33 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .9em; 
 
 /* ===== Khung ===== */
 .shell { display: flex; min-height: 100%; }
+/* Thanh bên: dải icon mỏng nổi, bung ra khi rê chuột (đè lên nội dung, không đẩy layout) hoặc khi ghim */
+.rail-space { display: none; width: 92px; flex: none; transition: width .25s var(--ease); }
 .sidebar {
-  width: 252px; flex: none; background: var(--walnut); color: var(--linen); padding: 22px 14px 16px; display: none;
-  flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow-y: auto;
-  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--champagne) 30%, transparent);
+  position: fixed; z-index: 50; top: 12px; left: 12px; bottom: 12px; width: 68px; display: none; flex-direction: column; gap: 2px;
+  background: var(--walnut); color: var(--linen); border-radius: 22px; padding: 14px 10px 10px; overflow: hidden;
+  box-shadow: 0 18px 40px -18px rgba(48, 31, 18, .7), inset 0 0 0 1px color-mix(in srgb, var(--champagne) 30%, transparent);
+  transition: width .25s var(--ease), box-shadow .25s;
 }
-.brand { display: flex; align-items: center; gap: 12px; padding: 2px 10px 22px; }
-.brand img { width: 38px; height: 38px; border-radius: 10px; }
-.brand b { font-family: var(--font-display); font-size: 21px; font-weight: 600; letter-spacing: .01em; display: block; line-height: 1.1; }
-.brand span { font-size: 9.5px; letter-spacing: .12em; white-space: nowrap; text-transform: uppercase; color: var(--champagne); }
-.nav-label { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: color-mix(in srgb, var(--champagne) 80%, transparent); padding: 18px 12px 6px; }
-.sidebar a.nav { display: flex; align-items: center; gap: 12px; color: color-mix(in srgb, var(--linen) 78%, transparent); padding: 9px 12px; border-radius: 10px; font-weight: 500; position: relative; transition: background .15s, color .15s; }
-.sidebar a.nav svg { width: 19px; height: 19px; flex: none; opacity: .9; }
-.sidebar a.nav:hover { background: color-mix(in srgb, var(--linen) 9%, transparent); color: var(--linen); text-decoration: none; }
-.sidebar a.nav.active { background: color-mix(in srgb, var(--linen) 14%, transparent); color: var(--linen); }
-.sidebar a.nav.active::before { content: ''; position: absolute; left: -14px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--champagne); }
-.sidebar .me { margin-top: auto; padding: 14px 12px 4px; border-top: 1px solid color-mix(in srgb, var(--champagne) 28%, transparent); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
-.sidebar .me button { background: none; border: 0; color: var(--champagne); cursor: pointer; padding: 6px; border-radius: 8px; }
-.sidebar .me button:hover { background: color-mix(in srgb, var(--linen) 10%, transparent); }
+.sidebar:hover, .sidebar:focus-within, .sidebar.pinned { width: 236px; }
+.sidebar:not(.pinned):hover, .sidebar:not(.pinned):focus-within { box-shadow: 0 30px 60px -16px rgba(48, 31, 18, .8), inset 0 0 0 1px color-mix(in srgb, var(--champagne) 40%, transparent); }
+.lbl { opacity: 0; white-space: nowrap; transition: opacity .15s; pointer-events: none; }
+.sidebar:hover .lbl, .sidebar:focus-within .lbl, .sidebar.pinned .lbl { opacity: 1; transition-delay: .08s; }
+.brand { display: flex; align-items: center; gap: 12px; padding: 0 4px 14px; min-height: 52px; }
+.brand img { width: 40px; height: 40px; border-radius: 11px; flex: none; }
+.brand b { font-family: var(--font-display); font-size: 20px; font-weight: 600; display: block; line-height: 1.1; }
+.brand span.tag { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--champagne); }
+.nav-sep { height: 1px; background: color-mix(in srgb, var(--champagne) 26%, transparent); margin: 8px 10px; }
+.sidebar a.nav { display: flex; align-items: center; gap: 14px; color: color-mix(in srgb, var(--linen) 72%, transparent); height: 44px; padding: 0 12px; border-radius: 13px; font-weight: 500; font-size: 14px; position: relative; transition: background .15s, color .15s; flex: none; }
+.sidebar a.nav svg { width: 20px; height: 20px; flex: none; }
+.sidebar a.nav:hover { background: color-mix(in srgb, var(--linen) 10%, transparent); color: var(--linen); text-decoration: none; }
+.sidebar a.nav.active { background: var(--linen); color: var(--walnut); }
+.sidebar .me { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--champagne) 26%, transparent); }
+.sidebar .me button { display: flex; align-items: center; gap: 14px; height: 44px; padding: 0 12px; background: none; border: 0; border-radius: 13px; color: color-mix(in srgb, var(--linen) 72%, transparent); cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; width: 100%; text-align: left; }
+.sidebar .me button:hover { background: color-mix(in srgb, var(--linen) 10%, transparent); color: var(--linen); }
+.sidebar .me svg { width: 20px; height: 20px; flex: none; }
+.sidebar .pin svg { transition: transform .25s var(--ease); }
+.sidebar.pinned .pin svg { transform: rotate(180deg); }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
   position: sticky; top: 0; z-index: 20; padding: 12px 18px; padding-top: max(12px, env(safe-area-inset-top));
@@ -101,6 +110,8 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .9em; 
 .topbar .cta { display: none; }
 @media (min-width: 900px) {
   .sidebar { display: flex; }
+  .rail-space { display: block; }
+  .rail-space.pinned { width: 260px; }
   .tabbar { display: none; }
   .topbar .mark-wrap { display: none; }
   .topbar { padding: 14px 32px; }
