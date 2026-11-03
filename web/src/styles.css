@@ -270,3 +270,64 @@ td.num b, td b { font-weight: 600; }
   .hero .stats > div { display: flex; flex-direction: row-reverse; justify-content: space-between; align-items: baseline; gap: 12px; }
   .hero .stats b { white-space: nowrap; font-size: 18px; }
 }
+
+/* ===== Phong thuỷ: ngũ hành, họa tiết, chất liệu (xem CLAUDE.md mục 7A) ===== */
+@font-face { font-family: 'Han'; font-weight: 600; src: url('./fonts/han-0.woff2') format('woff2'); unicode-range: U+6728, U+571F; font-display: swap; }
+@font-face { font-family: 'Han'; font-weight: 600; src: url('./fonts/han-1.woff2') format('woff2'); unicode-range: U+706B; font-display: swap; }
+@font-face { font-family: 'Han'; font-weight: 600; src: url('./fonts/han-2.woff2') format('woff2'); unicode-range: U+6C34; font-display: swap; }
+@font-face { font-family: 'Han'; font-weight: 600; src: url('./fonts/han-3.woff2') format('woff2'); unicode-range: U+91D1; font-display: swap; }
+:root {
+  /* Màu ngũ hành: ngoại lệ chức năng như màu trạng thái đơn, đã giảm bão hoà, ≥ 4.5:1 trên nền giấy */
+  --el-kim: #6b665a; --el-moc: #4a6a3b; --el-thuy: #2f5870; --el-hoa: #a8432b; --el-tho: #86601f;
+  --fibre: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320' fill='none' stroke='%23301F12' stroke-linecap='round'%3E%3Cpath d='M20 30 q14 -5 34 3' stroke-opacity='0.035' stroke-width='0.9'/%3E%3Cpath d='M120 18 q-8 10 26 6' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M250 60 q18 6 40 -4' stroke-opacity='0.03' stroke-width='0.8'/%3E%3Cpath d='M60 110 q10 -8 30 4' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M180 130 q-12 8 44 -3' stroke-opacity='0.035' stroke-width='0.9'/%3E%3Cpath d='M290 150 q8 10 24 2' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M30 200 q16 4 38 -6' stroke-opacity='0.03' stroke-width='0.8'/%3E%3Cpath d='M140 230 q-10 -6 30 5' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M230 250 q12 8 46 2' stroke-opacity='0.035' stroke-width='0.9'/%3E%3Cpath d='M90 290 q14 -4 28 6' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M270 300 q-6 8 22 3' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M200 60 q6 -6 18 4' stroke-opacity='0.02' stroke-width='0.6'/%3E%3Cpath d='M100 170 q-14 4 36 2' stroke-opacity='0.025' stroke-width='0.8'/%3E%3C/svg%3E");
+  --grain: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='160' fill='none' stroke='%23EDE3D2' stroke-width='1'%3E%3Cpath d='M0 14 C120 8 240 20 360 11.0 S480 16.0 480 16.0' stroke-opacity='0.05'/%3E%3Cpath d='M0 34 C120 25 240 43 360 29.5 S480 37.0 480 37.0' stroke-opacity='0.035'/%3E%3Cpath d='M0 52 C120 47 240 57 360 49.5 S480 53.666666666666664 480 53.666666666666664' stroke-opacity='0.05'/%3E%3Cpath d='M0 75 C120 65 240 85 360 70.0 S480 78.33333333333333 480 78.33333333333333' stroke-opacity='0.03'/%3E%3Cpath d='M0 96 C120 90 240 102 360 93.0 S480 98.0 480 98.0' stroke-opacity='0.05'/%3E%3Cpath d='M0 118 C120 109 240 127 360 113.5 S480 121.0 480 121.0' stroke-opacity='0.035'/%3E%3Cpath d='M0 140 C120 135 240 145 360 137.5 S480 141.66666666666666 480 141.66666666666666' stroke-opacity='0.045'/%3E%3C/svg%3E");
+  --meander: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' fill='none' stroke='%23CDB58D' stroke-width='1.2' stroke-linecap='square'%3E%3Cpath d='M0 9H20M14 9V1H3V6H9V4'/%3E%3C/svg%3E");
+}
+.han { font-family: 'Han', 'Noto Serif', serif; font-weight: 600; }
+.el { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.el .han { display: inline-grid; place-items: center; width: 1.9em; height: 1.9em; border-radius: 50%; border: 1.5px solid currentColor; font-size: 13px; line-height: 1; }
+.el-lg { font-size: 16px; } .el-lg .han { font-size: 20px; }
+.el-xl { font-size: 18px; } .el-xl .han { font-size: 28px; }
+.el-kim { color: var(--el-kim); } .el-moc { color: var(--el-moc); } .el-thuy { color: var(--el-thuy); } .el-hoa { color: var(--el-hoa); } .el-tho { color: var(--el-tho); }
+.el-fill-kim { background: var(--el-kim); } .el-fill-moc { background: var(--el-moc); } .el-fill-thuy { background: var(--el-thuy); } .el-fill-hoa { background: var(--el-hoa); } .el-fill-tho { background: var(--el-tho); }
+
+/* Chất liệu dạng hoạ tiết phẳng (không đổ khối): giấy dó cho nền, vân gỗ cho các mảng Walnut */
+body { background-image: var(--fibre); background-size: 320px; }
+.sidebar, .hero, .tabbar { background-image: var(--grain); background-size: 480px 160px; }
+
+/* Lôi văn: đường diềm dưới tiêu đề trang và đáy thẻ hero */
+.page-head { padding-bottom: 20px; margin-bottom: 26px; background-image: var(--meander); background-repeat: repeat-x; background-position: left bottom; background-size: 20px 10px; }
+.hero { padding-bottom: 36px; }
+.hero::before { content: ''; position: absolute; left: 26px; right: 26px; bottom: 16px; height: 10px; background-image: var(--meander); background-repeat: repeat-x; background-size: 20px 10px; opacity: .55; }
+.hero-compass { position: absolute; right: -70px; top: -70px; color: var(--champagne); opacity: .28; pointer-events: none; }
+.hero > *:not(.hero-compass) { position: relative; }
+.hero-body { display: grid; grid-template-columns: auto 1fr; gap: 0 22px; }
+.hero-vert { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11.5px; font-weight: 600; letter-spacing: .28em; text-transform: uppercase; color: var(--champagne); border-right: 1px solid color-mix(in srgb, var(--champagne) 40%, transparent); padding-left: 16px; white-space: nowrap; }
+@media (max-width: 720px) { .hero-vert { display: none; } .hero-body { grid-template-columns: 1fr; } .hero-compass { right: -110px; top: -100px; opacity: .2; } }
+
+/* Dấu triện vuông */
+.seal-sq { display: inline-grid; place-items: center; width: var(--s, 44px); height: var(--s, 44px); background: var(--seal); color: var(--linen); border-radius: 4px; font-family: var(--font-display); font-weight: 700; font-size: calc(var(--s, 44px) * .3); line-height: 1.05; text-align: center; transform: rotate(-4deg); outline: 1px solid var(--seal); outline-offset: 2px; flex: none; }
+
+/* Bố cục lệch (7:5) thay cho lưới đều */
+@media (min-width: 900px) { .grid.split-75 { grid-template-columns: 7fr 5fr; } .grid.split-57 { grid-template-columns: 5fr 7fr; } }
+
+/* Thanh ngũ hành: mỗi hành một màu, độ dài theo doanh thu */
+.el-bars { display: flex; flex-direction: column; gap: 12px; }
+.el-bar { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: center; }
+.el-bar .track { height: 10px; background: color-mix(in srgb, var(--walnut) 9%, transparent); border-radius: 2px; overflow: hidden; }
+.el-bar .track i { display: block; height: 100%; }
+
+/* Đăng nhập */
+.login-shell { display: grid; min-height: 100%; grid-template-columns: 1fr; }
+.login-art { background-color: var(--walnut); background-image: var(--grain); color: var(--champagne); position: relative; overflow: hidden; padding: 36px 28px; display: flex; flex-direction: column; justify-content: space-between; min-height: 220px; }
+.login-art .compass { position: absolute; right: -90px; bottom: -90px; opacity: .55; }
+.login-art h2 { color: var(--linen); font-size: 26px; max-width: 14ch; position: relative; }
+.login-art p { color: color-mix(in srgb, var(--linen) 75%, transparent); max-width: 30ch; position: relative; margin: 10px 0 0; }
+.login-form { padding: 36px 24px 56px; display: flex; align-items: center; justify-content: center; }
+.login-form form { width: 100%; max-width: 380px; }
+@media (min-width: 900px) { .login-shell { grid-template-columns: 1.05fr 1fr; } .login-art { padding: 56px; min-height: 100vh; } .login-art h2 { font-size: 38px; } .login-art .compass { right: -120px; bottom: -120px; } }
+.topdate .lunar { color: var(--text); font-weight: 500; }
+@media (max-width: 720px) { .topdate span:nth-child(-n+2) { display: none; } .topdate .lunar { font-size: 12.5px; } }
+.topdate { white-space: nowrap; }
+.shop-btn > span:not(.dot) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+@media (max-width: 720px) { .topdate .cc { display: none; } .shop-btn > span:not(.dot) { max-width: 120px; } }

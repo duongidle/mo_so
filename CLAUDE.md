@@ -306,9 +306,19 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 Tên: **Mở Sổ**. Nghĩa đen là mở cuốn sổ ra để ghi và xem. Hợp với bản chất app: một cuốn sổ cái duy nhất cho mọi shop, mọi kênh.
 
 ### Concept: Đương đại Á Đông · Dấu vết thời gian (The Traces of Time)
-Kết hợp sự tiết chế của thiết kế đương đại với cảm giác vật liệu, thủ công và không gian Á Đông. Không mô phỏng cổ phong máy móc. Không dùng biểu tượng phong thuỷ quen thuộc (rồng, tiền xu, hoa văn mây, chữ Hán…) làm lối tắt cho bản sắc.
+Kết hợp sự tiết chế của thiết kế đương đại với cảm giác vật liệu, thủ công và không gian Á Đông. Phẳng, tĩnh, chắc: không đổ bóng, không kính mờ, không hiệu ứng nổi.
 
-Dấu vết thời gian: mỗi đơn, mỗi lần nhập kho là một nét ghi lại. Giao diện nên gợi giấy, gỗ, gốm, dấu niêm: ấm, chậm, đáng tin. Không dùng hiệu ứng bóng loáng kiểu dashboard công nghệ.
+Dấu vết thời gian: mỗi đơn, mỗi lần nhập kho là một nét ghi lại. Giao diện gợi giấy dó, gỗ, gốm, dấu triện.
+
+**Phong thuỷ là dữ liệu và bố cục, không phải đồ trang trí** (cập nhật 2026-11-03, xem nhật ký quyết định). Các yếu tố được dùng:
+1. **Ngũ hành** là hệ ký hiệu có nghĩa: mệnh khách, hành của sản phẩm, doanh thu theo hành. Ký hiệu = chữ Hán (金 木 水 火 土) trong khung tròn + tên Việt. Màu ngũ hành là ngoại lệ chức năng như màu trạng thái đơn (đã giảm bão hoà, ≥ 4.5:1 trên nền giấy). Chữ Hán chỉ dùng cho 5 ký tự này (font con nhúng sẵn `web/src/fonts/han-*.woff2`, Noto Serif SC, OFL).
+2. **Âm lịch + can chi** hiển thị ở thanh trên (tính bằng cùng thuật toán với server).
+3. **Họa tiết nét mảnh** (chỉ nét, màu Champagne/Terracotta, không tô đặc, tối đa vài điểm nhấn mỗi màn hình): la bàn bát quái (thẻ hero, trang đăng nhập), trống đồng Đông Sơn (dành cho trạng thái trống/trang trí khác), lôi văn (đường diềm dưới tiêu đề trang và đáy thẻ hero).
+4. **Chất liệu dạng hoạ tiết phẳng**: vân giấy dó mờ trên nền trang, vân gỗ trên các mảng Walnut. Không dùng ảnh/texture thật, không đổ khối.
+5. **Dấu triện** vuông (logo trên trang đăng nhập) và dấu "ĐÃ CHỐT" trên đơn đã thu đủ.
+6. **Bố cục**: ưu tiên lệch (7:5) và khoảng trống hơn lưới đều; nhãn chữ dọc ở thẻ hero.
+
+Vẫn **không dùng**: rồng, tiền xu, hoa văn mây/sóng, bát quái hay la bàn làm hình nền phủ kín, màu đỏ/vàng kim rực. Muốn dùng thì ghi lý do vào nhật ký quyết định trước. Quán trà hay tiệm vàng mã là điều cần tránh.
 
 ### Bảng màu chính thức
 | Màu | HEX | Tỷ lệ | Vai trò |
@@ -430,3 +440,5 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Nhắc mua lại: ngày hết = ngày mua gần nhất + chu kỳ × số lượng lần mua đó | Mua 3 chai nước hoa thì không hết sau 1 chu kỳ. Trạng thái xử lý gắn với ngày mua nên khách mua lại thì nhắc cũ tự hết. |
 | 2026-11-03 | Nền trang web sáng hơn Linen gốc nửa tông (`#F2EADC`), thẻ giấy `#FAF6EC`; Linen `#EDE3D2` vẫn là màu thương hiệu | Nền Linen nguyên bản thấy chói mắt khi nhìn lâu trên màn hình. Chỉ đổi lớp nền của giao diện web (`web/src/styles.css`), không đổi `brand/tokens.css`, logo hay chữ trên nền tối. Walnut/nền vẫn ≥ 12:1. |
 | 2026-11-03 | Giao diện phẳng: không đổ bóng, không làm mờ kính, không hạt giấy, không dịch chuyển nổi; thanh bên và thanh tab dính sát mép | Concept phong thuỷ cần tĩnh và chắc, không "3D bay bổng". Phân tầng bằng viền champagne mảnh và nền giấy sáng/tối thay cho bóng. Biểu đồ dùng màu đặc có độ trong, không dải màu chuyển. |
+| 2026-11-03 | Cho phép phong thuỷ rõ hơn trong giao diện: ngũ hành (chữ Hán + màu), âm lịch, la bàn bát quái, trống đồng, lôi văn, vân giấy dó/gỗ dạng phẳng, dấu triện. Sửa mục 7A | Chủ shop thấy bản đầu "chưa phong thuỷ". Ngũ hành/âm lịch là dữ liệu thật của app (mệnh khách, hành sản phẩm) nên đưa lên thành ngôn ngữ thiết kế thay vì trang trí. Họa tiết giữ nét mảnh và tiết chế để không ra kiểu quán trà. Rồng, tiền xu, mây/sóng vẫn không dùng. |
+| 2026-11-03 | Doanh thu theo ngũ hành chia đều cho các hành của sản phẩm hợp nhiều hành | Tránh đếm trùng: tổng 5 hành + "chưa gán" luôn bằng doanh thu hàng. Có test. |

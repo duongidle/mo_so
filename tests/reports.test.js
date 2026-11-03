@@ -106,3 +106,18 @@ test('M8: báo cáo tổng quan, phân bổ chi phí chung, so sánh kỳ trư�
   const dash = (await api.get('/reports/dashboard')).body.data;
   assert.equal(dash.today.net_revenue, 950000);
 });
+
+test('M8: doanh thu theo ngũ hành chia đều cho sản phẩm hợp nhiều hành, tổng không lệch', async () => {
+  const { api, nh, wh } = await setup();
+  const a = (await api.post('/products', { name: 'Tỳ hưu', elements: ['Thổ', 'Kim'], variants: [{ sku: 'TH-1', default_price: 500001 }], shop_ids: [nh.id] })).body.data;
+  const b = (await api.post('/products', { name: 'Vòng', elements: ['Mộc'], variants: [{ sku: 'V-1', default_price: 300000 }], shop_ids: [nh.id] })).body.data;
+  const c = (await api.post('/products', { name: 'Nước hoa', variants: [{ sku: 'NH-1', default_price: 100000 }], shop_ids: [nh.id] })).body.data;
+  await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [a, b, c].map((p) => ({ variant_id: p.variants[0].id, qty: 5, unit_cost: 1000 })) });
+  await api.post('/orders', { shop_id: nh.id, lines: [{ sku: 'TH-1', qty: 1 }, { sku: 'V-1', qty: 1 }, { sku: 'NH-1', qty: 2 }], status: 'completed' });
+  const r = (await api.get('/reports/elements')).body.data;
+  const by = Object.fromEntries(r.map((x) => [x.element, x.revenue]));
+  assert.equal(by['Thổ'] + by['Kim'], 500001, 'chia đều không mất đồng lẻ');
+  assert.equal(by['Mộc'], 300000);
+  assert.equal(by[null], 200000, 'sản phẩm chưa gán hành');
+  assert.equal(r.reduce((s, x) => s + x.revenue, 0), 1000001, 'tổng khớp doanh thu hàng');
+});

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { Async, Card, Empty, ErrorBox, Field, Modal, StatusBadge, useAction, useAsync, useDebounced, Chips } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
+import { Element } from '../components/Motif.jsx';
 
 const ELEMENTS = ['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ'];
 
@@ -29,7 +30,7 @@ export function CustomerList() {
             <tbody>{data.map((c) => (
               <tr key={c.id} className="click" onClick={() => nav(`/customers/${c.id}`)}>
                 <td><b>{c.name}</b><div className="small muted">{c.code} · {c.phone || c.facebook_url || ''}</div></td>
-                <td>{c.feng_shui?.element || '—'}{c.feng_shui?.approximate && <span className="small muted"> (ước)</span>}</td>
+                <td><Element name={c.feng_shui?.element} />{c.feng_shui?.approximate && <span className="small muted"> (ước)</span>}</td>
                 <td className="num">{c.order_count}</td><td className="num">{vnd(c.total_spent)}</td><td className="small">{fmtDate(c.last_order_at)}</td>
               </tr>))}</tbody>
           </table></div></Card>
@@ -85,13 +86,13 @@ export function CustomerDetail() {
           <>
             <div className="page-head"><div><h1>{c.name}</h1><div className="muted small">{c.code} · {c.phone} {c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">Facebook</a>}</div></div><button className="btn" onClick={() => setEdit(c)}>Sửa</button></div>
             <div className="grid cols-3">
-              <Card title="Mệnh">{c.feng_shui ? <><b style={{ fontSize: 20 }}>{c.feng_shui.element}</b>{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Ước tính từ năm sinh (chưa biết ngày)' : 'Tính từ ngày sinh theo âm lịch'}</div><div className="small">Hợp: {c.feng_shui.compatible_elements.join(', ')}</div></> : <span className="muted small">Chưa có ngày/năm sinh.</span>}</Card>
+              <Card title="Mệnh">{c.feng_shui ? <><Element name={c.feng_shui.element} size="xl" />{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Ước tính từ năm sinh (chưa biết ngày)' : 'Tính từ ngày sinh theo âm lịch'}</div><div className="row wrap small" style={{ marginTop: 6 }}>Hợp: {c.feng_shui.compatible_elements.map((e) => <Element key={e} name={e} size="sm" />)}</div></> : <span className="muted small">Chưa có ngày/năm sinh.</span>}</Card>
               <Card title="Hạng"><Async state={loy}>{({ data: l }) => <><b style={{ fontSize: 20 }}>{l.tier.name}</b><div className="small">Chi tiêu 12 tháng: {vnd(l.spent_12m)}</div>{l.next_tier && <div className="small muted">Còn {vnd(l.to_next)} lên {l.next_tier.name}</div>}</>}</Async></Card>
               <Card title="Tổng"><b style={{ fontSize: 20 }}>{vnd(c.total_spent)}</b><div className="small">{c.order_count} đơn</div><div className="small muted">Đầu: {fmtDate(c.first_order_at)} · Gần nhất: {fmtDate(c.last_order_at)}</div></Card>
             </div>
             {c.by_shop.length > 0 && <Card title="Theo shop">{c.by_shop.map((s) => <div key={s.shop_id} className="row between small"><span>{s.shop_name}</span><span>{s.order_count} đơn · {vnd(s.spent)}</span></div>)}</Card>}
             <Async state={sug}>{(r) => r.data.length > 0 && (
-              <Card title={`Gợi ý theo mệnh ${r.element}`}>{r.data.map((p) => <div key={p.product_id} className="row between small"><span>{p.name} <span className="muted">({p.elements.join(', ')})</span></span><span className="muted">{p.shop_names.join(', ')} · {vnd(p.price)}</span></div>)}{r.approximate && <div className="small muted" style={{ marginTop: 6 }}>Mệnh đang là ước tính.</div>}</Card>
+              <Card title={`Gợi ý theo mệnh ${r.element}`}>{r.data.map((p) => <div key={p.product_id} className="row between small"><span>{p.name} {p.elements.map((e) => <Element key={e} name={e} label={false} />)}</span><span className="muted">{p.shop_names.join(', ')} · {vnd(p.price)}</span></div>)}{r.approximate && <div className="small muted" style={{ marginTop: 6 }}>Mệnh đang là ước tính.</div>}</Card>
             )}</Async>
             <Card title="Đơn gần đây" flat><Async state={orders}>{(r) => !r.data.length ? <Empty>Chưa có đơn.</Empty> : <div className="table-wrap"><table><tbody>{r.data.map((o) => <tr key={o.id}><td><Link to={`/orders/${o.id}`}>{o.code}</Link><div className="small muted">{o.shop_name}</div></td><td>{fmtDate(o.business_date)}</td><td><StatusBadge status={o.status} /></td><td className="num">{vnd(o.total_amount)}</td></tr>)}</tbody></table></div>}</Async></Card>
             <Card title="Ghi chú">

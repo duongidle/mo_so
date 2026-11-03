@@ -99,7 +99,7 @@ export function OrderDetail() {
             <>
               <div className="page-head">
                 <div><h1>{o.code}</h1><div className="muted small">{o.shop_name} · {ch?.name} {o.external_id && `· ${o.external_id}`} · {fmtDate(o.ordered_at)}</div></div>
-                <div className="row wrap"><StatusBadge status={o.status} /><span className="badge">{PAY_STATUS[o.payment_status]}</span></div>
+                <div className="row wrap">{o.status === 'completed' && o.payment_status === 'paid' && <span className="seal">ĐÃ CHỐT</span>}<StatusBadge status={o.status} /><span className="badge plain">{PAY_STATUS[o.payment_status]}</span></div>
               </div>
               <ErrorBox error={act.error} />
               {o.stock_warning ? <div className="alert warn">Đơn này làm tồn kho âm. Kiểm tra kho thực tế và điều chỉnh nếu cần.</div> : null}
