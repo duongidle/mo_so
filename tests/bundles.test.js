@@ -101,3 +101,33 @@ test('Combo: huỷ đơn hoàn đủ thành phần, kiểm tra sổ cái; đổi
   const prods = (await api.get('/reports/products')).body.data;
   assert.equal(prods.filter((p) => p.sku === 'CB-1').length, 0, 'đơn đã huỷ không tính');
 });
+
+test('Báo cáo sản phẩm: combo là dòng riêng, thành phần có số lượng bán qua combo, tổng combo khớp', async () => {
+  const { api, nh, a, b, combo } = await scenario();
+  // 3 combo (2 TD + 1 MT mỗi combo) + 1 tinh dầu bán lẻ + 1 móc bán lẻ
+  await api.post('/orders', { shop_id: nh.id, lines: [{ variant_id: combo.id, qty: 3 }, { sku: 'TD-1', qty: 1 }], status: 'completed' });
+  const r = (await api.get('/reports/products')).body;
+  const row = (sku) => r.data.find((x) => x.sku === sku);
+
+  assert.equal(row('CB-1').is_bundle, true);
+  assert.equal(row('CB-1').qty_sold, 3);
+  assert.equal(row('CB-1').revenue, 240000, '3 × 80.000');
+  assert.equal(row('CB-1').cogs, 120000, '3 × (2 × 10.000 + 20.000)');
+  assert.equal(row('CB-1').qty_in_combos, undefined);
+
+  assert.equal(row('TD-1').qty_sold, 1, 'chỉ phần bán lẻ, không đếm hai lần');
+  assert.equal(row('TD-1').qty_in_combos, 6, '3 combo × 2');
+  // Móc treo chưa bán lẻ lần nào nhưng đã đi trong combo: vẫn hiện
+  assert.equal(row('MT-1').qty_sold, 0);
+  assert.equal(row('MT-1').qty_in_combos, 3);
+
+  assert.deepEqual(r.combos, { count: 1, qty: 3, revenue: 240000, cogs: 120000, gross_profit: 120000 });
+  // Trả 1 combo: số đã bán qua combo giảm theo
+  const o = (await api.get('/orders')).body.data[0];
+  const full = (await api.get(`/orders/${o.id}`)).body.data;
+  await api.post(`/orders/${o.id}/returns`, { lines: [{ order_line_id: full.lines.find((l) => l.sku === 'CB-1').id, qty: 1, restock: true }] });
+  const r2 = (await api.get('/reports/products')).body;
+  assert.equal(r2.data.find((x) => x.sku === 'TD-1').qty_in_combos, 4);
+  assert.equal(r2.combos.qty, 2);
+  void a; void b;
+});

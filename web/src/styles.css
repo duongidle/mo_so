@@ -359,3 +359,5 @@ body { background-image: var(--fibre); background-size: 320px; }
 [data-theme=nuochoa] { --hero-pattern: none; }
 .hero-ripple { position: absolute; right: -60px; top: -60px; color: var(--champagne); opacity: .5; pointer-events: none; }
 @media (max-width: 720px) { .hero-ripple { right: -110px; top: -100px; opacity: .35; } }
+
+.empty .empty-art { color: var(--terracotta); opacity: .75; width: 84px; height: 84px; }

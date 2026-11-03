@@ -18,6 +18,7 @@ const fieldInput = z.object({
   formula: z.string().trim().min(1).optional(),
   shop_id: z.string().nullish(),
   sort_order: z.number().int().optional(),
+  show_in_list: z.boolean().optional(),
 });
 
 r.get('/fields', (c) => c.json({ data: svc.listFields(c.req.query('entity_type'), { shopId: c.req.query('shop_id') }) }));
@@ -26,7 +27,7 @@ r.post('/fields', async (c) => {
   return c.json({ data: tx(() => svc.createField(input)) }, 201);
 });
 r.patch('/fields/:id', async (c) => {
-  const patch = await body(c, z.object({ label: z.string().trim().min(1).optional(), options: z.array(z.string().min(1)).optional(), formula: z.string().trim().min(1).optional(), sort_order: z.number().int().optional(), archived: z.boolean().optional() }));
+  const patch = await body(c, z.object({ label: z.string().trim().min(1).optional(), options: z.array(z.string().min(1)).optional(), formula: z.string().trim().min(1).optional(), sort_order: z.number().int().optional(), archived: z.boolean().optional(), show_in_list: z.boolean().optional() }));
   return c.json({ data: tx(() => svc.updateField(c.req.param('id'), patch)) });
 });
 

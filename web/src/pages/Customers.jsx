@@ -106,13 +106,14 @@ export function CustomerList() {
         {showMenh && <select value={element} onChange={(e) => setElement(e.target.value)} style={{ width: 130 }} aria-label="Mệnh"><option value="">Mọi mệnh</option>{ELEMENT_ORDER.map((e) => <option key={e}>{e}</option>)}</select>}
       </div>
       <Async state={state}>
-        {({ data }) => !data.length ? <Empty>Chưa có khách nào khớp.</Empty> : (
+        {({ data, columns: cols }) => !data.length ? <Empty>Chưa có khách nào khớp.</Empty> : (
           <Card flat><div className="table-wrap"><table className="stackable">
-            <thead><tr><th>Khách</th>{showMenh && <th>Mệnh</th>}<th className="num">Số đơn</th><th className="num">Chi tiêu</th><th>Mua gần nhất</th></tr></thead>
+            <thead><tr><th>Khách</th>{showMenh && <th>Mệnh</th>}{(cols || []).map((f) => <th key={f.id} className="hide-sm">{f.label}</th>)}<th className="num">Số đơn</th><th className="num">Chi tiêu</th><th>Mua gần nhất</th></tr></thead>
             <tbody>{data.map((c) => (
               <tr key={c.id} className="click" onClick={() => nav(`/customers/${c.id}`)}>
                 <td><b>{c.name}</b><div className="small muted">{c.code} · {c.phone || c.facebook_url || ''}</div></td>
                 {showMenh && <td className="hide-sm"><Element name={c.feng_shui?.element} />{c.feng_shui?.approximate && <span className="small muted"> (ước)</span>}</td>}
+                {(cols || []).map((f) => <td key={f.id} className="hide-sm small">{fieldText(f, c.shop_values?.[f.key])}</td>)}
                 <td className="num hide-sm">{c.order_count}</td><td className="num">{vnd(c.total_spent)}</td><td className="small hide-sm">{fmtDate(c.last_order_at)}</td>
               </tr>))}</tbody>
           </table></div></Card>
@@ -187,9 +188,10 @@ function ShopFieldsManager({ shop, onClose }) {
   const { busy, error, run } = useAction();
   const save = () => run(async () => {
     if (f.id) await api.patch(`/custom/fields/${f.id}`, { label: f.label, ...(['select', 'multiselect'].includes(f.type) ? { options: f.options.split(',').map((x) => x.trim()).filter(Boolean) } : {}) });
-    else await api.post('/custom/fields', { entity_type: 'customer', shop_id: shop.id, key: f.key || slugify(f.label), label: f.label, type: f.type, ...(['select', 'multiselect'].includes(f.type) ? { options: f.options.split(',').map((x) => x.trim()).filter(Boolean) } : {}) });
+    else await api.post('/custom/fields', { entity_type: 'customer', shop_id: shop.id, key: f.key || slugify(f.label), label: f.label, type: f.type, show_in_list: !!f.show_in_list, ...(['select', 'multiselect'].includes(f.type) ? { options: f.options.split(',').map((x) => x.trim()).filter(Boolean) } : {}) });
     setF(null); state.reload();
   });
+  const toggleColumn = (x) => run(async () => { await api.patch(`/custom/fields/${x.id}`, { show_in_list: !x.show_in_list }); state.reload(); });
   return (
     <Modal title={`Thông tin khách · ${shop.name}`} onClose={onClose}>
       <p className="small muted" style={{ margin: 0 }}>Các trường này chỉ tồn tại ở <b>{shop.name}</b>. Shop khác không thấy, kể cả với cùng một khách.</p>
@@ -199,7 +201,9 @@ function ShopFieldsManager({ shop, onClose }) {
           {data.map((x) => (
             <div key={x.id} className="row between" style={{ padding: '8px 0', borderBottom: '1px dotted var(--rule)' }}>
               <span><b>{x.label}</b><div className="small muted">{TYPES[x.type] || x.type}{x.options && `: ${x.options.join(', ')}`}{x.role && ' · dùng để tính mệnh/sinh nhật'}</div></span>
-              <span className="row"><button className="btn sm" onClick={() => setF({ ...x, options: (x.options || []).join(', ') })}>Sửa</button>
+              <span className="row">
+                <label className="check small" title="Hiện thành một cột ở danh sách khách của shop (tối đa 4 cột)"><input type="checkbox" checked={!!x.show_in_list} disabled={busy || x.type === 'formula'} onChange={() => toggleColumn(x)} />Cột</label>
+                <button className="btn sm" onClick={() => setF({ ...x, options: (x.options || []).join(', ') })}>Sửa</button>
                 <button className="btn sm danger" onClick={() => confirm(`Ẩn trường “${x.label}”? Dữ liệu đã nhập vẫn được giữ.`) && run(async () => { await api.patch(`/custom/fields/${x.id}`, { archived: true }); state.reload(); })}>Ẩn</button></span>
             </div>
           ))}
@@ -212,6 +216,7 @@ function ShopFieldsManager({ shop, onClose }) {
           <Field label="Tên trường"><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} autoFocus /></Field>
           {!f.id && <Field label="Kiểu"><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
           {['select', 'multiselect'].includes(f.type) && <Field label="Các lựa chọn, ngăn bằng dấu phẩy"><input value={f.options} onChange={(e) => setF({ ...f, options: e.target.value })} /></Field>}
+          {!f.id && <label className="check"><input type="checkbox" checked={!!f.show_in_list} onChange={(e) => setF({ ...f, show_in_list: e.target.checked })} />Hiện thành cột ở danh sách khách</label>}
           <ErrorBox error={error} />
         </Modal>
       )}
