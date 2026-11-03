@@ -29,6 +29,8 @@ const variantInput = z.object({
   default_price: money.default(0),
   min_stock: z.coerce.number().int().min(0).default(0),
   weight_gram: z.coerce.number().int().min(0).nullish(),
+  kind: z.enum(['single', 'bundle']).optional(),
+  components: z.array(z.object({ variant_id: z.string(), qty: z.coerce.number().int().positive() })).optional(),
 });
 
 const productInput = z.object({
