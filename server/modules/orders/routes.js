@@ -5,6 +5,8 @@ import { body, money, qty, query, optionalText, idempotent } from '../../lib/htt
 import { PAYMENT_METHODS } from '../payments/service.js';
 import { renderReceipt } from './receipt.js';
 import * as svc from './service.js';
+import { exportOrders, exportFileName, countExport } from './export.js';
+import { rowsToCsv } from '../system/export.js';
 
 const r = new Hono();
 
@@ -53,36 +55,45 @@ export const orderInput = z.object({
   allow_negative_stock: z.boolean().default(false),
 });
 
+const filterShape = {
+  shop_id: z.string().optional(), // nhiều shop: shop_id=a,b
+  status: z.string().optional(), // nhiều: status=confirmed,shipping
+  channel: z.string().optional(),
+  payment_status: z.enum(['unpaid', 'partial', 'paid', 'refunded']).optional(),
+  customer_id: z.string().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  q: z.string().optional(),
+};
+const toFilter = (q) => ({
+  shopIds: q.shop_id ? q.shop_id.split(',') : null,
+  status: q.status ? q.status.split(',') : null,
+  channel: q.channel,
+  paymentStatus: q.payment_status,
+  customerId: q.customer_id,
+  from: q.from,
+  to: q.to,
+  q: q.q,
+});
+
 r.get('/', (c) => {
-  const q = query(
-    c,
-    z.object({
-      shop_id: z.string().optional(), // nhiều shop: shop_id=a,b
-      status: z.string().optional(), // nhiều: status=confirmed,shipping
-      channel: z.string().optional(),
-      payment_status: z.enum(['unpaid', 'partial', 'paid', 'refunded']).optional(),
-      customer_id: z.string().optional(),
-      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      q: z.string().optional(),
-      limit: z.coerce.number().int().min(1).max(500).default(50),
-      cursor: z.string().optional(),
-    }),
-  );
-  return c.json(
-    svc.listOrders({
-      shopIds: q.shop_id ? q.shop_id.split(',') : null,
-      status: q.status ? q.status.split(',') : null,
-      channel: q.channel,
-      paymentStatus: q.payment_status,
-      customerId: q.customer_id,
-      from: q.from,
-      to: q.to,
-      q: q.q,
-      limit: q.limit,
-      cursor: q.cursor,
-    }),
-  );
+  const q = query(c, z.object({ ...filterShape, limit: z.coerce.number().int().min(1).max(500).default(50), cursor: z.string().optional() }));
+  return c.json(svc.listOrders({ ...toFilter(q), limit: q.limit, cursor: q.cursor }));
+});
+
+/**
+ * Xuất đơn theo đúng bộ lọc của danh sách. layout=orders (mỗi đơn một dòng) | lines (mỗi sản phẩm một dòng).
+ * format=csv (mặc định, tải về) | json (để giao diện tự dựng file Excel) | count (chỉ đếm, để báo trước số dòng).
+ * Phải đặt trước /:id.
+ */
+r.get('/export', (c) => {
+  const q = query(c, z.object({ ...filterShape, layout: z.enum(['orders', 'lines']).default('orders'), format: z.enum(['csv', 'json', 'count']).default('csv') }));
+  if (q.format === 'count') return c.json({ data: countExport(toFilter(q)) });
+  const out = exportOrders(toFilter(q), q.layout);
+  if (q.format === 'json') return c.json({ data: out });
+  return new Response(rowsToCsv(out.headers, out.rows), {
+    headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${exportFileName(q.layout, q.from, q.to)}"` },
+  });
 });
 
 r.get('/:id', (c) => c.json({ data: svc.getOrder(c.req.param('id')) }));

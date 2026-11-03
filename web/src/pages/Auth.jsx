@@ -2,21 +2,28 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { Field, ErrorBox, useAction } from '../components/ui.jsx';
 import { Seal } from '../components/Motif.jsx';
-const INDUSTRY_OPTIONS = [['general', 'Chung'], ['phong_thuy', 'Phong thuỷ'], ['nuoc_hoa', 'Nước hoa']];
 
-export default function Auth({ setup, onDone }) {
-  const [f, setF] = useState({ username: '', password: '', display_name: '', warehouse_name: 'Kho chính', shops: [{ name: '', code: '', industry: 'general' }] });
+/**
+ * Đăng nhập và đăng ký. Mỗi tài khoản có shop, kho, sản phẩm, khách, đơn riêng hoàn toàn.
+ * Tài khoản mới chưa có shop nào: sau khi đăng ký, giao diện dẫn sang tạo shop đầu tiên.
+ */
+export default function Auth({ hasAccounts, registrationOpen, onDone }) {
+  const [mode, setMode] = useState(hasAccounts ? 'login' : 'register');
+  const [f, setF] = useState({ username: '', display_name: '', password: '', confirm: '' });
+  const [localError, setLocalError] = useState(null);
   const { busy, error, run } = useAction();
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const shopSet = (i, k, v) => setF({ ...f, shops: f.shops.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
+  const set = (k) => (e) => { setF({ ...f, [k]: e.target.value }); setLocalError(null); };
+  const register = mode === 'register';
 
   const submit = (e) => {
     e.preventDefault();
+    if (register) {
+      if (f.password.length < 8) return setLocalError('Mật khẩu tối thiểu 8 ký tự');
+      if (f.password !== f.confirm) return setLocalError('Hai lần nhập mật khẩu chưa giống nhau');
+    }
     run(async () => {
-      if (setup) {
-        await api.post('/auth/setup', { ...f, shops: f.shops.filter((s) => s.name && s.code) });
-      }
-      await api.post('/auth/login', { username: f.username, password: f.password });
+      if (register) await api.post('/auth/register', { username: f.username, display_name: f.display_name, password: f.password });
+      else await api.post('/auth/login', { username: f.username, password: f.password });
       onDone();
     });
   };
@@ -30,29 +37,23 @@ export default function Auth({ setup, onDone }) {
       </aside>
       <div className="login-form">
         <form className="stack" onSubmit={submit}>
-          <div className="row between"><div><div className="eyebrow">{setup ? 'Lần đầu' : 'Chào mừng trở lại'}</div><h1>{setup ? 'Thiết lập' : 'Đăng nhập'}</h1></div><Seal>MỞ<br />SỔ</Seal></div>
-          {setup && <p className="muted small" style={{ margin: 0 }}>Tạo tài khoản chủ shop, kho đầu tiên và các shop. Thêm hoặc sửa sau trong Cài đặt.</p>}
-      <Field label="Tên đăng nhập"><input value={f.username} onChange={set('username')} autoComplete="username" required autoFocus /></Field>
-      {setup && <Field label="Tên hiển thị"><input value={f.display_name} onChange={set('display_name')} required /></Field>}
-      <Field label={setup ? 'Mật khẩu (tối thiểu 8 ký tự)' : 'Mật khẩu'}>
-        <input type="password" value={f.password} onChange={set('password')} autoComplete={setup ? 'new-password' : 'current-password'} minLength={setup ? 8 : undefined} required />
-      </Field>
-      {setup && (
-        <>
-          <Field label="Tên kho đầu tiên"><input value={f.warehouse_name} onChange={set('warehouse_name')} /></Field>
-          <h3>Shop</h3>
-          {f.shops.map((s, i) => (
-            <div className="row" key={i}>
-              <input placeholder="Tên shop, vd Nước hoa ô tô" value={s.name} onChange={(e) => shopSet(i, 'name', e.target.value)} className="grow" aria-label="Tên shop" />
-              <input placeholder="Mã" value={s.code} onChange={(e) => shopSet(i, 'code', e.target.value.toUpperCase())} style={{ width: 80 }} maxLength={6} aria-label="Mã shop" />
-              <select value={s.industry} onChange={(e) => shopSet(i, 'industry', e.target.value)} style={{ width: 140 }} aria-label="Ngành bán">{INDUSTRY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-            </div>
-          ))}
-          <button type="button" className="btn sm" onClick={() => setF({ ...f, shops: [...f.shops, { name: '', code: '', industry: 'general' }] })}>+ Thêm shop</button>
-        </>
-      )}
-      <ErrorBox error={error} />
-      <button className="btn primary" disabled={busy}>{busy ? 'Đang xử lý…' : setup ? 'Bắt đầu' : 'Đăng nhập'}</button>
+          <div className="row between"><div><div className="eyebrow">{register ? 'Tài khoản mới' : 'Chào mừng trở lại'}</div><h1>{register ? 'Đăng ký' : 'Đăng nhập'}</h1></div><Seal>MỞ<br />SỔ</Seal></div>
+          {register && <p className="muted small" style={{ margin: 0 }}>Mỗi tài khoản có dữ liệu riêng hoàn toàn: shop, kho, sản phẩm, khách hàng, đơn hàng. Đăng ký xong bạn sẽ tạo shop đầu tiên.</p>}
+          <Field label="Tên đăng nhập" hint={register ? 'Chữ không dấu, số, dấu . _ @ -' : undefined}><input value={f.username} onChange={set('username')} autoComplete="username" required autoFocus /></Field>
+          {register && <Field label="Tên hiển thị"><input value={f.display_name} onChange={set('display_name')} autoComplete="name" required /></Field>}
+          <Field label={register ? 'Mật khẩu (tối thiểu 8 ký tự)' : 'Mật khẩu'}>
+            <input type="password" value={f.password} onChange={set('password')} autoComplete={register ? 'new-password' : 'current-password'} required />
+          </Field>
+          {register && <Field label="Nhập lại mật khẩu"><input type="password" value={f.confirm} onChange={set('confirm')} autoComplete="new-password" required /></Field>}
+          {localError && <div className="alert err" role="alert">{localError}</div>}
+          <ErrorBox error={error} />
+          <button className="btn primary" disabled={busy}>{busy ? 'Đang xử lý…' : register ? 'Tạo tài khoản' : 'Đăng nhập'}</button>
+          {hasAccounts && (register || registrationOpen) && (
+            <p className="small muted" style={{ margin: 0, textAlign: 'center' }}>
+              {register ? 'Đã có tài khoản? ' : 'Chưa có tài khoản? '}
+              <a href="#" onClick={(e) => { e.preventDefault(); setMode(register ? 'login' : 'register'); setLocalError(null); }}>{register ? 'Đăng nhập' : 'Đăng ký'}</a>
+            </p>
+          )}
         </form>
       </div>
     </div>

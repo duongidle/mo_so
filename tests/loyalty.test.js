@@ -71,3 +71,51 @@ test('M9: hạng theo chi tiêu 12 tháng, nhắc mua lại, sinh nhật, gợi 
   assert.deepEqual(partial.unresolved.sort(), ['san_pham', 'shop']);
   void water;
 });
+
+test('Loyalty & Campaign: chiến dịch theo mệnh cho cả shop; khách bị xoá khỏi shop không còn bị nhắc ở shop đó; xoá mẫu tin', async () => {
+  const { api, nh, pt, wh } = await setup();
+  await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' });
+  const perfume = (await api.post('/products', { name: 'Nước hoa ô tô', consumption_days: 30, variants: [{ sku: 'NH-1', default_price: 150000 }], shop_ids: [nh.id] })).body.data;
+  const water = (await api.post('/products', { name: 'Vòng thuỷ', elements: ['Thuỷ'], variants: [{ sku: 'PT-THUY', default_price: 400000 }], shop_ids: [pt.id] })).body.data;
+  await api.post('/products', { name: 'Nến hoả', elements: ['Hoả'], variants: [{ sku: 'PT-HOA', default_price: 100000 }], shop_ids: [pt.id] });
+  await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: perfume.variants[0].id, qty: 20, unit_cost: 40000 }, { variant_id: water.variants[0].id, qty: 5, unit_cost: 100000 }] });
+
+  // Khách mệnh Mộc (hợp Thuỷ), khách không rõ mệnh, khách mệnh Mộc đã mua vòng thuỷ
+  const mk = async (name, phone) => (await api.post('/customers', { name, phone, shop_id: pt.id })).body.data;
+  const a = await mk('Mộc Một', '0911000001');
+  const b = await mk('Không rõ mệnh', '0911000002');
+  const c = await mk('Mộc Đã Mua', '0911000003');
+  await api.put(`/custom/values/customer/${a.id}?shop_id=${pt.id}`, { menh: 'Mộc' });
+  await api.put(`/custom/values/customer/${c.id}?shop_id=${pt.id}`, { menh: 'Mộc' });
+  await api.post('/orders', { shop_id: pt.id, customer_id: c.id, lines: [{ sku: 'PT-THUY', qty: 1 }], status: 'completed' });
+
+  const camp = (await api.get(`/loyalty/element-campaign?shop_id=${pt.id}`)).body;
+  assert.equal(camp.total, 1, 'chỉ khách biết mệnh và còn món hợp chưa mua');
+  assert.equal(camp.data[0].customer.id, a.id);
+  assert.equal(camp.data[0].element, 'Mộc');
+  assert.deepEqual(camp.data[0].suggestions.map((s) => s.name), ['Vòng thuỷ'], 'Hoả không hợp Mộc');
+  assert.ok(!camp.data.some((r) => r.customer.id === b.id));
+  // Shop không phải phong thuỷ: rỗng kèm lý do; thiếu shop: lỗi
+  const none = (await api.get(`/loyalty/element-campaign?shop_id=${nh.id}`)).body;
+  assert.equal(none.total, 0);
+  assert.ok(none.reason);
+  assert.equal((await api.get('/loyalty/element-campaign')).status, 400);
+  // Xoá khỏi shop thì ra khỏi chiến dịch
+  await api.delete(`/customers/${a.id}?shop_id=${pt.id}`);
+  assert.equal((await api.get(`/loyalty/element-campaign?shop_id=${pt.id}`)).body.total, 0);
+
+  // Nhắc mua lại: khách mua nước hoa ô tô ở NH, bị xoá khỏi NH → NH không nhắc nữa; shop khác không liên quan
+  const today = businessDate();
+  const d = (await api.post('/customers', { name: 'Anh Dùng', phone: '0944000444', shop_id: nh.id })).body.data;
+  await api.post('/orders', { shop_id: nh.id, customer_id: d.id, lines: [{ sku: 'NH-1', qty: 1 }], status: 'completed', ordered_at: `${addDays(today, -40)}T05:00:00.000Z` });
+  assert.equal((await api.get(`/loyalty/today?shop_id=${nh.id}`)).body.data.reminders.length, 1);
+  await api.delete(`/customers/${d.id}?shop_id=${nh.id}`);
+  assert.equal((await api.get(`/loyalty/today?shop_id=${nh.id}`)).body.data.reminders.length, 0);
+  assert.equal((await api.get('/loyalty/today')).body.data.reminders.length, 0);
+
+  // Mẫu tin nhắn: thêm rồi xoá
+  const tpl = (await api.post('/loyalty/templates', { name: 'Thử', kind: 'general', body: 'Chào {ten}' })).body.data;
+  assert.equal((await api.delete(`/loyalty/templates/${tpl.id}`)).status, 200);
+  assert.ok(!(await api.get('/loyalty/templates')).body.data.some((t) => t.id === tpl.id));
+  assert.equal((await api.delete(`/loyalty/templates/${tpl.id}`)).status, 404);
+});

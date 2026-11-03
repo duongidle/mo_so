@@ -13,15 +13,16 @@ import Products from './pages/Products.jsx';
 import Stock from './pages/Stock.jsx';
 import Purchases from './pages/Purchases.jsx';
 import { CustomerList, CustomerDetail } from './pages/Customers.jsx';
-import Care from './pages/Care.jsx';
+import Loyalty from './pages/Loyalty.jsx';
 import Expenses from './pages/Expenses.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
+import Onboarding, { GettingStarted, useSetupProgress, readDismissed, DISMISS_KEY } from './pages/Onboarding.jsx';
 
 const NAV = [
   { group: null, items: [['/', 'Tổng quan', 'home', true], ['/pos', 'Bán nhanh', 'bag'], ['/orders', 'Đơn hàng', 'receipt']] },
   { group: 'Hàng hoá', items: [['/products', 'Sản phẩm', 'tag'], ['/stock', 'Kho', 'box'], ['/purchases', 'Nhập hàng', 'truck']] },
-  { group: 'Khách', items: [['/customers', 'Khách hàng', 'users'], ['/care', 'Chăm sóc', 'heart']] },
+  { group: 'Khách', items: [['/customers', 'Khách hàng', 'users'], ['/loyalty', 'Loyalty & Campaign', 'heart']] },
   { group: 'Sổ sách', items: [['/expenses', 'Chi phí & đối soát', 'wallet'], ['/reports', 'Báo cáo', 'chart'], ['/settings', 'Cài đặt', 'cog']] },
 ];
 const PRIMARY = ['/', '/pos', '/orders', '/stock'];
@@ -32,8 +33,8 @@ function ShopSwitcher() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  // "Tất cả shop" chỉ có ở Báo cáo, Khách hàng, Kho, Tổng quan, Đơn, Chăm sóc (CLAUDE.md mục 7)
-  const allowAll = ['/', '/reports', '/customers', '/stock', '/orders', '/care'].some((p) => (p === '/' ? pathname === '/' : pathname.startsWith(p)));
+  // "Tất cả shop" chỉ có ở Báo cáo, Khách hàng, Kho, Tổng quan, Đơn, Loyalty & Campaign (CLAUDE.md mục 7)
+  const allowAll = ['/', '/reports', '/customers', '/stock', '/orders', '/loyalty'].some((p) => (p === '/' ? pathname === '/' : pathname.startsWith(p)));
   const current = shopId === 'all' && !allowAll ? shops[0]?.id : shopId;
   const shop = shops.find((s) => s.id === current);
   useEffect(() => {
@@ -66,7 +67,7 @@ function ShopSwitcher() {
   );
 }
 
-function Shell() {
+function Shell({ progress, reopenGuide }) {
   const { onLogout, user, has } = useSession();
   const { pathname } = useLocation();
   const [pinned, setPinned] = useState(() => { try { return localStorage.getItem('moso.pin') === '1'; } catch { return false; } });
@@ -100,7 +101,7 @@ function Shell() {
           <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span>{has('feng_shui') && <><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></>}</span>{pathname !== '/pos' && <Link to="/pos" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
         </header>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard progress={progress} reopenGuide={reopenGuide} />} />
           <Route path="/pos" element={<Pos />} />
           <Route path="/orders" element={<OrderList />} />
           <Route path="/orders/:id" element={<OrderDetail />} />
@@ -110,7 +111,8 @@ function Shell() {
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/customers" element={<CustomerList />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
-          <Route path="/care" element={<Care />} />
+          <Route path="/loyalty" element={<Loyalty />} />
+          <Route path="/care" element={<Navigate to="/loyalty" replace />} />
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
@@ -152,16 +154,36 @@ function More() {
   );
 }
 
+/** Tài khoản mới chưa có shop nào → tạo shop đầu tiên; có shop rồi → ứng dụng, kèm hướng dẫn kho/sản phẩm đầu tiên nếu còn thiếu */
+function Gate() {
+  const { shops } = useSession();
+  const progress = useSetupProgress();
+  const [dismissed, setDismissed] = useState(readDismissed);
+  if (shops.length === 0) return <Onboarding />;
+  const close = (completed) => { if (!completed) { try { sessionStorage.setItem(DISMISS_KEY, '1'); } catch { /* bỏ qua */ } setDismissed(true); } };
+  return (
+    <>
+      <Shell progress={progress} reopenGuide={() => { try { sessionStorage.removeItem(DISMISS_KEY); } catch { /* bỏ qua */ } setDismissed(false); }} />
+      <GettingStarted progress={progress} open={!dismissed} onClose={close} />
+    </>
+  );
+}
+
 export default function App() {
-  const [auth, setAuth] = useState({ loading: true, setup: false, user: null });
+  const [auth, setAuth] = useState({ loading: true, hasAccounts: true, registrationOpen: true, user: null });
   const check = async () => {
     try {
       const st = await api.get('/auth/status');
-      if (st.setup_required) return setAuth({ loading: false, setup: true, user: null });
-      const me = await api.get('/auth/me');
-      setAuth({ loading: false, setup: false, user: me.data });
+      const base = { hasAccounts: st.has_accounts, registrationOpen: st.registration_open };
+      if (!st.has_accounts) return setAuth({ loading: false, ...base, user: null });
+      try {
+        const me = await api.get('/auth/me');
+        setAuth({ loading: false, ...base, user: me.data });
+      } catch {
+        setAuth({ loading: false, ...base, user: null });
+      }
     } catch {
-      setAuth({ loading: false, setup: false, user: null });
+      setAuth((a) => ({ ...a, loading: false, user: null }));
     }
   };
   useEffect(() => { check(); }, []);
@@ -171,11 +193,11 @@ export default function App() {
     return () => window.removeEventListener('moso:unauthorized', h);
   }, []);
   if (auth.loading) return <Loading />;
-  if (!auth.user) return <Auth setup={auth.setup} onDone={check} />;
-  const logout = async () => { await api.post('/auth/logout').catch(() => {}); setAuth({ loading: false, setup: false, user: null }); };
+  if (!auth.user) return <Auth hasAccounts={auth.hasAccounts} registrationOpen={auth.registrationOpen} onDone={check} />;
+  const logout = async () => { await api.post('/auth/logout').catch(() => {}); setAuth((a) => ({ ...a, loading: false, hasAccounts: true, user: null })); };
   return (
     <SessionProvider user={auth.user} onLogout={logout}>
-      <Shell />
+      <Gate />
     </SessionProvider>
   );
 }

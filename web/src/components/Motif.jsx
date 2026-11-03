@@ -61,9 +61,26 @@ export function Seal({ children, size = 44 }) {
 /** Vòng lan toả: mùi hương toả ra từ một điểm. Các vòng đồng tâm mảnh, thưa dần ra ngoài. */
 export function Ripple({ size = 300, className = '' }) {
   return (
-    <svg className={className} width={size} height={size} viewBox="-100 -100 200 200" fill="none" stroke="currentColor" strokeWidth="0.8" aria-hidden="true">
+    <svg className={className} width={size} height={size} viewBox="-100 -100 200 200" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
       {[10, 22, 38, 58, 82, 110].map((r, i) => <circle key={r} r={r} strokeOpacity={1 - i * 0.12} />)}
       <circle r="3" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Đồng hồ tốc độ: cung 240° có vạch chia, vạch đỏ ở cuối, kim chỉ. Gợi taplô xe (nước hoa ô tô). */
+export function Gauge({ size = 300, className = '' }) {
+  const start = -210, end = 30, steps = 24; // độ, 0° = hướng 3 giờ
+  const pt = (deg, r) => [Math.cos((deg * Math.PI) / 180) * r, Math.sin((deg * Math.PI) / 180) * r];
+  const arc = (r, a0, a1) => { const [x0, y0] = pt(a0, r); const [x1, y1] = pt(a1, r); return `M${x0} ${y0} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1} ${y1}`; };
+  const ticks = Array.from({ length: steps + 1 }, (_, i) => start + ((end - start) * i) / steps);
+  const needle = pt(-40, 62);
+  return (
+    <svg className={className} width={size} height={size} viewBox="-100 -100 200 200" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" aria-hidden="true">
+      <path d={arc(92, start, end)} /><path d={arc(70, start, end)} strokeOpacity=".6" />
+      <path d={arc(92, 0, end)} strokeWidth="3" />
+      {ticks.map((a, i) => { const [x0, y0] = pt(a, i % 4 === 0 ? 78 : 83); const [x1, y1] = pt(a, 90); return <line key={a} x1={x0} y1={y0} x2={x1} y2={y1} strokeWidth={i % 4 === 0 ? 1.8 : 1} />; })}
+      <line x1="0" y1="0" x2={needle[0]} y2={needle[1]} strokeWidth="2.2" /><circle r="6" fill="currentColor" />
     </svg>
   );
 }

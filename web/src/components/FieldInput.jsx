@@ -37,6 +37,7 @@ export function fieldText(field, value) {
   if (field.type === 'boolean') return value ? 'Có' : 'Không';
   if (Array.isArray(value)) return value.join(', ');
   if (field.type === 'date') return value.split('-').reverse().join('/');
+  if (typeof value === 'number') return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value);
   return String(value);
 }
 

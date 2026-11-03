@@ -2,11 +2,13 @@ import os from 'node:os';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { config } from './lib/config.js';
-import { getDb } from './db/index.js';
+import { bootstrapTenancy, getMaster } from './db/tenancy.js';
 import { startBackupScheduler } from './jobs/backup.js';
 import { startWebhookWorker } from './jobs/webhooks.js';
 
-getDb(); // mở DB + chạy migration
+getMaster(); // mở sổ tài khoản + chạy migration
+const boot = bootstrapTenancy(); // cài đặt cũ một file → tài khoản đầu tiên
+if (boot.migrated) console.log(`Đã chuyển dữ liệu cũ thành tài khoản "${boot.username}" (giữ nguyên tên đăng nhập và mật khẩu).`);
 const app = createApp();
 startBackupScheduler();
 startWebhookWorker();

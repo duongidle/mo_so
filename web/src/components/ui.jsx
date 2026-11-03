@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { STATUS, vnd } from '../lib.js';
 import Icon, { OpenBook } from './Icon.jsx';
+import { Dongson, Ripple, Gauge } from './Motif.jsx';
+import { useSession } from '../session.jsx';
 
 export function useAsync(fn, deps = []) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
@@ -29,8 +31,16 @@ export function useDebounced(value, ms = 250) {
 
 export const Loading = () => <div className="empty">Đang tải…</div>;
 export const ErrorBox = ({ error }) => (error ? <div className="alert err" role="alert">{error.message || String(error)}</div> : null);
+/** Hình minh hoạ cho trạng thái trống theo giao diện của shop: trống đồng (phong thuỷ), vòng lan toả (nước hoa), cuốn sổ (chung) */
+function EmptyArt() {
+  const theme = useSession()?.theme;
+  if (theme === 'phongthuy') return <Dongson className="empty-art" size={84} />;
+  if (theme === 'nuochoa') return <Ripple className="empty-art" size={84} />;
+  if (theme === 'oto') return <Gauge className="empty-art" size={84} />;
+  return <OpenBook />;
+}
 export const Empty = ({ children, action }) => (
-  <div className="empty"><OpenBook /><div style={{ maxWidth: 420 }}>{children}</div>{action}</div>
+  <div className="empty"><EmptyArt /><div style={{ maxWidth: 420 }}>{children}</div>{action}</div>
 );
 
 /** Hiện trạng thái tải/lỗi, rồi mới render nội dung */

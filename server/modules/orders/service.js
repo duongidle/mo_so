@@ -8,7 +8,7 @@ import { dailyCode } from '../../lib/codes.js';
 import { applyMovement } from '../inventory/service.js';
 import { recordPayment, netPaid, listPaymentsFor } from '../payments/service.js';
 import { isBundle, componentsOf } from '../catalog/bundles.js';
-import { findOrCreateCustomer, recalcCustomerStats, getCustomer } from '../customers/service.js';
+import { findOrCreateCustomer, recalcCustomerStats, getCustomer, ensureMember } from '../customers/service.js';
 import { getShop } from '../shops/service.js';
 
 const db = () => getDb();
@@ -65,7 +65,8 @@ function dueAmount(o) {
   return Math.max(0, base - o.returned_amount);
 }
 
-export function listOrders(f) {
+/** Bộ lọc đơn dùng chung cho danh sách và xuất file, để hai nơi luôn lọc giống hệt nhau */
+export function orderFilter(f) {
   const where = [];
   const params = [];
   if (f.shopIds?.length) (where.push(`o.shop_id IN (${f.shopIds.map(() => '?').join(',')})`), params.push(...f.shopIds));
@@ -79,6 +80,11 @@ export function listOrders(f) {
     where.push('(o.code LIKE ? OR o.external_id LIKE ? OR o.customer_name LIKE ? OR o.customer_phone LIKE ? OR o.tracking_code LIKE ?)');
     params.push(...Array(5).fill(`%${f.q}%`));
   }
+  return { where, params };
+}
+
+export function listOrders(f) {
+  const { where, params } = orderFilter(f);
   if (f.cursor) (where.push('o.id < ?'), params.push(f.cursor));
   const limit = f.limit ?? 50;
   const rows = db()
@@ -168,10 +174,12 @@ function refreshDerived(orderId) {
 // ---------- Tồn kho theo trạng thái ----------
 function deductStock(o, actor, allowNegative) {
   let warning = false;
+  // Đơn import từ sàn đã xảy ra ở quá khứ: ghi biến động kho theo ngày đặt, không phải lúc bấm import
+  const at = o.source === 'import' ? o.ordered_at : undefined;
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(o.id);
   for (const l of lines) {
     const move = (variantId, qty) =>
-      applyMovement({ warehouseId: o.warehouse_id, variantId, type: 'sale_out', qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative });
+      applyMovement({ warehouseId: o.warehouse_id, variantId, type: 'sale_out', qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at });
     if (isBundle(l.variant_id)) {
       // Combo: trừ từng thành phần, chụp thành phần + giá vốn từng cái để hoàn kho/trả hàng sau này đúng
       const comps = componentsOf(l.variant_id);
@@ -283,6 +291,7 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
     if (dup) throw conflict('DUPLICATE_ORDER', `Đơn ${input.external_id} đã tồn tại (${dup.code})`, { order_id: dup.id });
   }
   const customer = resolveCustomer(input, actor);
+  if (customer) ensureMember(customer.id, shop.id); // mua ở shop nào thì là khách của shop đó
   const lines = resolveLines(shop.id, input.lines);
   const h = computeHeader(lines, input);
   const orderedAt = toIso(input.ordered_at) || nowIso();
@@ -361,6 +370,7 @@ export function updateOrder(id, input, actor) {
     const c = resolveCustomer(input, actor);
     merged.customer_id = c?.id ?? null;
     if (c) {
+      ensureMember(c.id, before.shop_id);
       merged.customer_name = input.customer?.name ?? c.name;
       merged.customer_phone = input.customer?.phone ?? c.phone;
     }
