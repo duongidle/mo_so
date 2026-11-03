@@ -29,12 +29,13 @@ export function getExpense(id) {
   return e;
 }
 
-export function listExpenses({ shopIds, categoryId, from, to, includeVoided = false, limit = 100, cursor }) {
+export function listExpenses({ shopIds, categoryId, from, to, includeVoided = false, includeShared = true, limit = 100, cursor }) {
   const where = [];
   const params = [];
   if (!includeVoided) where.push('e.voided_at IS NULL');
   if (shopIds?.length) {
-    where.push(`(e.shop_id IN (${shopIds.map(() => '?').join(',')}))`);
+    // Chi phí chung (không thuộc shop nào) vẫn hiện khi xem theo shop, vì nó được phân bổ vào shop trong báo cáo
+    where.push(`(e.shop_id IN (${shopIds.map(() => '?').join(',')})${includeShared ? ' OR e.shop_id IS NULL' : ''})`);
     params.push(...shopIds);
   }
   if (categoryId) (where.push('e.category_id = ?'), params.push(categoryId));

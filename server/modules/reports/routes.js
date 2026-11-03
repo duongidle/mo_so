@@ -6,10 +6,10 @@ import { evaluateMetrics } from '../custom/service.js';
 
 const r = new Hono();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const filterSchema = z.object({ from: date.optional(), to: date.optional(), shop_id: z.string().optional(), channel: z.string().optional() });
+const filterSchema = z.object({ from: date.optional(), to: date.optional(), shop_id: z.string().optional(), channel: z.string().optional(), category_id: z.string().optional() });
 const f = (c) => {
   const q = query(c, filterSchema);
-  return { from: q.from, to: q.to, shopIds: q.shop_id ? q.shop_id.split(',') : null, channel: q.channel };
+  return { from: q.from, to: q.to, shopIds: q.shop_id ? q.shop_id.split(',') : null, channel: q.channel, categoryId: q.category_id };
 };
 
 r.get('/dashboard', (c) => c.json({ data: svc.dashboard(f(c)) }));
@@ -28,6 +28,8 @@ r.get('/elements', (c) => c.json(svc.byElement(f(c))));
 r.get('/customers', (c) => c.json({ data: svc.customerMetrics(f(c)) }));
 r.get('/inventory', (c) => c.json({ data: svc.inventoryMetrics({ shopId: c.req.query('shop_id'), warehouseId: c.req.query('warehouse_id') }) }));
 r.get('/cashflow', (c) => c.json({ data: svc.cashflow(f(c)) }));
+r.get('/expenses', (c) => c.json({ data: svc.expenseReport(f(c)) }));
+r.get('/aging', (c) => c.json({ data: svc.aging(f(c)) }));
 r.get('/health', (c) => c.json(svc.health(f(c))));
 
 export default r;

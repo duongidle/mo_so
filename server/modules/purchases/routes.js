@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { tx } from '../../db/index.js';
-import { body, money, qty, query, optionalText, idempotent } from '../../lib/http.js';
+import { body, money, qty, query, optionalText, idempotent, patchOf } from '../../lib/http.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
 import * as svc from './service.js';
 
@@ -56,13 +56,13 @@ r.post(
   }),
 );
 r.patch('/purchases/:id', async (c) => {
-  const input = await body(c, purchaseInput.omit({ receive: true, paid_amount: true, payment_method: true }).partial());
+  const input = await body(c, patchOf(purchaseInput.omit({ receive: true, paid_amount: true, payment_method: true })));
   return c.json({ data: tx(() => svc.updatePurchase(c.req.param('id'), input, c.get('actor'))) });
 });
 r.post('/purchases/:id/receive', (c) => c.json({ data: tx(() => svc.receivePurchase(c.req.param('id'), c.get('actor'))) }));
 r.post('/purchases/:id/cancel', async (c) => {
-  const { reason } = await body(c, z.object({ reason: optionalText }));
-  return c.json({ data: tx(() => svc.cancelPurchase(c.req.param('id'), reason, c.get('actor'))) });
+  const { reason, refund_method } = await body(c, z.object({ reason: optionalText, refund_method: z.enum(PAYMENT_METHODS).nullish() }));
+  return c.json({ data: tx(() => svc.cancelPurchase(c.req.param('id'), reason, c.get('actor'), { refundMethod: refund_method })) });
 });
 r.post('/purchases/:id/payments', async (c) => {
   const input = await body(c, z.object({ amount: money.refine((v) => v > 0), method: z.enum(PAYMENT_METHODS).default('cash'), paid_at: z.string().nullish(), note: optionalText }));

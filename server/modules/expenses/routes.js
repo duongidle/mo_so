@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { tx } from '../../db/index.js';
-import { body, money, query, optionalText } from '../../lib/http.js';
+import { body, money, query, optionalText, patchOf } from '../../lib/http.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
 import * as svc from './service.js';
 
@@ -24,8 +24,8 @@ const expenseInput = z.object({
 });
 
 r.get('/expenses', (c) => {
-  const q = query(c, z.object({ shop_id: z.string().optional(), category_id: z.string().optional(), from: date.optional(), to: date.optional(), include_voided: z.enum(['0', '1']).optional(), limit: z.coerce.number().int().min(1).max(500).default(100), cursor: z.string().optional() }));
-  return c.json(svc.listExpenses({ shopIds: ids(q.shop_id), categoryId: q.category_id, from: q.from, to: q.to, includeVoided: q.include_voided === '1', limit: q.limit, cursor: q.cursor }));
+  const q = query(c, z.object({ shop_id: z.string().optional(), category_id: z.string().optional(), from: date.optional(), to: date.optional(), include_voided: z.enum(['0', '1']).optional(), include_shared: z.enum(['0', '1']).optional(), limit: z.coerce.number().int().min(1).max(500).default(100), cursor: z.string().optional() }));
+  return c.json(svc.listExpenses({ shopIds: ids(q.shop_id), categoryId: q.category_id, from: q.from, to: q.to, includeVoided: q.include_voided === '1', includeShared: q.include_shared !== '0', limit: q.limit, cursor: q.cursor }));
 });
 r.get('/expenses/:id', (c) => c.json({ data: svc.getExpense(c.req.param('id')) }));
 r.post('/expenses', async (c) => {
@@ -33,7 +33,7 @@ r.post('/expenses', async (c) => {
   return c.json({ data: tx(() => svc.createExpense(input, c.get('actor'))) }, 201);
 });
 r.patch('/expenses/:id', async (c) => {
-  const input = await body(c, expenseInput.partial());
+  const input = await body(c, patchOf(expenseInput));
   return c.json({ data: tx(() => svc.updateExpense(c.req.param('id'), input, c.get('actor'))) });
 });
 r.delete('/expenses/:id', (c) => c.json({ data: tx(() => svc.voidExpense(c.req.param('id'), c.get('actor'))) }));

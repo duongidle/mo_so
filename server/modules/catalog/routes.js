@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { body, money, optionalText, query } from '../../lib/http.js';
+import { body, money, optionalText, query, patchOf } from '../../lib/http.js';
 import { tx } from '../../db/index.js';
 import * as svc from './service.js';
 
@@ -80,10 +80,7 @@ r.post('/products', async (c) => {
 r.patch('/products/:id', async (c) => {
   const input = await body(
     c,
-    productInput
-      .omit({ variants: true, shop_ids: true })
-      .partial()
-      .extend({ variants: z.array(variantInput.partial().extend({ archived_at: z.string().nullish() })).optional(), archived: z.boolean().optional() }),
+    patchOf(productInput.omit({ variants: true, shop_ids: true })).extend({ variants: z.array(patchOf(variantInput).extend({ archived_at: z.string().nullish() })).optional(), archived: z.boolean().optional() }),
   );
   if (input.archived !== undefined) input.archived_at = input.archived ? new Date().toISOString() : null;
   delete input.archived;

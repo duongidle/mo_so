@@ -19,7 +19,8 @@
     "seed": "node scripts/seed.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
-    "reset-password": "node scripts/reset-password.js"
+    "reset-password": "node scripts/reset-password.js",
+    "check-stats": "node scripts/check-stats.js"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
