@@ -16,6 +16,7 @@ import '@fontsource/noto-serif/vietnamese-600.css';
 import './styles.css';
 import App from './App.jsx';
 
+document.documentElement.dataset.theme = 'general';
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>

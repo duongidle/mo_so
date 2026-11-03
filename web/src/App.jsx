@@ -67,7 +67,7 @@ function ShopSwitcher() {
 }
 
 function Shell() {
-  const { onLogout, user } = useSession();
+  const { onLogout, user, has } = useSession();
   const { pathname } = useLocation();
   const [pinned, setPinned] = useState(() => { try { return localStorage.getItem('moso.pin') === '1'; } catch { return false; } });
   const togglePin = () => setPinned((p) => { try { localStorage.setItem('moso.pin', p ? '0' : '1'); } catch { /* bỏ qua */ } return !p; });
@@ -97,7 +97,7 @@ function Shell() {
       <div className="main">
         <header className="topbar">
           <div className="row"><span className="mark-wrap"><img className="mark" src="/logo-mark.svg" alt="Mở Sổ" /></span><ShopSwitcher /></div>
-          <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></span>{pathname !== '/pos' && <Link to="/pos" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
+          <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span>{has('feng_shui') && <><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></>}</span>{pathname !== '/pos' && <Link to="/pos" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
         </header>
         <Routes>
           <Route path="/" element={<Dashboard />} />

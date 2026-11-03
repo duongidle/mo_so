@@ -11,7 +11,11 @@ test('M9: hạng theo chi tiêu 12 tháng, nhắc mua lại, sinh nhật, gợi 
   await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: perfume.variants[0].id, qty: 50, unit_cost: 40000 }] });
 
   const today = businessDate();
-  const cust = (await api.post('/customers', { name: 'Nguyễn Văn Tài', phone: '0911000111', element_override: 'Mộc', birth_date: `1990-${today.slice(5)}` })).body.data;
+  // Mệnh là thông tin riêng của shop phong thuỷ
+  assert.equal((await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' })).status, 200);
+  const cust = (await api.post('/customers', { name: 'Nguyễn Văn Tài', phone: '0911000111' })).body.data;
+  const setMenh = await api.put(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`, { menh: 'Mộc', ngay_sinh: `1990-${today.slice(5)}` });
+  assert.equal(setMenh.status, 200, JSON.stringify(setMenh.body));
 
   // 3 chai cách đây 50 ngày: chu kỳ 45 × 3 = 135 ngày → CHƯA đến hạn
   const ago = (n) => `${addDays(today, -n)}T05:00:00.000Z`;
@@ -52,11 +56,13 @@ test('M9: hạng theo chi tiêu 12 tháng, nhắc mua lại, sinh nhật, gợi 
   assert.equal(bd[0].in_days, 0);
 
   // Gợi ý theo mệnh Mộc: hợp Mộc + Thuỷ (sinh Mộc). Hoả không hợp. Bán chéo sang shop Phong thuỷ
-  const sg = (await api.get(`/loyalty/customers/${cust.id}/suggestions`)).body;
+  const sg = (await api.get(`/loyalty/customers/${cust.id}/suggestions?shop_id=${pt.id}`)).body;
   assert.equal(sg.element, 'Mộc');
   assert.deepEqual(sg.data.map((d) => d.name), ['Vòng thuỷ']);
   assert.deepEqual(sg.data[0].shop_ids, [pt.id]);
-  assert.equal((await api.get(`/loyalty/customers/${c2.id}/suggestions`)).body.data.length, 0, 'khách chưa biết mệnh thì không gợi ý bừa');
+  const wrongShop = (await api.get(`/loyalty/customers/${cust.id}/suggestions?shop_id=${nh.id}`)).body;
+  assert.equal(wrongShop.data.length, 0, 'shop không theo ngành phong thuỷ thì không gợi ý theo mệnh');
+  assert.equal((await api.get(`/loyalty/customers/${c2.id}/suggestions?shop_id=${pt.id}`)).body.data.length, 0, 'khách chưa biết mệnh thì không gợi ý bừa');
 
   // Mẫu tin: điền biến, biến thiếu giữ nguyên để báo
   const msg = (await api.post('/loyalty/render', { template_id: 'tpl_reorder', customer_id: cust.id, product_id: perfume.id, shop_id: nh.id })).body.data;

@@ -27,6 +27,15 @@
 
 ## Nhật ký
 
+### 2026-11-03 — Phiên 6: ngành bán, giao diện và trường khách theo shop
+
+- **Ngành bán** cho shop (Cài đặt → Shop & kho): Bán lẻ chung, Phong thuỷ, Nước hoa. Danh mục ở `server/lib/industries.js`. Mỗi ngành có theme, tính năng (`feng_shui`) và trường khách tạo sẵn.
+- **Trường khách theo shop**: trường khách bắt buộc thuộc một shop, giá trị luôn đọc/ghi kèm `shop_id`; cùng một khách ở hai shop có hai bộ thông tin tách biệt (có test). Mệnh/ngày sinh chuyển thành trường của shop phong thuỷ; chép giá trị cũ khi bật ngành; gộp khách giữ thông tin theo shop. Migration `011`.
+- **Giao diện đổi theo shop**: `html[data-theme]` đặt theo shop đang chọn. `phongthuy` (la bàn, lôi văn, ngũ hành, âm lịch), `nuochoa` (mực đen + hổ phách + rượu vang, vòng lan toả), `general` (kẻ sổ cái; cũng dùng cho "Tất cả shop" và đăng nhập). Mệnh, ngũ hành, âm lịch, gợi ý theo mệnh chỉ hiện ở shop có tính năng `feng_shui`.
+- **Trang Khách hàng**: nút "Thông tin khách của shop" (thêm/sửa/ẩn trường), hồ sơ có thẻ "Thông tin riêng · <shop>" để nhập giá trị. Form khách chung chỉ còn thông tin chung.
+- Sinh nhật nhắc ở Chăm sóc nay đọc từ trường `birth_date` của từng shop (shop nước hoa có "Sinh nhật").
+- Việc còn lại: trống đồng vẫn chưa dùng; trường khách chưa hiện thành cột ở danh sách khách; chưa có ngành thứ tư (thêm ở `industries.js`).
+
 ### 2026-11-03 — Phiên 5: phong thuỷ trong giao diện
 
 - Chủ shop chọn cả 4 hướng (ngũ hành, không gian Á Đông, hoa văn truyền thống, chất liệu) nên đã sửa mục 7A của `CLAUDE.md` cho phép, có giới hạn.

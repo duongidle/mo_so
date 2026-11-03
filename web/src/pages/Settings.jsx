@@ -19,20 +19,20 @@ export default function Settings() {
 }
 
 function Shops() {
-  const { shops, warehouses, reload } = useSession();
+  const { shops, warehouses, industries, reload } = useSession();
   const [f, setF] = useState(null);
   const { busy, error, run } = useAction();
   const save = () => run(async () => {
     const isShop = f.type === 'shop';
     const base = isShop ? '/shops' : '/warehouses';
-    const payload = isShop ? { code: f.code, name: f.name, default_warehouse_id: f.default_warehouse_id || null, receipt_footer: f.receipt_footer || null, phone: f.phone || null, address: f.address || null } : { code: f.code, name: f.name, address: f.address || null };
+    const payload = isShop ? { code: f.code, name: f.name, industry: f.industry || 'general', default_warehouse_id: f.default_warehouse_id || null, receipt_footer: f.receipt_footer || null, phone: f.phone || null, address: f.address || null } : { code: f.code, name: f.name, address: f.address || null };
     if (f.id) await api.patch(`${base}/${f.id}`, payload); else await api.post(base, payload);
     setF(null); reload();
   });
   return (
     <>
       <Card title="Shop" actions={<button className="btn sm" onClick={() => setF({ type: 'shop', code: '', name: '', default_warehouse_id: warehouses[0]?.id })}>+ Shop</button>}>
-        {shops.map((s) => <div key={s.id} className="pick" onClick={() => setF({ type: 'shop', ...s })}><span><b>{s.name}</b> <span className="muted small">{s.code}</span></span><span className="muted small">Kho: {warehouses.find((w) => w.id === s.default_warehouse_id)?.name || '—'}</span></div>)}
+        {shops.map((s) => <div key={s.id} className="pick" onClick={() => setF({ type: 'shop', ...s })}><span><b>{s.name}</b> <span className="muted small">{s.code}</span></span><span className="row"><span className="badge plain">{industries.find((i) => i.id === s.industry)?.name || 'Bán lẻ chung'}</span><span className="muted small">Kho: {warehouses.find((w) => w.id === s.default_warehouse_id)?.name || '—'}</span></span></div>)}
       </Card>
       <Card title="Kho" actions={<button className="btn sm" onClick={() => setF({ type: 'wh', code: '', name: '' })}>+ Kho</button>}>
         {warehouses.map((w) => <div key={w.id} className="pick" onClick={() => setF({ type: 'wh', ...w })}><span><b>{w.name}</b> <span className="muted small">{w.code}</span></span></div>)}
@@ -41,6 +41,10 @@ function Shops() {
         <Modal title={`${f.id ? 'Sửa' : 'Thêm'} ${f.type === 'shop' ? 'shop' : 'kho'}`} onClose={() => setF(null)} footer={<button className="btn primary" disabled={busy} onClick={save}>Lưu</button>}>
           <div className="grid cols-2"><Field label="Tên"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field><Field label="Mã (dùng trong mã chứng từ)"><input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} /></Field></div>
           {f.type === 'shop' && <>
+            <Field label="Ngành bán" hint={industries.find((i) => i.id === (f.industry || 'general'))?.description}>
+              <select value={f.industry || 'general'} onChange={(e) => setF({ ...f, industry: e.target.value })}>{industries.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+            </Field>
+            {f.id && f.industry && f.industry !== shops.find((x) => x.id === f.id)?.industry && <div className="alert warn small">Đổi ngành sẽ đổi giao diện của shop{industries.find((i) => i.id === f.industry)?.customer_field_labels.length ? ` và thêm các trường thông tin khách: ${industries.find((i) => i.id === f.industry).customer_field_labels.join(', ')}` : ''}. Trường và dữ liệu khách đã có của shop vẫn được giữ nguyên.</div>}
             <Field label="Kho mặc định (trừ hàng khi bán)"><select value={f.default_warehouse_id || ''} onChange={(e) => setF({ ...f, default_warehouse_id: e.target.value })}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
             <Field label="Điện thoại in trên phiếu"><input value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
             <Field label="Dòng cuối phiếu bán hàng"><input value={f.receipt_footer || ''} onChange={(e) => setF({ ...f, receipt_footer: e.target.value })} /></Field></>}
@@ -108,7 +112,7 @@ function TierEditor({ init }) {
   );
 }
 
-const ENT = { product: 'Sản phẩm', customer: 'Khách hàng', order: 'Đơn hàng', purchase: 'Phiếu nhập' };
+const ENT = { product: 'Sản phẩm', order: 'Đơn hàng', purchase: 'Phiếu nhập' }; // trường của khách cài trong trang Khách hàng, theo từng shop
 const FT = { text: 'Văn bản', number: 'Số', money: 'Tiền', date: 'Ngày', select: 'Chọn một', multiselect: 'Chọn nhiều', boolean: 'Có/Không', formula: 'Công thức' };
 function Fields() {
   const { shops } = useSession();
@@ -118,6 +122,7 @@ function Fields() {
   return (
     <>
       <Card title="Trường tuỳ chỉnh" actions={<button className="btn sm" onClick={() => setF({ entity_type: 'order', key: '', label: '', type: 'text', options: '', formula: '', shop_id: '' })}>+ Trường</button>}>
+        <p className="small muted" style={{ marginTop: 0 }}>Dành cho sản phẩm, đơn hàng, phiếu nhập. Thông tin khách (mệnh, mùi yêu thích…) là của từng shop: cài trong trang <b>Khách hàng</b> → “Thông tin khách của shop”.</p>
         <Async state={state}>{({ data }) => !data.length ? <Empty>Chưa có trường nào.</Empty> : data.map((x) => (
           <div key={x.id} className="row between" style={{ padding: '8px 0', borderBottom: '1px solid var(--hairline)' }}>
             <span><b>{x.label}</b> <code className="small">{`{custom.${x.key}}`}</code><div className="small muted">{ENT[x.entity_type]} · {FT[x.type]}{x.formula && ` = ${x.formula}`}{x.shop_id && ` · riêng ${shops.find((s) => s.id === x.shop_id)?.name}`}</div></span>

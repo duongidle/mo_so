@@ -15,11 +15,11 @@ r.put('/tiers', async (c) => {
   return c.json({ data: tx(() => svc.replaceTiers(input)) });
 });
 r.get('/customers/:id', (c) => c.json({ data: svc.customerLoyalty(c.req.param('id')) }));
-r.get('/customers/:id/suggestions', (c) => c.json(svc.elementSuggestions(c.req.param('id'), { limit: Number(c.req.query('limit')) || 10 })));
+r.get('/customers/:id/suggestions', (c) => c.json(svc.elementSuggestions(c.req.param('id'), { shopId: c.req.query('shop_id'), limit: Number(c.req.query('limit')) || 10 })));
 
 r.get('/today', (c) => {
   const q = query(c, z.object({ shop_id: z.string().optional(), lookahead_days: z.coerce.number().int().min(0).max(30).default(3), birthday_days: z.coerce.number().int().min(0).max(60).default(7) }));
-  return c.json({ data: { reminders: svc.dueReminders({ shopId: q.shop_id, lookaheadDays: q.lookahead_days }), birthdays: svc.upcomingBirthdays({ withinDays: q.birthday_days }) } });
+  return c.json({ data: { reminders: svc.dueReminders({ shopId: q.shop_id, lookaheadDays: q.lookahead_days }), birthdays: svc.upcomingBirthdays({ withinDays: q.birthday_days, shopId: q.shop_id }) } });
 });
 r.post('/reminders/action', async (c) => {
   const i = await body(c, z.object({ customer_id: z.string(), product_id: z.string(), base_date: date, action: z.enum(['done', 'dismiss', 'snooze']), snooze_days: z.coerce.number().int().min(1).max(60).default(3) }));

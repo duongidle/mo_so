@@ -5,6 +5,8 @@ import { audit, emit } from '../../lib/events.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { runningCode } from '../../lib/codes.js';
 import { elementOfBirth, compatibleElements } from '../../lib/lunar.js';
+import { listFields, getValues, roleValues } from '../custom/service.js';
+import { shopHasFeature } from '../shops/service.js';
 
 const db = () => getDb();
 
@@ -20,23 +22,29 @@ export function normalizePhone(raw) {
 
 function enrich(c) {
   if (!c) return null;
-  const el = elementOfBirth({ birthDate: c.birth_date, birthYear: c.birth_year });
-  const element = c.element_override || el?.element || null;
+  return { ...c, tags: JSON.parse(c.tags || '[]') };
+}
+
+/**
+ * Mệnh của khách trong MỘT shop, đọc từ các trường thông tin của shop đó (ngày/năm sinh, mệnh ghi đè).
+ * Chỉ có khi ngành của shop bật tính năng feng_shui; ngoài ra trả null. Giá trị của shop khác không ảnh hưởng.
+ */
+export function fengShuiOf(values) {
+  if (!values) return null;
+  const el = elementOfBirth({ birthDate: values.birth_date, birthYear: values.birth_year });
+  const element = values.element || el?.element || null;
+  if (!element) return null;
   return {
-    ...c,
-    tags: JSON.parse(c.tags || '[]'),
-    feng_shui: element
-      ? {
-          element,
-          source: c.element_override ? 'manual' : el.approximate ? 'birth_year' : 'birth_date',
-          can_chi: el?.can_chi ?? null,
-          nap_am: el?.nap_am ?? null,
-          compatible_elements: compatibleElements(element),
-          approximate: !c.element_override && !!el?.approximate,
-        }
-      : null,
+    element,
+    source: values.element ? 'manual' : el.approximate ? 'birth_year' : 'birth_date',
+    can_chi: el?.can_chi ?? null,
+    nap_am: el?.nap_am ?? null,
+    compatible_elements: compatibleElements(element),
+    approximate: !values.element && !!el?.approximate,
   };
 }
+
+const shopHasFengShui = (shopId) => !!shopId && shopHasFeature(shopId, 'feng_shui');
 
 export function getCustomer(id) {
   let c = db().prepare('SELECT * FROM customers WHERE id = ?').get(id);
@@ -45,8 +53,17 @@ export function getCustomer(id) {
   return enrich(c);
 }
 
-export function getCustomerDetail(id) {
+export function getCustomerDetail(id, { shopId } = {}) {
   const c = getCustomer(id);
+  if (shopId) {
+    // Phần thông tin riêng của shop đang xem; shop khác không lọt vào
+    c.shop_profile = {
+      shop_id: shopId,
+      fields: listFields('customer', { shopId }),
+      values: getValues('customer', c.id, { shopId }),
+    };
+    c.feng_shui = shopHasFengShui(shopId) ? fengShuiOf(roleValues(shopId, [c.id]).get(c.id)) : null;
+  }
   c.notes = db()
     .prepare('SELECT n.*, s.name AS shop_name FROM customer_notes n LEFT JOIN shops s ON s.id = n.shop_id WHERE customer_id = ? ORDER BY created_at DESC')
     .all(c.id);
@@ -67,7 +84,7 @@ export function findByPhone(phone) {
   return c ? enrich(c) : null;
 }
 
-export function listCustomers({ q, tag, element, limit = 50, cursor, sort = 'recent' }) {
+export function listCustomers({ q, tag, element, shopId, limit = 50, cursor, sort = 'recent' }) {
   const where = ['merged_into IS NULL', 'archived_at IS NULL'];
   const params = [];
   if (q) {
@@ -85,14 +102,19 @@ export function listCustomers({ q, tag, element, limit = 50, cursor, sort = 'rec
     .prepare(`SELECT * FROM customers WHERE ${where.join(' AND ')} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
     .all(...params, limit + 1, offset)
     .map(enrich);
-  if (element) rows = rows.filter((r) => r.feng_shui?.element === element);
+  // Mệnh chỉ có trong ngữ cảnh một shop phong thuỷ
+  if (shopHasFengShui(shopId)) {
+    const rv = roleValues(shopId, rows.map((r) => r.id));
+    rows = rows.map((r) => ({ ...r, feng_shui: fengShuiOf(rv.get(r.id)) }));
+    if (element) rows = rows.filter((r) => r.feng_shui?.element === element);
+  }
   const hasMore = rows.length > limit;
   const data = hasMore ? rows.slice(0, limit) : rows;
   const next = hasMore ? (sort === 'recent' ? data[data.length - 1].id : String(offset + limit)) : null;
   return { data, next_cursor: next };
 }
 
-const FIELDS = ['name', 'phone', 'phone2', 'email', 'facebook_url', 'shopee_username', 'gender', 'birth_date', 'birth_year', 'element_override', 'address', 'note', 'tags', 'source_channel', 'archived_at'];
+const FIELDS = ['name', 'phone', 'phone2', 'email', 'facebook_url', 'shopee_username', 'address', 'note', 'tags', 'source_channel', 'archived_at'];
 
 function prepare(input) {
   const out = { ...input };
@@ -101,7 +123,6 @@ function prepare(input) {
     if (input.phone && !out.phone) throw badRequest('INVALID_PHONE', `Số điện thoại không hợp lệ: ${input.phone}`);
   }
   if (out.phone2 !== undefined) out.phone2 = out.phone2 ? normalizePhone(out.phone2) : null;
-  if (out.birth_date) out.birth_year = Number(out.birth_date.slice(0, 4));
   if (out.tags !== undefined) out.tags = JSON.stringify(out.tags ?? []);
   return out;
 }
@@ -178,8 +199,12 @@ export function mergeCustomers(targetId, sourceId, actor) {
   const at = nowIso();
   db().prepare('UPDATE orders SET customer_id = ?, updated_at = ? WHERE customer_id = ?').run(target.id, at, source.id);
   db().prepare('UPDATE customer_notes SET customer_id = ? WHERE customer_id = ?').run(target.id, source.id);
+  // Thông tin riêng theo shop: chuyển giá trị sang hồ sơ giữ lại, giá trị đã có ở hồ sơ giữ lại thì thắng. Vẫn tách theo từng shop.
+  db()
+    .prepare(`UPDATE OR IGNORE custom_values SET entity_id = ? WHERE entity_type = 'customer' AND entity_id = ?`)
+    .run(target.id, source.id);
   const fill = {};
-  for (const f of ['phone2', 'email', 'facebook_url', 'shopee_username', 'gender', 'birth_date', 'birth_year', 'address']) {
+  for (const f of ['phone2', 'email', 'facebook_url', 'shopee_username', 'address']) {
     if (!target[f] && source[f]) fill[f] = source[f];
   }
   if (!target.phone2 && source.phone && source.phone !== target.phone) fill.phone2 = source.phone;

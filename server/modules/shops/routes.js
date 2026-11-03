@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { body, optionalText } from '../../lib/http.js';
+import { INDUSTRY_IDS } from '../../lib/industries.js';
 import { createShop, getShop, listShops, updateShop } from './service.js';
 
 const r = new Hono();
@@ -14,6 +15,7 @@ const shopInput = z.object({
   phone: optionalText,
   address: optionalText,
   receipt_footer: optionalText,
+  industry: z.enum(INDUSTRY_IDS).optional(),
 });
 
 r.get('/', (c) => c.json({ data: listShops({ includeArchived: c.req.query('archived') === '1' }) }));

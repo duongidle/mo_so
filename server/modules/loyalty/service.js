@@ -2,7 +2,9 @@ import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso, businessDate, addDays, daysBetween } from '../../lib/time.js';
 import { badRequest, notFound } from '../../lib/errors.js';
-import { getCustomer } from '../customers/service.js';
+import { getCustomer, fengShuiOf } from '../customers/service.js';
+import { roleValues } from '../custom/service.js';
+import { shopHasFeature } from '../shops/service.js';
 
 const db = () => getDb();
 const COUNTED = `('confirmed','shipping','completed','returned')`;
@@ -114,29 +116,46 @@ export function actOnReminder({ customerId, productId, baseDate, action, snoozeD
 }
 
 // ---------- Sinh nhật ----------
-export function upcomingBirthdays({ withinDays = 7, today = businessDate() } = {}) {
+/**
+ * Sinh nhật sắp tới, đọc từ trường có vai trò birth_date của từng shop (shop nào không hỏi ngày sinh thì không có).
+ * Có shopId: chỉ shop đó. Không có: gộp các shop, mỗi khách một dòng.
+ */
+export function upcomingBirthdays({ withinDays = 7, today = businessDate(), shopId } = {}) {
   const rows = db()
-    .prepare(`SELECT id, code, name, phone, facebook_url, birth_date FROM customers WHERE birth_date IS NOT NULL AND merged_into IS NULL AND archived_at IS NULL`)
-    .all();
+    .prepare(
+      `SELECT c.id, c.code, c.name, c.phone, c.facebook_url, v.value_text AS birth_date, f.shop_id, s.name AS shop_name
+       FROM custom_values v JOIN custom_fields f ON f.id = v.field_id AND f.role = 'birth_date' AND f.archived_at IS NULL
+       JOIN shops s ON s.id = f.shop_id AND s.archived_at IS NULL
+       JOIN customers c ON c.id = v.entity_id AND c.merged_into IS NULL AND c.archived_at IS NULL
+       WHERE v.entity_type = 'customer' AND v.value_text IS NOT NULL ${shopId ? 'AND f.shop_id = ?' : ''}
+       ORDER BY f.shop_id`,
+    )
+    .all(...(shopId ? [shopId] : []));
+  const seen = new Set();
   const out = [];
   for (const c of rows) {
+    if (seen.has(c.id)) continue;
     const [, m, d] = c.birth_date.split('-');
     let next = `${today.slice(0, 4)}-${m}-${d}`;
     if (next < today) next = `${Number(today.slice(0, 4)) + 1}-${m}-${d}`;
     const inDays = daysBetween(today, next);
-    if (inDays <= withinDays) out.push({ ...c, next_birthday: next, in_days: inDays, turning: Number(next.slice(0, 4)) - Number(c.birth_date.slice(0, 4)) });
+    if (inDays <= withinDays) {
+      seen.add(c.id);
+      out.push({ ...c, next_birthday: next, in_days: inDays, turning: Number(next.slice(0, 4)) - Number(c.birth_date.slice(0, 4)) });
+    }
   }
   return out.sort((a, b) => a.in_days - b.in_days);
 }
 
 // ---------- Gợi ý theo mệnh ----------
 /**
- * Vật phẩm có ngũ hành hợp với mệnh khách, khách chưa mua, đang niêm yết ở ít nhất 1 shop.
- * Không lọc theo shop để bán chéo giữa các shop; mỗi gợi ý ghi rõ shop nào đang bán.
+ * Vật phẩm có ngũ hành hợp với mệnh khách (mệnh ghi trong shop `shopId`), khách chưa mua, đang niêm yết ở shop đó.
+ * Chỉ dùng được ở shop có ngành phong thuỷ: mệnh là thông tin riêng của shop.
  */
-export function elementSuggestions(customerId, { limit = 10 } = {}) {
+export function elementSuggestions(customerId, { shopId, limit = 10 } = {}) {
   const c = getCustomer(customerId);
-  const fs = c.feng_shui;
+  if (!shopId || !shopHasFeature(shopId, 'feng_shui')) return { element: null, approximate: false, data: [], reason: 'Shop này không theo ngành phong thuỷ' };
+  const fs = fengShuiOf(roleValues(shopId, [c.id]).get(c.id));
   if (!fs) return { element: null, approximate: false, data: [], reason: 'Chưa biết mệnh của khách (thiếu ngày/năm sinh)' };
   const bought = new Set(
     db()
@@ -149,9 +168,9 @@ export function elementSuggestions(customerId, { limit = 10 } = {}) {
       `SELECT p.id, p.name, p.elements, GROUP_CONCAT(DISTINCT s.id) AS shop_ids, GROUP_CONCAT(DISTINCT s.name) AS shop_names, MIN(l.price) AS price
        FROM products p JOIN variants v ON v.product_id = p.id AND v.archived_at IS NULL
        JOIN shop_listings l ON l.variant_id = v.id AND l.active = 1 JOIN shops s ON s.id = l.shop_id AND s.archived_at IS NULL
-       WHERE p.archived_at IS NULL AND p.elements IS NOT NULL GROUP BY p.id`,
+       WHERE p.archived_at IS NULL AND p.elements IS NOT NULL AND s.id = ? GROUP BY p.id`,
     )
-    .all();
+    .all(shopId);
   const data = [];
   for (const p of products) {
     if (bought.has(p.id)) continue;

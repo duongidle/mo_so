@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { Field, ErrorBox, useAction } from '../components/ui.jsx';
-import { Compass, Seal } from '../components/Motif.jsx';
+import { Seal } from '../components/Motif.jsx';
+const INDUSTRY_OPTIONS = [['general', 'Chung'], ['phong_thuy', 'Phong thuỷ'], ['nuoc_hoa', 'Nước hoa']];
 
 export default function Auth({ setup, onDone }) {
-  const [f, setF] = useState({ username: '', password: '', display_name: '', warehouse_name: 'Kho chính', shops: [{ name: '', code: '' }] });
+  const [f, setF] = useState({ username: '', password: '', display_name: '', warehouse_name: 'Kho chính', shops: [{ name: '', code: '', industry: 'general' }] });
   const { busy, error, run } = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const shopSet = (i, k, v) => setF({ ...f, shops: f.shops.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
@@ -25,7 +26,7 @@ export default function Auth({ setup, onDone }) {
       <aside className="login-art">
         <div className="row" style={{ gap: 14, position: 'relative' }}><img src="/logo-mark.svg" alt="" width="44" height="44" style={{ borderRadius: 11 }} /><div><b style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--linen)' }}>Mở Sổ</b><div className="eyebrow" style={{ color: 'var(--champagne)' }}>Dấu vết của thời gian</div></div></div>
         <div><h2>Mỗi đơn hàng là một nét ghi vào sổ.</h2><p>Một cuốn sổ cái cho mọi shop, mọi kênh. Mở ra là thấy.</p></div>
-        <Compass className="compass" size={420} style={{}} />
+        <div style={{ position: 'relative' }}><Seal size={120}>MỞ<br />SỔ</Seal></div>
       </aside>
       <div className="login-form">
         <form className="stack" onSubmit={submit}>
@@ -44,9 +45,10 @@ export default function Auth({ setup, onDone }) {
             <div className="row" key={i}>
               <input placeholder="Tên shop, vd Nước hoa ô tô" value={s.name} onChange={(e) => shopSet(i, 'name', e.target.value)} className="grow" aria-label="Tên shop" />
               <input placeholder="Mã" value={s.code} onChange={(e) => shopSet(i, 'code', e.target.value.toUpperCase())} style={{ width: 80 }} maxLength={6} aria-label="Mã shop" />
+              <select value={s.industry} onChange={(e) => shopSet(i, 'industry', e.target.value)} style={{ width: 140 }} aria-label="Ngành bán">{INDUSTRY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
             </div>
           ))}
-          <button type="button" className="btn sm" onClick={() => setF({ ...f, shops: [...f.shops, { name: '', code: '' }] })}>+ Thêm shop</button>
+          <button type="button" className="btn sm" onClick={() => setF({ ...f, shops: [...f.shops, { name: '', code: '', industry: 'general' }] })}>+ Thêm shop</button>
         </>
       )}
       <ErrorBox error={error} />

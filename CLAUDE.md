@@ -143,7 +143,7 @@ moso/
 - Khách hàng **không thuộc shop nào**. Hệ thống khách hàng chạy song song hệ thống bán hàng; đơn của mọi shop gắn vào cùng 1 hồ sơ.
 - Nhận diện bằng **số điện thoại chuẩn hoá** (`0xxxxxxxxx`). Khách Facebook có thể chỉ có tên + link Facebook.
 - **Gộp hồ sơ trùng**: chuyển toàn bộ đơn/ghi chú sang hồ sơ giữ lại, hồ sơ bị gộp đánh dấu `merged_into`.
-- Thông tin phong thuỷ: ngày sinh, giới tính → **mệnh (ngũ hành nạp âm)** tính tự động theo năm âm lịch, có thể ghi đè tay (vì năm âm lịch bắt đầu ở Tết, người sinh tháng 1–2 dương có thể bị lệch).
+- **Thông tin riêng theo shop**: hồ sơ khách chỉ giữ thông tin chung (tên, SĐT, Facebook, địa chỉ, ghi chú). Mọi thông tin khác (ngày sinh, mệnh, mùi yêu thích, dòng xe…) là **trường tuỳ chỉnh của từng shop** (mục 5.11): trường của shop này không xuất hiện ở shop kia, kể cả cùng một khách. Mệnh (ngũ hành nạp âm theo năm âm lịch) chỉ có ở shop thuộc ngành phong thuỷ, tính từ trường ngày/năm sinh của shop đó, ghi đè tay được. Cột `birth_date`, `birth_year`, `element_override`, `gender` cũ trên bảng `customers` không còn dùng; khi một shop bật ngành phong thuỷ, giá trị cũ được chép sang trường của shop cho những khách đã mua ở shop đó.
 - Chỉ số tự tính: tổng chi tiêu, số đơn, đơn đầu, đơn gần nhất, hạng.
 
 ### 5.6 Đơn bán (Order)
@@ -216,7 +216,7 @@ Hiệu năng: bảng tổng hợp `daily_stats(business_date, shop_id, channel)`
 
 ### 5.11 Trường tuỳ chỉnh & Công thức
 - Định nghĩa trường tuỳ chỉnh cho đối tượng: `product`, `customer`, `order`, `purchase`. Kiểu: text, number, money, date, select, multi-select, boolean, **formula**.
-- **Phạm vi trường**: toàn hệ thống (mặc định, để cộng gộp được giữa shop) hoặc riêng 1 shop.
+- **Phạm vi trường**: sản phẩm/đơn/phiếu nhập: toàn hệ thống (mặc định, để cộng gộp được giữa shop) hoặc riêng 1 shop. **Khách hàng: luôn riêng 1 shop** (bắt buộc `shop_id`); khoá chỉ cần duy nhất trong shop; đọc/ghi giá trị luôn kèm `shop_id`. Trường có thể mang `role` (`birth_date`, `birth_year`, `element`) để app biết dùng vào việc gì (tính mệnh, nhắc sinh nhật). Gộp khách: giá trị của hồ sơ giữ lại thắng, trường còn thiếu lấy từ hồ sơ bị gộp.
 - **Trường công thức**: biểu thức an toàn (không `eval`) trên các trường của chính bản ghi, vd `{total_amount} - {cogs_amount} - {custom.phi_dong_goi}`. Hàm: `IF, ROUND, MIN, MAX, ABS, DAYS_BETWEEN, TODAY`.
 - **Chỉ số tuỳ chỉnh cho báo cáo**: công thức trên các chỉ số tổng hợp, vd `{net_revenue} / {order_count}`, áp dụng được cho 1 shop / nhiều shop.
 - Lưu giá trị: bảng EAV `custom_values(entity_type, entity_id, field_id, value_text, value_num)`.
@@ -234,6 +234,13 @@ Hiệu năng: bảng tổng hợp `daily_stats(business_date, shop_id, channel)`
 - Đăng nhập: 1 tài khoản owner, mật khẩu băm scrypt, cookie `HttpOnly; SameSite=Lax`, phiên 30 ngày. Giới hạn sai mật khẩu.
 - Vì chạy trong mạng LAN, vẫn bắt buộc đăng nhập (người khác cùng wifi có thể mở được).
 - Lên VPS: đặt sau reverse proxy có HTTPS (Caddy), bật cookie `Secure`.
+
+### 5.14 Ngành bán
+- Mỗi shop chọn một **ngành bán** (`shops.industry`, đổi trong Cài đặt → Shop & kho). Danh mục ngành nằm ở `server/lib/industries.js`: `general` (Bán lẻ chung), `phong_thuy`, `nuoc_hoa`. Thêm ngành = thêm một mục ở đó (và một theme CSS nếu muốn giao diện riêng).
+- Ngành quyết định: (1) **theme giao diện** (mục 7A), (2) **tính năng** bật theo ngành (`feng_shui`: mệnh, ngũ hành, âm lịch, doanh thu theo ngũ hành, gợi ý theo mệnh), (3) **trường thông tin khách tạo sẵn** cho shop.
+- Chọn/đổi ngành chỉ **thêm** trường còn thiếu (theo khoá hoặc vai trò), không xoá hay ẩn gì: trường và dữ liệu của ngành cũ vẫn giữ.
+- Chủ shop tự thêm/sửa/ẩn trường khách của shop trong trang Khách hàng → "Thông tin khách của shop".
+- Chuyển shop ở bộ chọn shop thì giao diện, tính năng và trường khách đổi theo. "Tất cả shop" dùng giao diện chung, không có thông tin riêng của shop nào.
 
 ---
 
@@ -319,6 +326,17 @@ Dấu vết thời gian: mỗi đơn, mỗi lần nhập kho là một nét ghi 
 6. **Bố cục**: ưu tiên lệch (7:5) và khoảng trống hơn lưới đều; nhãn chữ dọc ở thẻ hero.
 
 Vẫn **không dùng**: rồng, tiền xu, hoa văn mây/sóng, bát quái hay la bàn làm hình nền phủ kín, màu đỏ/vàng kim rực. Muốn dùng thì ghi lý do vào nhật ký quyết định trước. Quán trà hay tiệm vàng mã là điều cần tránh.
+
+### Giao diện theo ngành bán (cập nhật 2026-11-03)
+Phần phong thuỷ ở trên **chỉ áp dụng cho shop ngành phong thuỷ** (`html[data-theme=phongthuy]`). Mỗi ngành có theme riêng, đặt theo shop đang làm việc:
+
+| Theme | Dùng cho | Bảng màu | Họa tiết |
+|---|---|---|---|
+| `general` | Bán lẻ chung, "Tất cả shop", màn đăng nhập | Bảng màu thương hiệu bên dưới | Kẻ dòng sổ cái, đường kẻ đôi dưới tiêu đề. Không họa tiết khác |
+| `phongthuy` | Ngành phong thuỷ | Bảng màu thương hiệu | La bàn bát quái, lôi văn, vân giấy dó/gỗ, ngũ hành, âm lịch |
+| `nuochoa` | Ngành nước hoa | Biến thể: mực `#1F2428`, nền `#F7F4EF`, hổ phách `#B9975E`, rượu vang `#8A3A4E` (≥ 7:1 với chữ sáng) | Vòng lan toả (hương toả ra), ba hình thoi "tầng hương" dưới tiêu đề. Không họa tiết phong thuỷ |
+
+Bảng màu thương hiệu bên dưới là gốc: logo, `general`, `phongthuy`. Theme ngành khác (như `nuochoa`) đổi các biến màu trong `web/src/styles.css` theo `[data-theme]`; mọi thành phần chỉ dùng biến, không viết cứng màu. Giữ nguyên quy tắc phẳng và tiết chế cho mọi theme.
 
 ### Bảng màu chính thức
 | Màu | HEX | Tỷ lệ | Vai trò |
@@ -442,3 +460,6 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Giao diện phẳng: không đổ bóng, không làm mờ kính, không hạt giấy, không dịch chuyển nổi; thanh bên và thanh tab dính sát mép | Concept phong thuỷ cần tĩnh và chắc, không "3D bay bổng". Phân tầng bằng viền champagne mảnh và nền giấy sáng/tối thay cho bóng. Biểu đồ dùng màu đặc có độ trong, không dải màu chuyển. |
 | 2026-11-03 | Cho phép phong thuỷ rõ hơn trong giao diện: ngũ hành (chữ Hán + màu), âm lịch, la bàn bát quái, trống đồng, lôi văn, vân giấy dó/gỗ dạng phẳng, dấu triện. Sửa mục 7A | Chủ shop thấy bản đầu "chưa phong thuỷ". Ngũ hành/âm lịch là dữ liệu thật của app (mệnh khách, hành sản phẩm) nên đưa lên thành ngôn ngữ thiết kế thay vì trang trí. Họa tiết giữ nét mảnh và tiết chế để không ra kiểu quán trà. Rồng, tiền xu, mây/sóng vẫn không dùng. |
 | 2026-11-03 | Doanh thu theo ngũ hành chia đều cho các hành của sản phẩm hợp nhiều hành | Tránh đếm trùng: tổng 5 hành + "chưa gán" luôn bằng doanh thu hàng. Có test. |
+| 2026-11-03 | Thêm **ngành bán** cho shop; mỗi ngành có theme giao diện, tính năng và trường khách riêng. Mệnh/ngày sinh chuyển từ cột chung của khách sang **trường tuỳ chỉnh của từng shop** | Mệnh chỉ hợp với shop phong thuỷ; shop nước hoa không cần và giao diện phong thuỷ cũng không hợp. Chủ shop muốn trường khách tồn tại riêng theo shop, kể cả cùng một khách. Giá trị gắn vào trường (mà trường thuộc shop) nên tách theo shop tự nhiên, không cần cột shop trên giá trị. Cột cũ trên `customers` giữ lại (không xoá dữ liệu), chỉ dùng để chép sang khi bật ngành phong thuỷ. |
+| 2026-11-03 | Gợi ý theo mệnh chỉ trong phạm vi một shop phong thuỷ (sản phẩm niêm yết ở shop đó); không còn bán chéo từ shop khác | Mệnh là thông tin riêng của shop nên shop khác không biết mệnh để gợi ý. Cần bán chéo thì chủ shop nhập mệnh ở shop phong thuỷ. |
+| 2026-11-03 | Theme `nuochoa` dùng bảng màu biến thể ngoài bảng thương hiệu | Chủ shop muốn mỗi ngành một giao diện khác hẳn. Biến thể vẫn qua kiểm tra tương phản; logo và theme gốc không đổi. |
