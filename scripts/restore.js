@@ -11,12 +11,16 @@ if (!src || !fs.existsSync(src)) {
   process.exit(1);
 }
 // Kiểm tra file là SQLite hợp lệ và có đủ bảng chính trước khi đè lên dữ liệu đang dùng
-const probe = new Database(src, { readonly: true });
-const ok = probe.pragma('integrity_check', { simple: true });
-const hasOrders = probe.prepare("SELECT 1 FROM sqlite_master WHERE name = 'orders'").get();
-probe.close();
-if (ok !== 'ok' || !hasOrders) {
-  console.error('File sao lưu không hợp lệ, không khôi phục.');
+let valid = false;
+try {
+  const probe = new Database(src, { readonly: true });
+  valid = probe.pragma('integrity_check', { simple: true }) === 'ok' && !!probe.prepare("SELECT 1 FROM sqlite_master WHERE name = 'orders'").get();
+  probe.close();
+} catch {
+  valid = false; // không phải file SQLite
+}
+if (!valid) {
+  console.error('File sao lưu không hợp lệ (không phải DB của Mở Sổ hoặc bị hỏng). Không khôi phục, dữ liệu hiện tại giữ nguyên.');
   process.exit(1);
 }
 const target = path.join(config.dataDir, 'moso.db');
