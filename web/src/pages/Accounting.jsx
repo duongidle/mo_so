@@ -11,6 +11,14 @@ import { accountingTables, explainTable, sheetName } from '../reportTables.js';
 import { Vouchers, Recurring, Assets, LockTab, CategoryMapping } from './accounting/Extras.jsx';
 
 const TABS = [['overview', 'Tổng quan'], ['vouchers', 'Chứng từ'], ['recurring', 'Chi phí định kỳ'], ['assets', 'Tài sản & phân bổ'], ['journal', 'Sổ nhật ký'], ['ledger', 'Sổ cái'], ['trial', 'Cân đối phát sinh'], ['income', 'Kết quả kinh doanh'], ['balance', 'Cân đối kế toán'], ['cashflow', 'Lưu chuyển tiền'], ['accounts', 'Hệ thống tài khoản'], ['lock', 'Khoá sổ']];
+/** Ba nhóm tab: mỗi nhóm ngắn đủ hiện hết trên điện thoại, không bị cắt ngang */
+export const GROUPS = [
+  ['ops', 'Nghiệp vụ', ['overview', 'vouchers', 'recurring', 'assets', 'lock']],
+  ['books', 'Sổ', ['journal', 'ledger', 'accounts']],
+  ['reports', 'Báo cáo', ['trial', 'income', 'balance', 'cashflow']],
+];
+const groupOf = (tab) => (GROUPS.find(([, , tabs]) => tabs.includes(tab)) || GROUPS[0])[0];
+
 const INTRO = {
   vouchers: 'Chứng từ lập tay cho những việc không đi qua đơn, nhập hàng hay chi phí: góp vốn, rút vốn, tiền phạt, thu nhập khác. Bút toán tổng hợp để ghi tự do nhiều dòng. Huỷ không xoá hẳn.',
   recurring: 'Khoản chi lặp lại (thuê kho, internet, lương). App tự tạo chi phí mỗi kỳ, tạo bù cả kỳ bỏ lỡ khi máy tắt.',
@@ -36,11 +44,17 @@ export default function Accounting() {
   const [exportData, setExportData] = useState(null); // dữ liệu tab đang xem, để xuất Excel
   const shopParam = isAll ? undefined : shopId;
   const changeTab = (t) => { setExportData(null); setTab(t); };
+  const group = groupOf(tab);
+  const groupTabs = GROUPS.find(([k]) => k === group)[2];
+  const changeGroup = (g) => changeTab(GROUPS.find(([k]) => k === g)[2][0]);
   const ctx = { range, shopParam, isAll, report: setExportData, go: changeTab };
   return (
     <div className="page stack">
       <div className="page-head"><h1>Sổ kế toán</h1><ExportButton tab={tab} data={exportData} range={range} shopName={tab === 'income' && !isAll ? shop?.name : null} /></div>
-      <Tabs options={TABS} value={tab} onChange={changeTab} />
+      <div className="tabs group-tabs" role="tablist" aria-label="Nhóm">
+        {GROUPS.map(([k, label]) => <button key={k} className="tab" role="tab" aria-selected={group === k} onClick={() => changeGroup(k)}>{label}</button>)}
+      </div>
+      <Tabs wrap options={TABS.filter(([k]) => groupTabs.includes(k))} value={tab} onChange={changeTab} />
       <p className="tab-intro">{INTRO[tab]}</p>
       {!['overview', 'accounts', 'balance', 'recurring', 'assets', 'lock'].includes(tab) && <div className="row wrap"><DateRange {...range} onChange={setRange} /></div>}
       <MetricFilters.Provider value={{ from: range.from, to: range.to, today: today() }}>
@@ -98,7 +112,7 @@ function Overview({ go }) {
           {d.warnings.map((w) => <div key={w.code} className="alert warn" role="alert">{w.message}{w.code === 'LOCKED_PERIOD_CHANGED' && <> <button className="btn sm" onClick={() => go('lock')}>Xem chi tiết</button></>}</div>)}
           {d.lock_date && <p className="muted small">Sổ đã khoá đến hết {fmtDate(d.lock_date)}.</p>}
           <div className="grid cols-3">
-            <Kpi label="Tiền (quỹ)" metric="acc_cash" value={vnd(d.cash)} />
+            <Kpi label="Tiền (quỹ)" metric="acc_cash" value={signed(d.cash)} tone={d.cash < 0 ? 'red' : undefined} hint={d.cash < 0 ? <>Số dư quỹ âm: kiểm tra thu chi chưa ghi hoặc số dư đầu kỳ. <Link to="/expenses?tab=cash">Mở Quỹ tiền</Link></> : undefined} />
             <Kpi label="Phải thu khách" metric="acc_receivable" value={vnd(d.receivable_customers)} hint={`Sàn còn nợ: ${vnd(d.receivable_marketplace)}`} />
             <Kpi label="Phải trả người bán" metric="acc_payable" value={vnd(d.payable_suppliers)} />
             <Kpi label="Hàng tồn" metric="acc_inventory" value={vnd(d.inventory)} />

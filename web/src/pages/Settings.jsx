@@ -5,6 +5,7 @@ import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, use
 import { vnd, fmtDate } from '../lib.js';
 import FieldsManager from '../components/FieldsManager.jsx';
 import FormulaEditor from '../components/FormulaEditor.jsx';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng bán hàng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế (ước tính)'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
@@ -202,7 +203,7 @@ function Tax() {
             </div>
             <div className="grid cols-2">
               <Field label="Tính trên"><select value={r.base} onChange={(e) => set(i, 'base', e.target.value)}>{Object.entries(TAX_BASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-              <Field label="Ngưỡng miễn thuế cả năm (₫)" hint="Chỉ phần vượt ngưỡng (cộng dồn từ đầu năm) mới chịu thuế. 0 = không có ngưỡng"><input type="number" min="0" value={r.exempt_threshold_year ?? 0} onChange={(e) => set(i, 'exempt_threshold_year', Number(e.target.value))} /></Field>
+              <Field label="Ngưỡng miễn thuế cả năm (₫)" hint="Chỉ phần vượt ngưỡng (cộng dồn từ đầu năm) mới chịu thuế. 0 = không có ngưỡng"><MoneyInput value={r.exempt_threshold_year ?? 0} onChange={(e) => set(i, 'exempt_threshold_year', Number(e.target.value))} /></Field>
             </div>
             <div><button className="btn sm danger" onClick={() => { setRules(rules.filter((_, j) => j !== i)); setSaved(false); }}>Xoá khoản này</button></div>
           </div>

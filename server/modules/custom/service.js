@@ -145,7 +145,16 @@ export function updateField(id, patch) {
     assertColumnRoom(f.shop_id, f.id);
   }
   const role = patch.role === undefined ? f.role : patch.role;
-  if (patch.role !== undefined) assertRole(role, f, f.id);
+  const unhiding = patch.archived === false && !!f.archived_at;
+  if (patch.role !== undefined || unhiding) assertRole(role, f, f.id);
+  if (unhiding) {
+    // Trong lúc bị ẩn, khoá/vai trò có thể đã được trường khác dùng: kiểm lại trước khi hiện
+    const sameKey = f.entity_type === 'customer'
+      ? db().prepare('SELECT label FROM custom_fields WHERE entity_type = ? AND key = ? AND shop_id IS ? AND archived_at IS NULL AND id != ?').get(f.entity_type, f.key, f.shop_id, f.id)
+      : db().prepare('SELECT label FROM custom_fields WHERE entity_type = ? AND key = ? AND archived_at IS NULL AND id != ? AND (shop_id IS ? OR shop_id IS NULL OR ? IS NULL)').get(f.entity_type, f.key, f.id, f.shop_id, f.shop_id);
+    if (sameKey) throw conflict('DUPLICATE_KEY', `Không hiện lại được: khoá "${f.key}" đang được trường "${sameKey.label}" dùng. Đổi tên hoặc ẩn trường kia trước`);
+    if (f.show_in_list && patch.show_in_list !== false) assertColumnRoom(f.shop_id, f.id);
+  }
   const required = patch.required === undefined ? f.required : patch.required ? 1 : 0;
   if (required && f.type === 'formula') throw badRequest('REQUIRED_FORMULA', 'Trường công thức tự tính nên không đặt bắt buộc được');
   if (patch.options && !['select', 'multiselect'].includes(f.type)) throw badRequest('NOT_SELECT', 'Chỉ trường chọn mới có danh sách lựa chọn');
@@ -216,13 +225,13 @@ export function setValues(entityType, entityId, values, { shopId = null } = {}) 
     const f = fields.get(key);
     if (!f) throw badRequest('UNKNOWN_FIELD', `Không có trường tuỳ chỉnh "${key}"${entityType === 'customer' ? ' trong shop này' : ''}`);
     const v = coerce(f, raw);
+    // Trường bắt buộc chỉ chặn khi yêu cầu này xoá/để trống nó. Bản ghi cũ thiếu giá trị vẫn sửa các ô khác được.
+    if (v.text === null && v.num === null && f.required && f.type !== 'formula') {
+      throw badRequest('REQUIRED_FIELD', `Cần nhập: ${f.label}`, { fields: [f.key] });
+    }
     if (v.text === null && v.num === null) del.run(entityType, entityId, f.id);
     else up.run(entityType, entityId, f.id, v.text, v.num);
   }
-  // Trường bắt buộc: sau khi lưu, bản ghi phải có giá trị cho mọi trường bắt buộc (công thức tự tính nên không tính)
-  const missing = [...fields.values()].filter((f) => f.required && f.type !== 'formula'
-    && !db().prepare('SELECT 1 FROM custom_values WHERE entity_type = ? AND entity_id = ? AND field_id = ?').get(entityType, entityId, f.id));
-  if (missing.length) throw badRequest('REQUIRED_FIELD', `Cần nhập: ${missing.map((f) => f.label).join(', ')}`, { fields: missing.map((f) => f.key) });
   if (entityType === 'customer') {
     // Có thông tin riêng ở shop nào thì là khách của shop đó (nếu từng bị xoá khỏi shop thì quay lại)
     db().prepare('INSERT INTO customer_shops (customer_id, shop_id, added_at) VALUES (?,?,?) ON CONFLICT(customer_id, shop_id) DO UPDATE SET removed_at = NULL')

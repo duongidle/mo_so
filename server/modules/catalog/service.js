@@ -291,6 +291,17 @@ function variantHasHistory(variantId) {
   );
 }
 
+/** Xem trước: mỗi biến thể bỏ đi sẽ bị xoá hẳn hay lưu trữ (không ghi gì) */
+export function previewVariantRemoval(productId, variantIds) {
+  const out = [];
+  for (const id of variantIds) {
+    const v = db().prepare('SELECT id, sku, name, option_values FROM variants WHERE id = ? AND product_id = ?').get(id, productId);
+    if (!v) continue;
+    out.push({ id: v.id, sku: v.sku, name: v.name, option_values: v.option_values ? JSON.parse(v.option_values) : {}, outcome: variantHasHistory(v.id) ? 'archived' : 'deleted' });
+  }
+  return out;
+}
+
 /** Bỏ một biến thể khỏi sản phẩm: chưa từng dùng thì xoá hẳn (dữ liệu nháp, quy ước 6), đã có lịch sử thì lưu trữ */
 function removeVariant(variantId, at) {
   if (variantHasHistory(variantId)) {

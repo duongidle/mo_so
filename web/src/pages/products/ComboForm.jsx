@@ -5,6 +5,7 @@ import { ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../..
 import ImageGallery from '../../components/ImageGallery.jsx';
 import { vnd, num } from '../../lib.js';
 import { flattenTree, indent } from '../../lib/categories.js';
+import MoneyInput from '../../components/MoneyInput.jsx';
 
 /** Giá vốn ước tính (Σ SL × giá vốn bình quân) và số combo bán được (min theo thành phần) */
 export function comboStats(components) {
@@ -65,7 +66,7 @@ export default function ComboForm({ init, onClose, onSaved }) {
       <Field label="Tên combo"><input value={f.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></Field>
       <div className="grid cols-2">
         <Field label="SKU"><input value={f.sku} onChange={(e) => set({ sku: e.target.value.toUpperCase() })} /></Field>
-        <Field label="Giá bán"><input type="number" min="0" value={f.default_price} onChange={(e) => set({ default_price: e.target.value })} /></Field>
+        <Field label="Giá bán"><MoneyInput value={f.default_price} onChange={(e) => set({ default_price: e.target.value })} /></Field>
         <Field label="Danh mục">
           <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
             <option value="">Chưa phân loại</option>
@@ -100,7 +101,7 @@ export function ComponentPicker({ value, onChange, selfId, warehouseId }) {
       <div className="eyebrow">Thành phần của combo</div>
       {value.length === 0 && <span className="small muted">Chưa có thành phần nào. Tìm sản phẩm bên dưới để thêm.</span>}
       {value.map((c) => (
-        <div className="row" key={c.variant_id}>
+        <div className="row wrap" key={c.variant_id}>
           <span className="grow">{c.name || c.sku} <span className="small muted">{c.sku}</span></span>
           <span className="small muted">SL mỗi combo</span>
           <input type="number" min="1" value={c.qty} onChange={(e) => onChange(value.map((x) => (x.variant_id === c.variant_id ? { ...x, qty: e.target.value } : x)))} style={{ width: 80 }} aria-label={`Số lượng ${c.sku}`} />

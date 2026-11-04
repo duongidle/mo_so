@@ -6,6 +6,7 @@ import { useSession } from '../session.jsx';
 import { Card, Field, ErrorBox, useAction, useDebounced, Empty } from '../components/ui.jsx';
 import CustomerPicker from '../components/CustomerPicker.jsx';
 import { vnd, num, METHODS } from '../lib.js';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : `k${Date.now()}${Math.random()}`);
 
@@ -124,7 +125,7 @@ export default function Pos() {
                     <button onClick={() => upd(l.id, { qty: l.qty - 1 })} aria-label="Giảm">−</button><span>{l.qty}</span><button onClick={() => upd(l.id, { qty: l.qty + 1 })} aria-label="Tăng">+</button>
                   </span>
                   <span className="row small"><span className="muted">Giá</span>
-                    <input type="number" inputMode="numeric" min="0" value={l.price} onChange={(e) => upd(l.id, { price: Math.max(0, Number(e.target.value) || 0) })} style={{ width: 110, minHeight: 36 }} aria-label="Đơn giá" />
+                    <MoneyInput value={l.price} onChange={(e) => upd(l.id, { price: Math.max(0, Number(e.target.value) || 0) })} style={{ width: 110, minHeight: 36 }} aria-label="Đơn giá" />
                   </span>
                 </div>
                 {l.qty > l.on_hand && <span className="small h-yellow">Tồn chỉ còn {num(l.on_hand)}</span>}
@@ -135,8 +136,8 @@ export default function Pos() {
               <>
                 <CustomerPicker compact shopId={shop.id} value={cust} onChange={setCust} subtotal={sub} onApplyDiscount={setOrderDiscount} />
                 <div className="grid cols-2">
-                  <Field label="Giảm giá đơn"><input type="number" inputMode="numeric" min="0" value={orderDiscount} onChange={(e) => setOrderDiscount(Math.max(0, Number(e.target.value) || 0))} /></Field>
-                  <Field label="Phí ship khách trả"><input type="number" inputMode="numeric" min="0" value={shipping} onChange={(e) => setShipping(Math.max(0, Number(e.target.value) || 0))} /></Field>
+                  <Field label="Giảm giá đơn"><MoneyInput value={orderDiscount} onChange={(e) => setOrderDiscount(Math.max(0, Number(e.target.value) || 0))} /></Field>
+                  <Field label="Phí ship khách trả"><MoneyInput value={shipping} onChange={(e) => setShipping(Math.max(0, Number(e.target.value) || 0))} /></Field>
                   <Field label="Kênh">
                     <select value={channel} onChange={(e) => setChannel(e.target.value)}>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
                   </Field>

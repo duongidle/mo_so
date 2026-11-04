@@ -4,6 +4,7 @@ import { getDb, tenantStore } from '../db/index.js';
 import { forEachAccount, getMaster } from '../db/tenancy.js';
 import { config } from '../lib/config.js';
 import { businessDate, addDays } from '../lib/time.js';
+import { cleanupUnusedImages } from './uploads.js';
 
 const NAME_RE = /^moso-(\d{8})-(\d{4})\.db$/;
 
@@ -115,6 +116,10 @@ export function startBackupScheduler({ intervalMs = 3600_000 } = {}) {
   const tick = async () => {
     try {
       await forEachAccount(async (a) => {
+        try {
+          const c = cleanupUnusedImages();
+          if (c.archived) console.log(`Đã dọn ${c.archived} ảnh tải lên không dùng (${a.username})`);
+        } catch (e) { console.error('Dọn ảnh lỗi:', e); }
         if (listBackups().some((b) => b.name.startsWith(`moso-${today()}`))) return;
         const r = await runBackup();
         console.log(`Đã sao lưu tự động (${a.username}): ${r.name}`);

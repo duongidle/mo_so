@@ -4,6 +4,7 @@ import { useSession } from '../session.jsx';
 import { ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { slugify } from '../components/FieldInput.jsx';
 import { Seal } from '../components/Motif.jsx';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const STEPS = [['shop', 'Shop'], ['warehouse', 'Kho'], ['product', 'Sản phẩm']];
 
@@ -151,8 +152,8 @@ function ProductStep({ shop, onClose, onDone }) {
       <div className="grid cols-2">
         <Field label="Tên sản phẩm"><input value={f.name} onChange={setName} autoFocus /></Field>
         <Field label="Mã SKU"><input value={f.sku} onChange={(e) => setF({ ...f, sku: e.target.value.toUpperCase(), skuTouched: true })} /></Field>
-        <Field label="Giá bán (₫)"><input type="number" inputMode="numeric" min="0" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
-        <Field label="Giá nhập (₫)" hint="Để tính lợi nhuận"><input type="number" inputMode="numeric" min="0" value={f.cost} onChange={(e) => setF({ ...f, cost: e.target.value })} /></Field>
+        <Field label="Giá bán (₫)"><MoneyInput value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+        <Field label="Giá nhập (₫)" hint="Để tính lợi nhuận"><MoneyInput value={f.cost} onChange={(e) => setF({ ...f, cost: e.target.value })} /></Field>
       </div>
       <Field label="Số lượng đang có trong kho (để trống nếu chưa có)"><input type="number" inputMode="numeric" min="0" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
       {needCost && <div className="alert warn small">Có hàng trong kho thì cần nhập giá nhập để tính giá vốn đúng.</div>}

@@ -268,3 +268,19 @@ test('Migration 022: đơn đã có (đơn lẻ, combo, trả một phần, đã
   conn.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test('Lưu trữ kho còn nằm trong danh sách shop: 409 WAREHOUSE_IN_USE, force gỡ khỏi shop; kho duy nhất của shop thì không bao giờ được', async () => {
+  const { api, nh, A, B } = await scenario();
+  const r1 = await api.patch(`/warehouses/${B.id}`, { archived: true });
+  assert.equal(r1.status, 409);
+  assert.equal(r1.body.error.code, 'WAREHOUSE_IN_USE');
+  assert.ok(r1.body.error.details.shops.some((s) => s.id === nh.id));
+  assert.equal(getDb().prepare('SELECT archived_at FROM warehouses WHERE id = ?').get(B.id).archived_at, null, 'chưa đổi gì');
+  const r2 = await api.patch(`/warehouses/${B.id}`, { archived: true, force: true });
+  assert.equal(r2.status, 200, JSON.stringify(r2.body));
+  assert.deepEqual(getDb().prepare('SELECT warehouse_id FROM shop_warehouses WHERE shop_id = ?').all(nh.id).map((x) => x.warehouse_id), [A.id]);
+  assert.ok(getDb().prepare("SELECT 1 FROM audit_log WHERE action = 'warehouse.archived_detached' AND entity_id = ?").get(B.id), 'có audit');
+  const r3 = await api.patch(`/warehouses/${A.id}`, { archived: true, force: true });
+  assert.equal(r3.status, 409);
+  assert.equal(r3.body.error.code, 'WAREHOUSE_LAST');
+});

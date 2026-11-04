@@ -9,6 +9,7 @@ import ImportPanel from './Import.jsx';
 import ExportOrders from '../components/ExportOrders.jsx';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
 
@@ -173,7 +174,7 @@ export function OrderDetail() {
               )}
               {modal === 'pay' && (
                 <Modal title="Thu tiền" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method }); setModal(null); state.reload(); })}>Ghi nhận</button>}>
-                  <Field label="Số tiền"><input type="number" min="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
                   <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
@@ -200,7 +201,7 @@ export function OrderDetail() {
                     );
                   })}
                   <Field label="Lý do"><input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
-                  <Field label="Tiền hoàn cho khách (0 nếu chưa hoàn)"><input type="number" min="0" value={form.refund} onChange={(e) => setForm({ ...form, refund: e.target.value })} /></Field>
+                  <Field label="Tiền hoàn cho khách (0 nếu chưa hoàn)"><MoneyInput value={form.refund} onChange={(e) => setForm({ ...form, refund: e.target.value })} /></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}

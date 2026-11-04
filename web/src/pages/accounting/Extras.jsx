@@ -5,6 +5,7 @@ import { Async, Card, Empty, ErrorBox, Field, Modal, useAction, useAsync } from 
 import { MetricLabel } from '../../components/MetricInfo.jsx';
 import { vnd, fmtDate, today } from '../../lib.js';
 import { balanceOfLines, lineProblems, searchAccounts, RECEIPT_ACCOUNTS, PAYMENT_ACCOUNTS } from '../../lib/voucher.js';
+import MoneyInput from '../../components/MoneyInput.jsx';
 
 const signed = (n) => (n < 0 ? `− ${vnd(-n)}` : vnd(n));
 const VTYPE = { receipt: 'Phiếu thu khác', payment: 'Phiếu chi khác', journal: 'Bút toán tổng hợp' };
@@ -120,7 +121,7 @@ function VoucherForm({ initial, shops, onClose, onSaved }) {
         <>
           <div className="grid cols-2">
             <Field label={type === 'receipt' ? 'Thu vào quỹ' : 'Chi từ quỹ'}><select value={f.cash_account_id} onChange={(e) => set('cash_account_id', e.target.value)}><option value="">Chọn quỹ…</option>{cashAccs.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
-            <Field label="Số tiền"><input type="number" inputMode="numeric" min="1" value={f.amount} onChange={(e) => set('amount', e.target.value)} /></Field>
+            <Field label="Số tiền"><MoneyInput value={f.amount} onChange={(e) => set('amount', e.target.value)} /></Field>
           </div>
           <Field label={type === 'receipt' ? 'Ghi có tài khoản' : 'Ghi nợ tài khoản'} hint={type === 'receipt' ? 'Góp vốn: 411. Thu khác (được thưởng, bán đồ cũ…): 711. Vốn không phải thu nhập nên không vào lợi nhuận.' : 'Tiền phạt, chi khác: 811. Rút vốn: 411. Trả nợ người bán: 331.'}>
             <div className="row wrap" style={{ marginBottom: 4 }}>{picks.map(([code, l]) => <button key={code} type="button" className={`chip${f.account_code === code ? ' on' : ''}`} onClick={() => set('account_code', code)}>{code} {l}</button>)}</div>
@@ -134,8 +135,8 @@ function VoucherForm({ initial, shops, onClose, onSaved }) {
             <tbody>{f.lines.map((l, i) => (
               <tr key={i}>
                 <td style={{ minWidth: 220 }}><AccountPicker accounts={accs} value={l.account_code} onChange={(v) => setLine(i, { account_code: v })} /></td>
-                <td><input type="number" min="0" inputMode="numeric" aria-label={`Nợ dòng ${i + 1}`} value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? '' : l.credit })} style={{ width: 120 }} /></td>
-                <td><input type="number" min="0" inputMode="numeric" aria-label={`Có dòng ${i + 1}`} value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} style={{ width: 120 }} /></td>
+                <td><MoneyInput aria-label={`Nợ dòng ${i + 1}`} value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? '' : l.credit })} style={{ width: 120 }} /></td>
+                <td><MoneyInput aria-label={`Có dòng ${i + 1}`} value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })} style={{ width: 120 }} /></td>
                 <td><input value={l.memo} onChange={(e) => setLine(i, { memo: e.target.value })} /></td>
                 <td>{f.lines.length > 2 && <button className="btn sm" onClick={() => set('lines', f.lines.filter((_, j) => j !== i))} aria-label="Xoá dòng">×</button>}</td>
               </tr>
@@ -215,7 +216,7 @@ function RecurringForm({ initial, shops, onClose, onSaved }) {
       <div className="grid cols-2">
         <Field label="Danh mục"><select value={f.category_id} onChange={(e) => set('category_id', e.target.value)}>{cats.data?.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
         <Field label="Shop"><select value={f.shop_id} onChange={(e) => set('shop_id', e.target.value)}><option value="">Chung</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-        <Field label="Số tiền mỗi kỳ"><input type="number" inputMode="numeric" min="1" value={f.amount} onChange={(e) => set('amount', e.target.value)} /></Field>
+        <Field label="Số tiền mỗi kỳ"><MoneyInput value={f.amount} onChange={(e) => set('amount', e.target.value)} /></Field>
         <Field label="Trả bằng"><select value={f.method} onChange={(e) => set('method', e.target.value)}>{methodList(f.method).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
         <Field label="Chu kỳ"><select value={f.frequency} onChange={(e) => { set('frequency', e.target.value); set('day_of_period', 1); }}>{Object.entries(FREQ).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
         <Field label={f.frequency === 'weekly' ? 'Thứ' : 'Ngày'} hint={f.frequency === 'weekly' ? undefined : 'Tháng ngắn hơn thì lấy ngày cuối tháng (31 → 28/29 tháng 2).'}>
@@ -296,7 +297,7 @@ function AssetForm({ shops, methodList, onClose, onSaved }) {
       <div className="grid cols-2">
         <Field label="Loại"><select value={f.kind} onChange={(e) => set('kind', e.target.value)}><option value="fixed_asset">Tài sản cố định (khấu hao)</option><option value="prepaid">Chi phí trả trước (phân bổ)</option></select></Field>
         <Field label="Ngày mua"><input type="date" value={f.start_date} onChange={(e) => set('start_date', e.target.value)} /></Field>
-        <Field label="Nguyên giá"><input type="number" inputMode="numeric" min="1" value={f.cost} onChange={(e) => set('cost', e.target.value)} /></Field>
+        <Field label="Nguyên giá"><MoneyInput value={f.cost} onChange={(e) => set('cost', e.target.value)} /></Field>
         <Field label="Số tháng" hint={per ? `Khoảng ${vnd(per)} mỗi tháng` : undefined}><input type="number" min="1" max="600" value={f.months} onChange={(e) => set('months', e.target.value)} /></Field>
         <Field label="Đã trả bằng"><select value={f.paid_via} onChange={(e) => set('paid_via', e.target.value)}>{methodList(f.paid_via).map(([k, l]) => <option key={k} value={k}>{l}</option>)}<option value="unpaid">Chưa trả (ghi phải trả người bán)</option></select></Field>
         <Field label="Ghi chi phí vào"><select value={f.expense_account_code} onChange={(e) => set('expense_account_code', e.target.value)}>{exp.map((a) => <option key={a.code} value={a.code}>{a.code} – {a.name}</option>)}</select></Field>
