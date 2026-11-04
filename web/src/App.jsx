@@ -8,6 +8,7 @@ import { lunarInfo } from './lib.js';
 import Auth from './pages/Auth.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Pos from './pages/Pos.jsx';
+import OrderForm from './pages/OrderForm.jsx';
 import { OrderList, OrderDetail } from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
 import Stock from './pages/Stock.jsx';
@@ -106,6 +107,8 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/" element={<Dashboard progress={progress} reopenGuide={reopenGuide} />} />
           <Route path="/pos" element={<Pos />} />
           <Route path="/orders" element={<OrderList />} />
+          <Route path="/orders/new" element={<OrderForm />} />
+          <Route path="/orders/:id/edit" element={<OrderForm />} />
           <Route path="/orders/:id" element={<OrderDetail />} />
           <Route path="/import" element={<Navigate to="/orders?import=1" replace />} />
           <Route path="/products" element={<Products />} />
@@ -123,7 +126,7 @@ function Shell({ progress, reopenGuide }) {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
-      {!['/pos', '/orders'].includes(pathname) && <Link to="/pos" className="fab"><Icon name="plus" />Đơn</Link>}
+      {!['/pos', '/orders'].includes(pathname) && !pathname.startsWith('/orders/new') && !pathname.endsWith('/edit') && <Link to="/pos" className="fab"><Icon name="plus" />Đơn</Link>}
       <nav className="tabbar" aria-label="Thanh tab">
         {tab('/', 'Tổng quan', 'home')}
         {tab('/pos', 'Bán hàng', 'bag')}

@@ -465,3 +465,22 @@ test('tài chính: chi phí trả bằng ngân hàng, quỹ tiền (chuyển qu�
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('Đơn mới: tìm và chọn khách có sẵn, đơn gắn đúng customer_id, không sinh hồ sơ trùng', { skip }, async () => {
+  const { page, errors, ctx } = await login({ width: 1280, height: 860 });
+  await pickShop(page, 'Nước hoa');
+  const before = (await api('GET', '/customers?q=Lan')).data.length;
+  await page.goto(`${base}/orders/new`);
+  await page.fill('input[aria-label="Tìm sản phẩm"]', 'MT-1');
+  await page.click('[role=option]:has-text("Móc treo")');
+  await page.fill('input[aria-label="Tìm khách hàng"]', 'Lan');
+  await page.click('[role=option]:has-text("Chị Lan")');
+  await page.waitForSelector('.cust-card:has-text("Chị Lan")');
+  await page.click('button:has-text("Bán xong")');
+  await page.waitForURL(/\/orders\/ord_/);
+  const order = (await api('GET', '/orders?customer_id=' + ids.cust)).data.find((o) => o.status === 'completed');
+  assert.ok(order, 'đơn gắn đúng khách đã chọn');
+  assert.equal((await api('GET', '/customers?q=Lan')).data.length, before, 'không tạo khách trùng');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
