@@ -50,7 +50,9 @@ describe('form sản phẩm dạng trang', () => {
   it('rời form đã sửa mà chưa lưu thì hỏi lại; không đồng ý thì ở lại', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     mount([{ path: '/products/new', element: <ProductPage /> }, { path: '/products', element: <div>DANH SÁCH SP</div> }], '/products/new');
-    fireEvent.change(await screen.findByLabelText(/Tên sản phẩm/), { target: { value: 'Dở dang' } });
+    const name = await screen.findByLabelText(/Tên sản phẩm/);
+    await new Promise((r) => setTimeout(r, 250)); // mốc "chưa sửa" chốt sau khi form dựng xong
+    fireEvent.change(name, { target: { value: 'Dở dang' } });
     fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
     await waitFor(() => expect(confirm).toHaveBeenCalled());
     expect(screen.queryByText('DANH SÁCH SP')).toBeNull();

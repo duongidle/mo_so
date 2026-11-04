@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import { useSession } from '../../session.jsx';
 import { ErrorBox, Field, Section, useAction, useAsync, useDebounced } from '../../components/ui.jsx';
+import { useDirty } from '../../components/useDirty.js';
 import FormPage from '../../components/FormPage.jsx';
 import ImageGallery from '../../components/ImageGallery.jsx';
 import { vnd, num } from '../../lib.js';
@@ -31,8 +32,7 @@ export function initialCombo(p, shopId, isAll) {
 export default function ComboForm({ init, onClose, onSaved, onDirty }) {
   const { shops, shopId, isAll } = useSession();
   const [f, setF] = useState(init);
-  const initJson = useMemo(() => JSON.stringify(init), [init]);
-  useEffect(() => { onDirty?.(JSON.stringify(f) !== initJson); }, [f, initJson, onDirty]);
+  useDirty(f, onDirty);
   const { busy, error, run } = useAction();
   const cats = useAsync(() => api.get('/categories'), []);
   const catList = useMemo(() => flattenTree(cats.data?.data || []), [cats.data]);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import { useSession } from '../../session.jsx';
 import { ErrorBox, Field, Fold, Modal, Section, useAction, useAsync } from '../../components/ui.jsx';
+import { useDirty } from '../../components/useDirty.js';
 import FormPage from '../../components/FormPage.jsx';
 import ImageGallery from '../../components/ImageGallery.jsx';
 import ProductThumb from '../../components/ProductThumb.jsx';
@@ -63,8 +64,7 @@ export function buildPayload(f, { customShopId } = {}) {
 export default function ProductForm({ init, onClose, onSaved, onDirty }) {
   const { shops, shopId, isAll, warehouses } = useSession();
   const [f, setF] = useState(init);
-  const initJson = useMemo(() => JSON.stringify(init), [init]);
-  useEffect(() => { onDirty?.(JSON.stringify(f) !== initJson); }, [f, initJson, onDirty]);
+  useDirty(f, onDirty);
   const { busy, error, run } = useAction();
   const [confirm, setConfirm] = useState(null);
   const cats = useAsync(() => api.get('/categories'), []);

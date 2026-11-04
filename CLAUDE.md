@@ -394,7 +394,12 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 ## 7. Giao diện
 
 ### Bố cục
-- **Điện thoại**: thanh tab dưới cùng (Tổng quan · Bán hàng · Đơn · Kho · Thêm). Nút nổi "+ Đơn" ở mọi màn hình.
+- **Điện thoại**: thanh tab dưới cùng (Tổng quan · Tạo đơn · Đơn · Kho · Thêm). Nút nổi "+ Đơn" trỏ `/orders/new`, ẩn ở trang tạo đơn và các form dạng trang.
+- **Một cách tạo đơn**: không có màn "Bán nhanh" riêng. Nút "Bán nhanh" trên thanh trên cùng, tab "Tạo đơn" và nút nổi đều mở `/orders/new`; `/pos` chuyển hướng về đó. Form mặc định kênh Bán trực tiếp, tìm sản phẩm có sẵn focus, "Bán xong" luôn ở thanh dưới, phần ít dùng (mã đơn kênh, địa chỉ, ghi chú) gọn trong "Thêm tuỳ chọn".
+- **Một trang tối đa ba lớp trước nội dung**: (1) `PageHeader`: tiêu đề, mô tả ngắn tuỳ chọn, nút hành động bên phải; (2) `Toolbar`: một hàng gồm tab/segmented, ô tìm, bộ lọc, tự xuống dòng gọn trên điện thoại; (3) nội dung. Mỗi vùng chỉ một dòng ghi chú muted (`Note`); phần giải thích dài đưa vào ⓘ (`MetricInfo`) hoặc khối thu gọn (`Fold`). Các khối nội dung dùng `Section` (đệm thống nhất). Các thành phần này ở `web/src/components/ui.jsx`.
+- **Tab** là segmented control gọn (`Tabs`, `Chips`), có thể kèm số đếm (ví dụ "Nháp 3"). Không dùng tab gạch chân dày hay nút to làm tab.
+- **Form dài là trang đầy đủ**, không phải popup: `/products/new`, `/products/:id`, `/products/combo/new`, `/purchases/new` (chi tiết phiếu ở `/purchases/:id`). Máy tính hai cột 8:4 (cột chính: thông tin cơ bản, giá & kho hoặc biến thể, dòng hàng; cột phụ: ảnh, phân loại, bán ở shop, trường riêng của shop, nhà cung cấp, phí), thanh lưu dính đáy (Huỷ / Lưu), cảnh báo khi rời trang chưa lưu (`useLeaveGuard`, cần data router nên `main.jsx` dùng `createBrowserRouter`). Tuỳ chọn ít dùng nằm trong `Fold`. Popup (`Modal`) chỉ còn cho việc ngắn (tối đa khoảng 5 ô: thêm nhà cung cấp, đồng bộ sản phẩm, xác nhận bỏ biến thể, chi phí, tài sản…).
+- **Danh sách dễ quan sát** (`Card flat.list-card`): header dính khi cuộn, hàng vừa phải, hover rõ, cột tiền căn phải số tabular, chữ phụ (mã, SKU, ngày, SĐT) màu muted ở dòng thứ hai của ô thay vì cột riêng, trạng thái dạng badge, chấm nhỏ (`dotflag`) cho cảnh báo; điện thoại thành thẻ hai dòng không cuộn ngang.
 - **Máy tính**: thanh bên trái, nội dung rộng, bảng dữ liệu đầy đủ cột.
 - **Bộ chọn shop** luôn ở đầu trang. Chế độ "Tất cả shop" chỉ có ở Báo cáo, Khách hàng, Kho.
 
@@ -403,12 +408,11 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 |---|---|
 | Đăng nhập / Đăng ký / Thiết lập lần đầu | đăng ký tài khoản; tạo shop (chọn ngành) → popup tạo kho → tạo sản phẩm đầu tiên |
 | Tổng quan | doanh thu hôm nay/tháng, LN gộp, đơn chờ xử lý, cảnh báo sức khoẻ, hàng sắp hết, khách cần nhắc |
-| Bán nhanh (POS) | tìm SKU (có ảnh), giỏ hàng, chọn khách bằng bộ chọn gọn (`CustomerPicker`, luôn gửi `customer_id`), giảm giá, thu tiền, "Bán ngay"; tự phân bổ kho, chỉ báo khi lấy từ kho phụ |
-| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; **form tạo/sửa đơn** `/orders/new`, `/orders/:id/edit` (bố cục 7:5, một cột trên điện thoại, thanh hành động dính đáy: sản phẩm có ảnh/tồn theo kho, chọn khách có sẵn hoặc tạo nhanh, kênh, phí sàn chỉ với kênh sàn, tổng + lãi gộp ước tính, chia kho tay từ `allocation-preview`, "Lưu nháp / Xác nhận đơn / Bán xong"); chi tiết đơn (nút Sửa cho đơn nháp); đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
+| Đơn hàng | danh sách lọc theo trạng thái (tab kèm số đếm, `GET /orders/status-counts` dùng chung `orderFilter`)/kênh/ngày, cột: mã + ngày giờ, khách (tên + SĐT), kênh, số SP, khách phải trả, thanh toán, trạng thái; **form tạo/sửa đơn** `/orders/new`, `/orders/:id/edit` (bố cục 7:5, một cột trên điện thoại, thanh hành động dính đáy: sản phẩm có ảnh/tồn theo kho, chọn khách có sẵn hoặc tạo nhanh, kênh, phí sàn chỉ với kênh sàn, tổng + lãi gộp ước tính, chia kho tay từ `allocation-preview`, "Lưu nháp / Xác nhận đơn / Bán xong"); chi tiết đơn (nút Sửa cho đơn nháp); đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
 | Import đơn | chọn file → chọn mẫu map cột → xem thử → xác nhận → kết quả |
-| Sản phẩm | danh sách theo shop, chi tiết sản phẩm + biến thể, niêm yết theo shop, đồng bộ sang shop khác |
+| Sản phẩm | danh sách theo shop (ảnh nhỏ, danh mục + SKU ở dòng phụ, số biến thể, khoảng giá, tồn tổng đỏ khi dưới tối thiểu, trạng thái bán); **trang** thêm/sửa sản phẩm, combo (hai cột 8:4, ma trận biến thể trong `Section` riêng với thanh "Áp dụng cho tất cả" phía trên bảng); niêm yết theo shop, đồng bộ sang shop khác |
 | Kho | tồn theo kho, lịch sử biến động, kiểm kê, chuyển kho |
-| Nhập hàng | phiếu nhập, nhà cung cấp, công nợ NCC |
+| Nhập hàng | danh sách phiếu (trạng thái badge), **trang** phiếu nhập mới (dòng hàng ở cột chính; nhà cung cấp, kho, phí, thanh toán, tổng ở cột phụ; "Lưu nháp / Nhận hàng & lưu"), trang chi tiết phiếu, nhà cung cấp, công nợ NCC |
 | Khách hàng | danh sách theo shop (lọc nhãn, mệnh, cột riêng), thêm khách vào shop, hồ sơ (đơn, mệnh, hạng, nhãn, thông tin riêng, ghi chú), xoá khỏi shop, gộp trùng, xuất file |
 | Loyalty & Campaign | hôm nay nên liên hệ (nhắc mua lại, sinh nhật), gợi ý theo mệnh, hạng khách, mẫu tin nhắn, tự động hoá (chưa có) |
 | Chi phí & đối soát | tab Chi phí (danh sách, thêm nhanh, chọn phương thức trả), Quỹ tiền (số dư, chuyển quỹ, kiểm đếm, sổ quỹ), Đối soát sàn (chọn sàn) |
@@ -418,7 +422,9 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 
 ### Phong cách
 - Nhận diện, bảng màu và quy tắc dùng màu: xem mục 7A. Token màu nằm ở `brand/tokens.css`.
-- Số tiền căn phải, định dạng `1.250.000 ₫`.
+- Số tiền căn phải, định dạng `1.250.000 ₫`. Số 0 luôn là `0 ₫`, không bao giờ `-0 ₫` (sửa trong `vnd()` ở `web/src/lib.js`).
+- **Màu nền ít lớp**: ô nhập dùng nền thẻ (`--paper`) và viền 1px trung tính `--field-border` (≥ 3:1), focus đổi viền sang màu nhấn; không dùng nền xám đặc cho ô nhập. Hàng nhấn ("Áp dụng cho tất cả", dòng tổng) dùng nền rất nhạt `--tint` hoặc một đường kẻ, không dùng màu be đậm. Mỗi trang chỉ một màu nhấn đặc: nút chính.
+- **Căn lề nhất quán**: mọi dòng trong một thẻ có cùng đệm trái/phải, kể cả dòng tổng in đậm (báo cáo tài chính dùng `.fin-row`); dòng nhóm thụt vào, dòng tổng có kẻ trên.
 - Trang giao diện không dùng ngôi "cậu/tớ" (app nhiều tài khoản): dùng câu mệnh lệnh trung tính hoặc "bạn".
 - Màu trạng thái đơn là ngoại lệ chức năng (nháp xám, xác nhận xanh dương, đang giao tím, hoàn thành xanh lá, huỷ đỏ, trả hàng cam), đã giảm bão hoà trong `tokens.css` để hợp tông.
 - Nút bấm cao ≥ 44px trên điện thoại.
@@ -439,8 +445,8 @@ Dấu vết thời gian: mỗi đơn, mỗi lần nhập kho là một nét ghi 
 **Phong thuỷ là dữ liệu và bố cục, không phải đồ trang trí** (cập nhật 2026-11-03, xem nhật ký quyết định). Các yếu tố được dùng:
 1. **Ngũ hành** là hệ ký hiệu có nghĩa: mệnh khách, hành của sản phẩm, doanh thu theo hành. Ký hiệu = chữ Hán (金 木 水 火 土) trong khung tròn + tên Việt. Màu ngũ hành là ngoại lệ chức năng như màu trạng thái đơn (đã giảm bão hoà, ≥ 4.5:1 trên nền giấy). Chữ Hán chỉ dùng cho 5 ký tự này (font con nhúng sẵn `web/src/fonts/han-*.woff2`, Noto Serif SC, OFL).
 2. **Âm lịch + can chi** hiển thị ở thanh trên (tính bằng cùng thuật toán với server).
-3. **Họa tiết nét mảnh** (chỉ nét, màu Champagne/Terracotta, không tô đặc, tối đa vài điểm nhấn mỗi màn hình): la bàn bát quái (thẻ hero, trang đăng nhập), trống đồng Đông Sơn (dành cho trạng thái trống/trang trí khác), lôi văn (đường diềm dưới tiêu đề trang và đáy thẻ hero).
-4. **Chất liệu dạng hoạ tiết phẳng**: vân giấy dó mờ trên nền trang, vân gỗ trên các mảng Walnut. Không dùng ảnh/texture thật, không đổ khối.
+3. **Họa tiết nét mảnh** (chỉ nét, màu Champagne/Terracotta, không tô đặc, tối đa vài điểm nhấn mỗi màn hình): la bàn bát quái (thẻ hero, trang đăng nhập), trống đồng Đông Sơn (trạng thái trống), lôi văn (chỉ ở đường diềm dưới tiêu đề **Tổng quan** và đáy thẻ hero; các trang khác dùng tiêu đề trơn, không đường diềm).
+4. **Chất liệu dạng hoạ tiết phẳng**: vân giấy dó mờ **chỉ ở trang đăng nhập và Tổng quan** (các trang khác nền phẳng), vân gỗ trên các mảng Walnut. Không dùng ảnh/texture thật, không đổ khối.
 5. **Dấu triện** vuông (logo trên trang đăng nhập) và dấu "ĐÃ CHỐT" trên đơn đã thu đủ.
 6. **Bố cục**: ưu tiên lệch (7:5) và khoảng trống hơn lưới đều; nhãn chữ dọc ở thẻ hero.
 
@@ -451,7 +457,7 @@ Phần phong thuỷ ở trên **chỉ áp dụng cho shop ngành phong thuỷ** 
 
 | Theme | Dùng cho | Bảng màu | Họa tiết |
 |---|---|---|---|
-| `general` | Bán lẻ chung, "Tất cả shop", màn đăng nhập | Bảng màu thương hiệu bên dưới | Kẻ dòng sổ cái, đường kẻ đôi dưới tiêu đề. Không họa tiết khác |
+| `general` | Bán lẻ chung, "Tất cả shop", màn đăng nhập | Bảng màu thương hiệu bên dưới | Kẻ dòng sổ cái ở thẻ hero. Không họa tiết khác |
 | `phongthuy` | Ngành phong thuỷ | Bảng màu thương hiệu | La bàn bát quái, lôi văn, vân giấy dó/gỗ, ngũ hành, âm lịch |
 | `nuochoa` | Ngành nước hoa | Biến thể: mận `#2B2029`, nền hồng phấn `#F8F2F0`, đỏ tía `#7A2E4A`, hồng đồng `#C08A76` (chữ/nền 14.1:1, đỏ tía/nền 8.2:1) | Vòng lan toả (hương toả ra), ba hình thoi "tầng hương" dưới tiêu đề. Không họa tiết phong thuỷ |
 | `oto` | Ngành nước hoa ô tô | Biến thể: xám than `#1B2226`, nền `#F0F2F1`, cam cháy `#9C3D1A`, hổ phách `#D49A3A` (như đèn đồng hồ taplô; chữ/nền 14.3:1, cam cháy/nền 6.0:1, terracotta `#946020`/nền 4.7:1) | Mặt đồng hồ tốc độ, vạch kẻ đường đứt nét dưới tiêu đề. Không họa tiết phong thuỷ |
@@ -636,3 +642,6 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-04 | Phí trả hàng ghi vào tài khoản mới 5118 (không dùng 711); `returned_amount` của đơn đổi nghĩa thành "giảm số phải thu", phần hàng thuần tách ra `returned_goods_amount` | 711 chỉ có điều chỉnh kho/quỹ không thuộc shop và không có trong báo cáo, nên dùng sẽ làm sổ lệch báo cáo. Giữ `returned_amount` làm số giảm phải thu để mọi công thức công nợ (báo cáo, tuổi nợ, đối soát sàn) không phải sửa. |
 | 2026-11-04 | Doanh thu thuần báo cáo chỉ gồm hàng; phí trả hàng là dòng riêng cộng vào lãi gộp (kế hoạch ban đầu muốn cộng thẳng vào doanh thu thuần) | Báo cáo theo sản phẩm/ngũ hành chia doanh thu theo dòng hàng và phải cộng ra đúng doanh thu thuần; phí trả hàng không thuộc dòng nào. Lãi và (doanh thu thuần + phí trả hàng) vẫn không đổi khi shop giữ trọn tiền. |
 | 2026-11-04 | Kênh sàn: không có hoàn ship, phí trả hàng, tiền trả khách | Sàn tự hoàn tiền cho người mua rồi trừ vào tiền trả shop; shop không giữ tiền của người mua. |
+| 2026-11-04 | Giảm họa tiết và lớp nền: đường lôi văn/kẻ đôi dưới tiêu đề và vân giấy dó chỉ còn ở Tổng quan và đăng nhập (mọi theme); ô nhập đổi từ nền xám đặc sang nền thẻ + viền trung tính; mỗi trang tối đa ba lớp trước nội dung (header, thanh công cụ, nội dung), tab thành segmented | Chủ shop nhận xét bản trước "nhức đầu, thiếu trực quan, thiếu tách bạch": năm dải ngang trước nội dung trang Nhập hàng, vân sóng làm nhiễu nền, nhiều màu nền cạnh tranh nhau trong ô nhập. Phong thuỷ vẫn là dữ liệu (ngũ hành, âm lịch) và bố cục; chỉ bớt phần trang trí lặp ở mọi trang. |
+| 2026-11-04 | Form tạo/sửa sản phẩm, combo, phiếu nhập thành trang đầy đủ (hai cột 8:4, thanh lưu dính đáy, cảnh báo chưa lưu), không còn popup; popup giữ cho việc ngắn | Popup dài hơn 6 ô khó điền trên điện thoại và không thấy tổng thể; ma trận biến thể cần chỗ rộng. Trang có URL riêng nên mở lại/chia sẻ được. Payload API không đổi (các component form giữ nguyên props `init/onClose/onSaved`, test cũ làm chuẩn). |
+| 2026-11-04 | Bỏ màn Bán nhanh (POS), chỉ còn `/orders/new` | Hai giao diện tạo đơn làm chủ shop rối. Form đơn đã có đủ thứ POS có (tìm SKU, khách, thu tiền, "Bán xong") nên chỉnh cho nhanh (kênh mặc định trực tiếp, focus ô tìm, phần ít dùng gập lại) thay vì giữ hai nơi. |

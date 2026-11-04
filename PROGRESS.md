@@ -316,6 +316,15 @@
 - Chưa có ngành thứ năm: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
 - `daily_stats` và tính hoàn trả theo ngày trả hàng: đã quyết định chưa làm (xem nhật ký quyết định trong `CLAUDE.md`).
 
+**Đợt làm gọn giao diện (2026-11-04, nhánh `feat/giao-dien-gon`, kế hoạch `docs/plans/2026-11-giao-dien-gon.md`)**
+- Khung chung: `PageHeader`, `Toolbar`, `Note`, `Section`, `Fold`, `SaveBar`, tab segmented có số đếm; ô nhập một nền + viền trung tính; bỏ họa tiết lặp (lôi văn, vân giấy dó) khỏi các trang ngoài Tổng quan/đăng nhập; `vnd(0)` luôn là `0 ₫`.
+- Bỏ menu/route Bán nhanh (`/pos` chuyển hướng `/orders/new`), form đơn chỉnh cho nhanh.
+- Sản phẩm, combo, phiếu nhập là trang đầy đủ (cảnh báo rời trang chưa lưu); chi tiết phiếu nhập là trang `/purchases/:id`.
+- Danh sách Đơn (tab có số đếm, `GET /orders/status-counts`, có test) và Sản phẩm (`stock_total`, `low_stock_count` thêm vào `GET /products`) dễ quan sát; Kho, Khách dùng bảng dính header.
+- Sổ kế toán một hàng công cụ, KQKD/Cân đối thẳng lề; Báo cáo, Kho, Khách, Loyalty, Chi phí, Cài đặt, Guide dùng khung chung.
+- Test: server 161 (thêm 2), web 207 (thêm: định dạng tiền, form dạng trang, phiếu nhập, điều hướng `/pos`).
+- Chưa làm / còn thô: form Chi phí, Chứng từ tay, Tài sản, Chi phí định kỳ vẫn là popup (chưa kiểm popup nào dài quá 6 ô); chi tiết đơn và hồ sơ khách còn dùng `page-head` cũ; chưa chụp thử cỡ 390px (công cụ trình duyệt không đổi được viewport); chưa chạy e2e Playwright sau khi sửa case POS; chưa kiểm kỹ cả bốn theme bằng mắt (chỉ theme ô tô).
+
 **Việc chờ làm (từ kế hoạch trả hàng 2026-11-04, ngoài phạm vi lần này)**
 - Dùng tiền khách gửi (store credit) để trừ vào đơn sau.
 - Đổi hàng trong một bước.
