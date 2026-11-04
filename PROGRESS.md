@@ -19,7 +19,7 @@
 | M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
-| M14 | Kế toán kép (8a) | ✅ | ✅ | ✅ | Sổ cái dẫn xuất bằng trigger; 8b (chứng từ tay, định kỳ, tài sản, khoá sổ) chưa làm |
+| M14 | Kế toán kép (8a + 8b) | ✅ | ✅ | ✅ | Sổ cái dẫn xuất bằng trigger; chứng từ tay, chi phí định kỳ (job), tài sản/khấu hao, khoá sổ |
 | M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 76, vitest 91, smoke e2e 10 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
@@ -27,6 +27,13 @@
 ---
 
 ## Nhật ký
+
+### 2026-11-04 — Đợt nâng cấp, Phase 8b: nghiệp vụ kế toán bổ sung (M14 xong)
+- Migration 025 (`vouchers`, `recurring_expenses`, cột `expenses.recurring_id/period_key`), 026 (`assets`, `journal_meta`, `period_lock_snapshots`, trigger tài sản).
+- Server: `accounting/{vouchers,assets,lock}.js`, `expenses/recurring.js`, `jobs/recurring.js`, `lib/{schedule,clock,period}.js`; `cash/balanceOf` cộng chứng từ tay và tài sản; KQKD tách khấu hao; khoá sổ `PERIOD_LOCKED` ở chi phí, thanh toán, quỹ, chứng từ, tài sản.
+- Giao diện: tab Chứng từ, Chi phí định kỳ, Tài sản & phân bổ, Khoá sổ; ánh xạ danh mục chi phí → tài khoản; từ điển chỉ số mới (`acc_depreciation`, `acc_other`, `acc_lock`).
+- Test: API 145 (thêm 4 kịch bản 8b trong `accounting_integrity` + `schedule.test.js`), giao diện 176 (thêm `voucher-lib`). `check-journal`, `check-stock`, `check-stats` sạch trên DB seed.
+- Hạn chế: thanh lý tài sản ghi giá trị còn lại vào 811 (tiền bán ghi bằng phiếu thu tay); tài sản mua chưa trả ghi 331 không gắn nhà cung cấp; chi phí định kỳ rơi vào kỳ khoá bị bỏ qua.
 
 ### 2026-11-04 — Đợt nâng cấp, Phase 8a: lõi sổ cái kế toán
 

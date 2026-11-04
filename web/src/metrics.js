@@ -307,8 +307,21 @@ const LIST = [
     source: 'Từ phí sàn và ship shop chịu trên đơn, cộng chi phí đã ghi theo danh mục. Lọc shop: chi phí chung được chia về shop theo cùng quy tắc với báo cáo.', tip: 'Đổi tài khoản của một danh mục chi phí nếu muốn hạch toán khác.',
   }),
   M('acc_profit', 'Lợi nhuận trước thuế (KQKD)', {
-    group: 'Kế toán', what: 'Lãi thuần từ bán hàng cộng thu nhập khác trừ chi phí khác (hao hụt, tiền phạt, chênh lệch kiểm đếm).', formula: 'Lãi gộp − chi phí 641x/642x + 711 − 811',
-    source: 'Từ sổ cái. Chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên chỉ có khi xem tất cả shop. Trừ các khoản đó, bằng “Lợi nhuận ròng ước tính” ở Báo cáo.', tip: 'Âm nhiều kỳ: xem chi phí và giá vốn.', drill: () => '/reports?tab=profit',
+    group: 'Kế toán', what: 'Lãi thuần từ bán hàng cộng thu nhập khác trừ chi phí khác (hao hụt, tiền phạt, chênh lệch kiểm đếm).', formula: 'Lãi gộp − chi phí 641x/642x − khấu hao/phân bổ + 711 − 811',
+    source: 'Từ sổ cái. Chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên chỉ có khi xem tất cả shop. Trừ các khoản đó và trừ khấu hao/phân bổ tài sản, bằng “Lợi nhuận ròng ước tính” ở Báo cáo (chi phí định kỳ có ở cả hai vì là chi phí thật).', tip: 'Âm nhiều kỳ: xem chi phí và giá vốn.', drill: () => '/reports?tab=profit',
+  }),
+  M('acc_depreciation', 'Khấu hao và phân bổ (KQKD)', {
+    group: 'Kế toán', what: 'Phần nguyên giá tài sản cố định và chi phí trả trước được tính vào chi phí của kỳ (mỗi tháng một khoản, ghi vào ngày cuối tháng).', formula: 'Nguyên giá chia đều theo số tháng (khoản dư rải từ tháng đầu); chỉ tính các tháng đã qua',
+    source: 'Từ danh sách Tài sản & phân bổ. KHÔNG phải một khoản chi phí ở Chi phí & quỹ nên KHÔNG có trong “Lợi nhuận ròng ước tính” của Báo cáo: lợi nhuận trước thuế ở Sổ kế toán thấp hơn Báo cáo đúng bằng khoản này (cộng chênh lệch kho/quỹ và thu/chi khác). Chi phí định kỳ thì khác: nó là khoản chi thật nên có ở cả hai nơi.',
+    tip: 'Muốn thấy lãi như Báo cáo: xem dòng “Lãi thuần trước khấu hao”.', drill: () => '/accounting?tab=assets',
+  }),
+  M('acc_other', 'Thu nhập khác và chi phí khác (KQKD)', {
+    group: 'Kế toán', what: 'Khoản ngoài bán hàng: thu nhập khác (711: kiểm đếm thừa, điều chỉnh tăng, thu khác) và chi phí khác (811: tiền phạt, hao hụt, kiểm đếm thiếu, giá trị còn lại khi thanh lý tài sản).', formula: '711 và 811',
+    source: 'Từ sổ cái, gồm cả phiếu thu/chi khác bạn lập tay. Báo cáo không có các khoản này (trừ tiền phạt nhập qua danh mục chi phí “Tiền phạt”).', tip: 'Góp vốn hay rút vốn (411) KHÔNG phải thu chi khác: không vào lợi nhuận.', drill: () => '/accounting?tab=vouchers',
+  }),
+  M('acc_lock', 'Khoá sổ', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Từ ngày khoá trở về trước, chứng từ tay, chi phí, thanh toán, chuyển quỹ và tài sản không tạo, sửa, huỷ được.', formula: 'Chứng từ có ngày ≤ ngày khoá bị chặn (PERIOD_LOCKED)',
+    source: 'Đơn bán và phiếu nhập trong kỳ đã khoá vẫn sửa được (đơn sàn import muộn là chuyện bình thường); khi đó số kỳ đã khoá đổi và app cảnh báo so với ảnh chụp lúc khoá.', tip: 'Khoá sau khi chốt số cuối tháng; có cảnh báo thì xem kỹ những tài khoản bị đổi.',
   }),
   M('acc_assets', 'Tổng tài sản', {
     group: 'Kế toán', scope: 'account', time: 'today', what: 'Tiền, phải thu, hàng tồn, tài sản cố định, chi phí trả trước.', formula: 'Σ số dư các tài khoản tài sản (đã trừ hao mòn)', source: 'Toàn tài khoản, không lọc shop, tính đến ngày chọn.', tip: 'Phải bằng nợ phải trả cộng vốn cộng lợi nhuận.',

@@ -2,6 +2,7 @@ import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { runningCode } from '../../lib/codes.js';
+import { today } from '../../lib/clock.js';
 import { postingsFor, FALLBACK_EXPENSE_ACCOUNT } from './posting.js';
 
 const db = () => getDb();
@@ -13,7 +14,9 @@ function loadContext() {
   const cats = new Map(db().prepare('SELECT id, account_code FROM expense_categories').all().map((c) => [c.id, c.account_code]));
   const valid = new Set(db().prepare('SELECT code FROM accounts').all().map((a) => a.code));
   const preOpen = (acc, date) => acc.opening_date && date < acc.opening_date;
+  const todayStr = today();
   return {
+    today: todayStr,
     marketplace: new Map(db().prepare('SELECT id, is_marketplace FROM channels').all().map((c) => [c.id, !!c.is_marketplace])),
     cashAccountFor(method, date) {
       const acc = accounts.find((a) => a.methods.includes(method));
@@ -75,6 +78,10 @@ function snapshot(type, id, ctx) {
       const kinds = { count: 'Kiểm kê', damage: 'Hàng hỏng', opening: 'Tồn đầu kỳ' };
       return { movements, label: adj ? `${kinds[adj.kind] || 'Điều chỉnh kho'} ${adj.code}` : movements[0].type === 'opening' ? 'Tồn đầu kỳ khi tạo sản phẩm' : 'Điều chỉnh kho' };
     }
+    case 'asset': {
+      const a = db().prepare('SELECT * FROM assets WHERE id = ?').get(id);
+      return a ? { a } : null;
+    }
     case 'cash_open': {
       const account = db().prepare('SELECT * FROM cash_accounts WHERE id = ?').get(id);
       return account ? { account } : null;
@@ -99,6 +106,7 @@ function allSources() {
     ...q('SELECT id FROM payments', 'payment'),
     ...q('SELECT id FROM purchases', 'purchase'),
     ...q('SELECT id FROM expenses', 'expense'),
+    ...q('SELECT id FROM assets', 'asset'),
     ...q('SELECT id FROM cash_accounts', 'cash_open'),
     ...q('SELECT DISTINCT COALESCE(pair_id, id) AS id FROM cash_entries', 'cash_entry'),
     ...q(`SELECT DISTINCT COALESCE(ref_id, id) AS id FROM stock_movements WHERE type IN ${STOCK_TYPES}`, 'stock'),
@@ -107,8 +115,23 @@ function allSources() {
 
 const expectedFor = (type, id, ctx) => postingsFor(type, snapshot(type, id, ctx), ctx);
 
+/**
+ * Khấu hao/phân bổ phụ thuộc "hôm nay": khi sang ngày mới (hoặc đồng hồ giả của test đổi), đánh dấu bẩn mọi tài sản chưa huỷ một lần.
+ * Mốc ngày lưu ở journal_meta; cùng ngày thì không làm gì nên rất rẻ.
+ */
+function refreshAssetsForToday() {
+  const t = today();
+  const last = db().prepare("SELECT value FROM journal_meta WHERE key = 'asset_day'").get()?.value;
+  if (last === t) return;
+  db().transaction(() => {
+    db().prepare("INSERT OR IGNORE INTO journal_dirty SELECT 'asset', id FROM assets WHERE voided_at IS NULL").run();
+    db().prepare("INSERT INTO journal_meta (key, value) VALUES ('asset_day', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(t);
+  })();
+}
+
 /** Sinh lại bút toán tự động của các chứng từ bẩn. Rẻ khi không có gì bẩn. Trả số chứng từ đã xử lý. */
 export function flushJournal() {
+  refreshAssetsForToday();
   const dirty = db().prepare('SELECT source_type, source_id FROM journal_dirty').all();
   if (!dirty.length) return 0;
   const ctx = loadContext();
@@ -164,6 +187,10 @@ export function verifyJournal() {
     const a = actual.get(k);
     if (!a) bad.push({ key: k, problem: 'THIEU', detail: 'chứng từ có bút toán nhưng sổ chưa có' });
     else if (JSON.stringify(a) !== JSON.stringify(sigs)) bad.push({ key: k, problem: 'SAI_NOI_DUNG' });
+  }
+  // Bút toán tay không bao giờ sinh lại, nhưng vẫn phải cân
+  for (const m of db().prepare("SELECT e.code, SUM(l.debit) AS d, SUM(l.credit) AS k FROM journal_entries e JOIN journal_lines l ON l.entry_id = e.id WHERE e.is_auto = 0 GROUP BY e.id").all()) {
+    if (m.d !== m.k) bad.push({ key: `manual|${m.code}`, problem: 'KHONG_CAN', code: m.code, debit: m.d, credit: m.k });
   }
   for (const k of actual.keys()) if (!expected.has(k)) bad.push({ key: k, problem: 'MO_COI', detail: 'bút toán không còn chứng từ sinh ra' });
   return bad;

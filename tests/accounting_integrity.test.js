@@ -238,3 +238,207 @@ test('API sổ kế toán: hệ thống tài khoản, sổ nhật ký, sổ cái
   assert.ok(l.data.length > 0 && l.data.every((r) => r.source_type && r.entry_code));
   assert.equal(l.closing_balance, bal('1111') + bal('1121') * 0, 'sổ cái 111 = các quỹ tiền mặt');
 });
+
+// ---------- Phase 8b: chứng từ tay, chi phí định kỳ, tài sản, khoá sổ ----------
+const FAR = '2099-12-31';
+const cashMatches = () => {
+  for (const a of q('SELECT * FROM cash_accounts')) {
+    assert.equal(bal(a.account_code), balanceOf({ ...a, methods: JSON.parse(a.methods) }, FAR).balance, `quỹ ${a.name} (${a.account_code})`);
+  }
+};
+const sound = async (api) => {
+  assert.deepEqual(verifyJournal(), []);
+  assert.equal(ok(await api.get('/accounting/balance-sheet')).balanced, true);
+  assert.equal(ok(await api.get('/accounting/trial-balance?from=2000-01-01')).balanced, true);
+  cashMatches();
+};
+
+test('Chứng từ tay: góp vốn, tiền phạt, bút toán tổng hợp, huỷ; số dư quỹ khớp sổ cái', async () => {
+  const { api, nh, wallet } = await world();
+  const before = ok(await api.get('/cash/accounts'));
+  const cashBefore = before.find((a) => a.id === 'cac_cash').balance;
+  const dt = businessDate();
+  const cap = ok(await api.post('/accounting/vouchers', { type: 'receipt', voucher_date: dt, description: 'Chủ góp vốn', cash_account_id: 'cac_cash', account_code: '411', amount: 5000000 }));
+  assert.match(cap.code, /^PT-\d{6}$/);
+  const fine = ok(await api.post('/accounting/vouchers', { type: 'payment', voucher_date: dt, description: 'Phạt giao hàng trễ', cash_account_id: 'cac_cash', account_code: '811', amount: 200000, shop_id: nh.id }));
+  assert.match(fine.code, /^PC-\d{6}$/);
+  const bt = ok(await api.post('/accounting/vouchers', { type: 'journal', voucher_date: dt, description: 'Ghi nhận tiền thuê chưa trả', lines: [{ account_code: '6422', debit: 700000 }, { account_code: '3388', credit: 700000 }] }));
+  assert.match(bt.code, /^BT-\d{6}$/);
+  // Bút toán tay động vào tài khoản quỹ vẫn phải khớp số dư quỹ
+  ok(await api.post('/accounting/vouchers', { type: 'journal', voucher_date: dt, description: 'Rút vốn bằng bút toán', lines: [{ account_code: '411', debit: 30000 }, { account_code: '1121', credit: 30000 }] }));
+  const mistaken = ok(await api.post('/accounting/vouchers', { type: 'receipt', voucher_date: dt, description: 'Nhập nhầm', cash_account_id: 'cac_bank', account_code: '711', amount: 999000 }));
+  ok(await api.delete(`/accounting/vouchers/${mistaken.id}`));
+  assert.equal((await api.delete(`/accounting/vouchers/${mistaken.id}`)).status, 409);
+  const after = ok(await api.get('/cash/accounts'));
+  assert.equal(after.find((a) => a.id === 'cac_cash').balance, cashBefore + 5000000 - 200000);
+  assert.equal(after.find((a) => a.id === 'cac_bank').balance, before.find((a) => a.id === 'cac_bank').balance - 30000, 'phiếu huỷ không vào quỹ');
+  assert.equal(ok(await api.get('/cash/accounts/cac_cash/ledger')).closing_balance, after.find((a) => a.id === 'cac_cash').balance, 'sổ quỹ có dòng chứng từ tay');
+  await sound(api);
+  // KQKD: tiền phạt vào chi phí khác của shop; bút toán tay không bị sinh lại
+  const is = ok(await api.get(`/accounting/income-statement?${WIDE()}&shop_id=${nh.id}`));
+  assert.ok(is.other_expense >= 200000);
+  flushJournal();
+  getDb().prepare('UPDATE journal_dirty SET source_id = source_id').run();
+  assert.equal(one("SELECT COUNT(*) AS n FROM journal_entries WHERE source_type = 'manual' AND voided_at IS NULL").n, 4);
+  // Sửa phiếu: đổi số tiền
+  const upd = ok(await api.patch(`/accounting/vouchers/${cap.id}`, { amount: 6000000 }));
+  assert.equal(upd.total_amount, 6000000);
+  assert.equal(ok(await api.get('/cash/accounts')).find((a) => a.id === 'cac_cash').balance, cashBefore + 6000000 - 200000);
+  await sound(api);
+  // Chặn: không cân, tài khoản tổng, trước ngày mở sổ quỹ, đối ứng là quỹ
+  const bad = (b) => api.post('/accounting/vouchers', { voucher_date: dt, description: 'x', ...b });
+  assert.equal((await bad({ type: 'journal', lines: [{ account_code: '6422', debit: 100 }, { account_code: '3388', credit: 99 }] })).status, 400);
+  assert.equal((await bad({ type: 'journal', lines: [{ account_code: '6422', debit: 100 }, { account_code: '111', credit: 100 }] })).body.error.code, 'ACCOUNT_NOT_POSTABLE');
+  assert.equal((await bad({ type: 'receipt', cash_account_id: 'cac_cash', account_code: '1121', amount: 5 })).body.error.code, 'USE_TRANSFER');
+  assert.equal((await bad({ type: 'receipt', voucher_date: addDays(dt, -1), cash_account_id: wallet.id, account_code: '711', amount: 5 })).body.error.code, 'CASH_BEFORE_OPENING');
+  assert.equal((await bad({ type: 'journal', lines: [{ account_code: '6422', debit: 100 }] })).status, 400);
+  assert.equal(ok(await api.get('/accounting/vouchers?type=payment')).length, 1);
+  assert.equal(one("SELECT COUNT(*) AS n FROM events WHERE type = 'voucher.created'").n, 5);
+});
+
+test('Chi phí định kỳ: job tạo bù các kỳ bỏ lỡ, cuối tháng, không tạo trùng, tạm dừng/tiếp tục', async () => {
+  const { api } = await world();
+  const { runDue } = await import('../server/modules/expenses/recurring.js');
+  const { setToday } = await import('../server/lib/clock.js');
+  try {
+    const rec = ok(await api.post('/recurring-expenses', { name: 'Thuê kho', category_id: 'ecat_rent', amount: 3000000, method: 'bank', frequency: 'monthly', day_of_period: 31, start_date: '2027-01-15' }));
+    assert.equal(rec.next_run_date, '2027-01-31');
+    assert.deepEqual(ok(await api.get(`/recurring-expenses/${rec.id}/preview?count=3`)).map((p) => p.date), ['2027-01-31', '2027-02-28', '2027-03-31']);
+    setToday('2027-03-10'); // server tắt từ tháng 1: lần chạy đầu phải tạo bù 2 kỳ
+    assert.deepEqual(runDue('2027-03-10'), { created: 2, skipped_locked: 0 });
+    assert.deepEqual(runDue('2027-03-10'), { created: 0, skipped_locked: 0 }, 'idempotent');
+    const dates = q('SELECT expense_date FROM expenses WHERE recurring_id = ? ORDER BY expense_date', rec.id).map((r) => r.expense_date);
+    assert.deepEqual(dates, ['2027-01-31', '2027-02-28']);
+    assert.equal(ok(await api.get(`/recurring-expenses/${rec.id}`)).next_run_date, '2027-03-31');
+    // Huỷ một kỳ đã tạo: không bị tạo lại
+    ok(await api.delete(`/expenses/${q('SELECT id FROM expenses WHERE recurring_id = ? LIMIT 1', rec.id)[0].id}`));
+    assert.equal(runDue('2027-03-10').created, 0);
+    // Tạm dừng qua tháng 3-4 rồi tiếp tục: không tạo bù thời gian tạm dừng
+    ok(await api.post(`/recurring-expenses/${rec.id}/pause`));
+    setToday('2027-05-02');
+    assert.equal(runDue('2027-05-02').created, 0, 'đang tạm dừng');
+    ok(await api.post(`/recurring-expenses/${rec.id}/resume`));
+    assert.equal(runDue('2027-05-02').created, 0, 'không bù các kỳ đã qua lúc tạm dừng');
+    setToday('2027-05-31');
+    assert.equal(runDue('2027-05-31').created, 1);
+    // "Tạo ngay kỳ này" cho kỳ đã có → 409; kỳ chưa có thì tạo
+    assert.equal((await api.post(`/recurring-expenses/${rec.id}/run`)).status, 409);
+    const wk = ok(await api.post('/recurring-expenses', { name: 'Lương tuần', category_id: 'ecat_other', amount: 100000, method: 'cash', frequency: 'weekly', day_of_period: 5, start_date: '2027-05-03' }));
+    const made = ok(await api.post(`/recurring-expenses/${wk.id}/run`));
+    assert.equal(made.recurring_id, wk.id);
+    assert.equal((await api.post(`/recurring-expenses/${wk.id}/run`)).status, 409);
+    // Lưu trữ: không chạy nữa, chi phí đã tạo còn nguyên
+    ok(await api.delete(`/recurring-expenses/${wk.id}`));
+    assert.equal(ok(await api.get('/recurring-expenses')).length, 1);
+    assert.equal(one('SELECT COUNT(*) AS n FROM expenses WHERE recurring_id IS NOT NULL').n, 4, 'tháng 1, 2 (một khoản đã huỷ vẫn giữ khoá kỳ), 5 + một kỳ tuần');
+    assert.throws(() => getDb().prepare("INSERT INTO expenses (id, category_id, amount, expense_date, method, created_at, updated_at, recurring_id, period_key) VALUES ('x','ecat_rent',1,'2027-01-01','cash','a','a',?, '2027-01')").run(rec.id), /UNIQUE/);
+    await sound(api);
+  } finally {
+    setToday(null);
+  }
+});
+
+test('Tài sản: khấu hao theo tháng qua đồng hồ giả, trả bằng quỹ/chưa trả, thanh lý; sổ luôn khớp', async () => {
+  const { api, nh } = await world();
+  const { setToday } = await import('../server/lib/clock.js');
+  try {
+    setToday('2027-06-15');
+    const payable0 = bal('331');
+    const bankBefore = balanceOf({ ...q("SELECT * FROM cash_accounts WHERE id = 'cac_bank'")[0], methods: JSON.parse(q("SELECT methods FROM cash_accounts WHERE id = 'cac_bank'")[0].methods) }, FAR).balance;
+    const shelf = ok(await api.post('/accounting/assets', { name: 'Kệ trưng bày', kind: 'fixed_asset', cost: 1000000, months: 3, start_date: '2027-01-10', paid_via: 'bank', expense_account_code: '6422', shop_id: nh.id }));
+    const rent = ok(await api.post('/accounting/assets', { name: 'Thuê mặt bằng 12 tháng', kind: 'prepaid', cost: 1200000, months: 12, start_date: '2027-02-01', paid_via: 'unpaid' }));
+    assert.equal(rent.account_code, '242');
+    assert.equal((await api.post('/accounting/assets', { name: 'x', kind: 'prepaid', cost: 5, months: 1, start_date: '2027-02-01', expense_account_code: '632' })).status, 400);
+    // 15/06/2027: kệ đã khấu hao hết (T1–T3), thuê đã phân bổ T2–T5 (4 tháng)
+    assert.equal(bal('211'), 1000000);
+    assert.equal(bal('214'), -1000000);
+    assert.equal(bal('242'), 1200000 - 400000);
+    assert.equal(bal('331'), payable0 - 1200000, 'chưa trả → phải trả người bán');
+    const bankAfter = balanceOf({ ...q("SELECT * FROM cash_accounts WHERE id = 'cac_bank'")[0], methods: JSON.parse(q("SELECT methods FROM cash_accounts WHERE id = 'cac_bank'")[0].methods) }, FAR).balance;
+    assert.equal(bankAfter, bankBefore - 1000000, 'mua kệ trả bằng ngân hàng làm giảm số dư quỹ');
+    await sound(api);
+    const sched = ok(await api.get(`/accounting/assets/${shelf.id}`));
+    assert.equal(sched.schedule.reduce((a, p) => a + p.amount, 0), 1000000);
+    assert.equal(sched.schedule.filter((p) => p.posted).length, 3);
+    // Sang tháng 8: đồng hồ đổi → sổ tự làm mới, thuê đã phân bổ 6 tháng
+    setToday('2027-08-01');
+    assert.equal(bal('242'), 1200000 - 600000, 'khấu hao làm mới khi qua ngày, không cần sửa tài sản');
+    await sound(api);
+    const is = ok(await api.get('/accounting/income-statement?from=2027-01-01&to=2027-08-31'));
+    assert.equal(is.depreciation_total, 1000000 + 600000);
+    assert.equal(is.depreciation.reduce((a, r) => a + r.amount, 0), is.depreciation_total);
+    assert.equal(is.operating_profit, is.operating_profit_before_depreciation - is.depreciation_total);
+    // Chi phí khấu hao của shop hiện ở KQKD theo shop
+    assert.equal(ok(await api.get(`/accounting/income-statement?from=2027-01-01&to=2027-08-31&shop_id=${nh.id}`)).depreciation_total, 1000000);
+    // Thanh lý thuê trả trước ngày 01/08: giá trị còn lại 600.000 vào 811; không phân bổ nữa
+    const d = ok(await api.post(`/accounting/assets/${rent.id}/dispose`, { date: '2027-08-01' }));
+    assert.equal(d.disposed_at, '2027-08-01');
+    assert.equal(bal('242'), 0);
+    assert.equal((await api.post(`/accounting/assets/${rent.id}/dispose`, {})).status, 409);
+    setToday('2027-12-31');
+    assert.equal(bal('242'), 0, 'thanh lý rồi không phân bổ thêm');
+    // Thanh lý TSCĐ giữa kỳ
+    const pc = ok(await api.post('/accounting/assets', { name: 'Máy in', kind: 'fixed_asset', cost: 600000, months: 6, start_date: '2027-03-01', paid_via: 'cash' }));
+    const dp = ok(await api.post(`/accounting/assets/${pc.id}/dispose`, { date: '2027-05-15' }));
+    assert.equal(dp.remaining, 0);
+    flushJournal();
+    const lines = q("SELECT l.account_code AS c, SUM(l.debit - l.credit) AS v FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id WHERE e.source_type = 'asset' AND e.source_id = ? GROUP BY l.account_code", pc.id);
+    const by = Object.fromEntries(lines.map((l) => [l.c, l.v]));
+    assert.equal(by['211'] ?? 0, 0, 'nguyên giá đã ghi giảm');
+    assert.equal(by['214'] ?? 0, 0, 'hao mòn luỹ kế đã kết');
+    assert.equal(by['811'], 400000, '600.000 − 2 tháng × 100.000');
+    ok(await api.delete(`/accounting/assets/${pc.id}`));
+    flushJournal();
+    assert.equal(q("SELECT 1 FROM journal_entries WHERE source_id = ?", pc.id).length, 0, 'huỷ bản ghi → không còn bút toán');
+    await sound(api);
+    // Quay đồng hồ về lại: sổ dựng lại đúng
+    setToday('2027-02-15');
+    assert.equal(bal('214'), -(333334 + 0), 'chỉ T1 đã qua');
+    await sound(api);
+  } finally {
+    setToday(null);
+  }
+});
+
+test('Khoá sổ: chặn chứng từ tay, chi phí, thanh toán, chuyển quỹ, tài sản; đơn chỉ cảnh báo sau khoá', async () => {
+  const { api, nh, wh } = await world();
+  const yesterday = addDays(businessDate(), -1);
+  const exp = ok(await api.post('/expenses', { category_id: 'ecat_ops', amount: 5000, method: 'cash', expense_date: yesterday }));
+  assert.equal((await api.patch('/settings', { accounting_lock_date: 'abc' })).status, 400);
+  const ov0 = ok(await api.get('/accounting/overview'));
+  assert.ok(!ov0.warnings.some((w) => w.code === 'LOCKED_PERIOD_CHANGED'));
+  const lock = ok(await api.post('/accounting/lock', { date: yesterday }));
+  assert.equal(lock.lock_date, yesterday);
+  assert.equal(lock.changed, false);
+  const locked = (r) => {
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.error.code, 'PERIOD_LOCKED');
+  };
+  locked(await api.post('/expenses', { category_id: 'ecat_ops', amount: 1, method: 'cash', expense_date: yesterday }));
+  locked(await api.patch(`/expenses/${exp.id}`, { amount: 6000 }));
+  locked(await api.patch(`/expenses/${exp.id}`, { expense_date: businessDate() })); // chuyển khỏi kỳ khoá cũng chặn
+  locked(await api.delete(`/expenses/${exp.id}`));
+  locked(await api.post('/accounting/vouchers', { type: 'receipt', voucher_date: yesterday, description: 'x', cash_account_id: 'cac_cash', account_code: '711', amount: 1 }));
+  locked(await api.post('/accounting/assets', { name: 'x', kind: 'prepaid', cost: 100, months: 1, start_date: yesterday }));
+  locked(await api.post('/cash/transfers', { from_account_id: 'cac_cash', to_account_id: 'cac_bank', amount: 1, date: yesterday }));
+  const open = ok(await api.post('/expenses', { category_id: 'ecat_ops', amount: 1, method: 'cash', expense_date: businessDate() }));
+  assert.ok(open.id, 'hôm nay chưa khoá');
+  // Thanh toán trong kỳ khoá
+  const p = ok(await api.post('/products', { name: 'A', variants: [{ sku: 'Z1', default_price: 100000 }], shop_ids: [nh.id] })).variants[0];
+  ok(await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: p.id, qty: 10, unit_cost: 40000 }] }));
+  const order = ok(await api.post('/orders', { shop_id: nh.id, status: 'completed', lines: [{ sku: 'Z1', qty: 1 }], ordered_at: `${yesterday}T04:00:00.000Z` }), 201);
+  assert.ok(order.id, 'đơn trong kỳ đã khoá vẫn tạo được');
+  const ov = ok(await api.get('/accounting/overview'));
+  const w = ov.warnings.find((x) => x.code === 'LOCKED_PERIOD_CHANGED');
+  assert.ok(w, 'cảnh báo kỳ đã khoá có thay đổi sau khoá');
+  assert.ok(w.changes.some((c) => c.code === '5111'));
+  assert.equal(ok(await api.get('/accounting/lock')).changed, true);
+  const pay = await api.post(`/orders/${order.id}/payments`, { amount: 1000, method: 'cash', paid_at: `${yesterday}T05:00:00.000Z` });
+  locked(pay);
+  // Chốt lại số liệu → hết cảnh báo; mở khoá → sửa được
+  assert.equal(ok(await api.post('/accounting/lock', { date: yesterday })).changed, false);
+  ok(await api.post('/accounting/lock', { date: null }));
+  ok(await api.patch(`/expenses/${exp.id}`, { amount: 6000 }));
+  assert.equal(ok(await api.get('/accounting/lock')).lock_date, null);
+  await sound(api);
+});
