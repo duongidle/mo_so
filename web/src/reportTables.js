@@ -73,6 +73,32 @@ export function reportTables(tab, d, { range, shopName } = {}) {
   return [info, T('Sức khoẻ kinh doanh', ['Chỉ số', 'Giá trị', 'Mức', 'Ngưỡng vàng', 'Ngưỡng đỏ'], d.data.map((h) => [h.label, h.value, { green: 'Xanh', yellow: 'Vàng', red: 'Đỏ' }[h.status] || 'Chưa có dữ liệu', h.threshold.warn, h.threshold.bad]))];
 }
 
+/** Bảng xuất Excel cho các tab của Sổ kế toán. d = dữ liệu API của tab. */
+export function accountingTables(tab, d, { range, shopName } = {}) {
+  const T = (name, headers, rows) => ({ name, headers, rows });
+  const info = T('Thông tin', ['Mục', 'Giá trị'], [['Báo cáo', tab], ['Từ ngày', dmy(range?.from)], ['Đến ngày', dmy(range?.to)], ['Shop', shopName || 'Tất cả shop']]);
+  if (tab === 'journal') return [info, T('Sổ nhật ký', ['Mã', 'Ngày', 'Diễn giải', 'Tài khoản', 'Tên tài khoản', 'Nợ', 'Có', 'Ghi chú'], d.data.flatMap((e) => e.lines.map((l) => [e.code, dmy(e.entry_date), e.description, l.account_code, l.account_name, l.debit, l.credit, l.memo || ''])))];
+  if (tab === 'ledger') return [info, T('Sổ cái', ['Mã', 'Ngày', 'Diễn giải', 'Nợ', 'Có', 'Số dư'], [['', '', 'Số dư đầu', '', '', d.opening_balance], ...d.data.map((r) => [r.entry_code, dmy(r.entry_date), r.description, r.debit, r.credit, r.balance]), ['', '', 'Số dư cuối', d.debit, d.credit, d.closing_balance]])];
+  if (tab === 'trial') return [info, T('Cân đối phát sinh', ['Tài khoản', 'Tên', 'Đầu kỳ Nợ', 'Đầu kỳ Có', 'Phát sinh Nợ', 'Phát sinh Có', 'Cuối kỳ Nợ', 'Cuối kỳ Có'], [...d.data.map((r) => [r.code, r.name, r.opening_debit, r.opening_credit, r.debit, r.credit, r.closing_debit, r.closing_credit]), ['', 'Tổng', d.totals.opening_debit, d.totals.opening_credit, d.totals.debit, d.totals.credit, d.totals.closing_debit, d.totals.closing_credit]])];
+  if (tab === 'income') {
+    const rows = [['Doanh thu bán hàng (5111)', d.revenue_goods], ['Doanh thu phí vận chuyển (5113)', d.revenue_shipping], ['Hàng bán bị trả lại (5212)', -d.returns], ['Doanh thu thuần', d.net_revenue], ['Giá vốn hàng bán (632)', -d.cogs], ['Lãi gộp', d.gross_profit],
+      ...d.selling_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ...d.admin_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ['Lãi thuần từ kinh doanh', d.operating_profit], ['Thu nhập khác (711)', d.other_income], ['Chi phí khác (811)', -d.other_expense], ['Lợi nhuận trước thuế', d.profit_before_tax]];
+    return [info, T('Kết quả kinh doanh', ['Khoản', 'Số tiền'], rows)];
+  }
+  if (tab === 'balance') return [T('Thông tin', ['Mục', 'Giá trị'], [['Báo cáo', 'Cân đối kế toán'], ['Đến ngày', dmy(d.as_of)], ['Phạm vi', 'Toàn tài khoản']]), T('Cân đối kế toán', ['Khoản', 'Số tiền'], [['TÀI SẢN', ''], ...d.assets.map((r) => [`${r.name} (${r.code})`, r.balance]), ['Tổng tài sản', d.total_assets], ['NỢ PHẢI TRẢ', ''], ...d.liabilities.map((r) => [`${r.name} (${r.code})`, r.balance]), ['Tổng nợ phải trả', d.total_liabilities], ['VỐN CHỦ SỞ HỮU', ''], ...d.equity.map((r) => [`${r.name} (${r.code})`, r.balance]), ['421 – Lợi nhuận kỳ này (chưa kết chuyển)', d.current_profit], ['Tổng vốn', d.total_equity], ['Tổng nợ và vốn', d.total_liabilities_equity]])];
+  if (tab === 'cashflow') return [info, T('Lưu chuyển tiền', ['Khoản', 'Thu', 'Chi', 'Ròng'], [['Số dư đầu kỳ', '', '', d.opening_balance], ...d.data.map((g) => [g.label, g.inflow, g.outflow, g.net]), ['Tăng/giảm tiền trong kỳ', '', '', d.net_change], ['Số dư cuối kỳ', '', '', d.closing_balance]])];
+  if (tab === 'accounts') return [T('Hệ thống tài khoản', ['Mã', 'Tên', 'Loại', 'Bên bình thường', 'Số dư'], d.map((a) => [a.code, a.name, a.type, a.normal_side === 'debit' ? 'Nợ' : 'Có', a.balance]))];
+  return [info];
+}
+
+export const ACCOUNTING_TAB_METRICS = {
+  overview: ['acc_cash', 'acc_receivable', 'acc_payable', 'acc_inventory', 'acc_profit'],
+  trial: ['acc_trial'],
+  income: ['acc_net_revenue', 'acc_cogs', 'acc_gross_profit', 'acc_expenses', 'acc_profit'],
+  balance: ['acc_assets', 'acc_equity'],
+  cashflow: ['acc_cashflow', 'acc_cash'],
+};
+
 /** Tên sheet Excel: tối đa 31 ký tự, không chứa : \ / ? * [ ] */
 export const sheetName = (s) => s.replace(/[:\\/?*[\]]/g, ' ').slice(0, 31);
 
@@ -92,6 +118,6 @@ export const TAB_METRICS = {
 
 /** Sheet "Giải thích": nghĩa, cách tính, nguồn và phạm vi của các chỉ số trong tab */
 export function explainTable(tab) {
-  const rows = (TAB_METRICS[tab] || []).map((k) => METRICS[k]).filter(Boolean).map((m) => [m.name, m.what, m.formula, m.source, [SCOPES[m.scope], m.time === 'today' ? TIME_LABEL.today : null].filter(Boolean).join(' · ')]);
+  const rows = (TAB_METRICS[tab] || ACCOUNTING_TAB_METRICS[tab] || []).map((k) => METRICS[k]).filter(Boolean).map((m) => [m.name, m.what, m.formula, m.source, [SCOPES[m.scope], m.time === 'today' ? TIME_LABEL.today : null].filter(Boolean).join(' · ')]);
   return { name: 'Giải thích', headers: ['Chỉ số', 'Là gì', 'Cách tính', 'Lấy từ đâu', 'Phạm vi'], rows };
 }

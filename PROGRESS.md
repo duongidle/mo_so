@@ -19,6 +19,7 @@
 | M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
+| M14 | Kế toán kép (8a) | ✅ | ✅ | ✅ | Sổ cái dẫn xuất bằng trigger; 8b (chứng từ tay, định kỳ, tài sản, khoá sổ) chưa làm |
 | M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 76, vitest 91, smoke e2e 10 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
@@ -26,6 +27,14 @@
 ---
 
 ## Nhật ký
+
+### 2026-11-04 — Đợt nâng cấp, Phase 8a: lõi sổ cái kế toán
+
+- Migration 024: `accounts` (seed 26 tài khoản), `journal_entries`, `journal_lines`, `journal_dirty`, `expense_categories.account_code`, `cash_accounts.account_code` (tài khoản con 111x/112x tự tạo bằng trigger), danh mục "Tiền phạt" (811) và "Vận hành" (6428). Trigger đánh dấu chứng từ bẩn; chứng từ đã có được đánh dấu để lần đọc đầu dựng toàn sổ.
+- `server/modules/accounting/`: `posting.js` (hàm thuần), `journal.js` (`flushJournal`, `verifyJournal`, `rebuildJournal`), `reports.js` (tài khoản, nhật ký, sổ cái, cân đối phát sinh, KQKD, cân đối kế toán, lưu chuyển tiền, tổng quan), `routes.js` (`/accounting`). `npm run check-journal [-- --fix]`.
+- Giao diện: nhóm menu "Kế toán" (Chi phí & quỹ, Sổ kế toán), `Accounting.jsx` 8 tab, xuất Excel, ⓘ (`metrics.js`, `reportTables.js`).
+- Test: `accounting_posting.test.js` (hàm thuần), `accounting_integrity.test.js` (kịch bản đủ loại thao tác: mọi bút toán cân, cân đối phát sinh, tài sản = nợ + vốn + lợi nhuận, KQKD = báo cáo cho tất cả shop và từng shop, 111x/112x = số dư quỹ, 156 ≈ tồn × giá vốn trong cận làm tròn, 131 + 1388 và 331 khớp báo cáo công nợ, sửa/huỷ cập nhật sổ, verify bắt được sổ bị sửa lén).
+- Chênh lệch có chủ đích với báo cáo: xem `CLAUDE.md` mục 5.16.
 
 ### 2026-11-04 — Đợt nâng cấp, Phase 7: báo cáo dễ hiểu
 
