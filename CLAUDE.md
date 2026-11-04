@@ -130,7 +130,7 @@ moso/
 ### 5.1 Shop, Kho, Kênh
 - **Shop** = một mảng kinh doanh (giống chi nhánh). Vào app chọn shop đang làm việc; mọi màn hình bán hàng, sản phẩm, báo cáo mặc định lọc theo shop đó. Có chế độ **"Tất cả shop"** cho báo cáo.
 - **Kho** = nơi để hàng thật. Tách khỏi shop. Một shop có **kho mặc định** để trừ hàng khi bán; một kho phục vụ được nhiều shop.
-- **Kênh** (`channel`): `shopee`, `facebook`, `direct`, `other` (+ kênh tuỳ chỉnh sau). Mỗi đơn thuộc 1 shop và 1 kênh.
+- **Kênh** (`channel`): `direct`, `other` (luôn có), kênh của các **nền tảng** (`shopee`, `tiktok`, `facebook`, `zalo`, mục 5.15) và kênh tuỳ chỉnh (`ch_…`, tạo ở Cài đặt → Nền tảng bán hàng). Mỗi đơn thuộc 1 shop và 1 kênh. Kênh bị tắt (`archived_at`) ẩn khỏi bộ chọn tạo đơn và không tạo đơn mới được (`CHANNEL_DISABLED`), nhưng đơn cũ vẫn xem và lọc được. Kênh sàn (`is_marketplace = 1`) quyết định cách tính số tiền cần thu (xem 5.6).
 
 ### 5.1A Thiết lập lần đầu của tài khoản mới
 Đăng ký xong, tài khoản chưa có shop nên không có gì để làm. Giao diện dẫn qua 3 bước, mỗi bước chỉ hỏi những gì cần:
@@ -218,7 +218,7 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
 - Chi phí có **phương thức trả** (`method`): quyết định tiền chi ra khỏi quỹ nào, và được tính là tiền ra trong dòng tiền.
 - **Thanh toán** (`payments`): thu từ đơn, trả nhà cung cấp, hoàn tiền khách, NCC hoàn tiền. Phương thức: tiền mặt, chuyển khoản, Shopee payout, COD, thẻ, ví, khác. Huỷ phiếu nhập đã trả tiền NCC bắt buộc ghi nhận NCC hoàn tiền (`PURCHASE_PAID`).
 - **Quỹ tiền** (`cash_accounts`, `cash_entries`): két tiền mặt, tài khoản ngân hàng, ví. Mỗi phương thức thanh toán thuộc đúng một quỹ (mặc định: Tiền mặt = cash, cod; Ngân hàng = các phương thức còn lại). **Số dư không lưu, luôn tính từ sổ**: số dư đầu (tại `opening_date`) + thu − chi − chi phí theo phương thức ± chuyển quỹ ± điều chỉnh. Chuyển quỹ = hai dòng đối ứng (tổng không đổi, huỷ cả hai phía). **Kiểm đếm** ghi phần chênh thành một dòng điều chỉnh, không sửa thu chi cũ. Phương thức chưa gán quỹ được báo riêng (`unassigned`).
-- **Đối soát Shopee**: tiền đơn Shopee hoàn thành nhưng chưa ghi nhận payout = "tiền đang treo".
+- **Đối soát sàn**: tiền đơn của một kênh sàn (Shopee, TikTok Shop, kênh sàn tuỳ chỉnh) đã hoàn thành nhưng chưa ghi nhận tiền về = "tiền đang treo". Mỗi sàn đối soát riêng (`/reconciliation/pending?channel_id=`); ghi nhận tiền về dùng phương thức payout của sàn đó (`shopee_payout`, `tiktok_payout`; kênh sàn tuỳ chỉnh dùng `bank`) và từ chối đơn thuộc kênh khác. Báo cáo dòng tiền tách tiền treo theo sàn (`marketplace_by_channel`).
 
 ### 5.9 Báo cáo & Sức khoẻ kinh doanh
 Lọc: khoảng thời gian, shop (1 / nhiều / tất cả), kênh, danh mục. So sánh với kỳ trước.
@@ -280,6 +280,14 @@ Một module gộp mọi việc chăm sóc khách (trước đây là trang Chă
 - Vì chạy trong mạng LAN, vẫn bắt buộc đăng nhập (người khác cùng wifi có thể mở được).
 - Lên VPS: đặt sau reverse proxy có HTTPS (Caddy), bật cookie `Secure`.
 
+### 5.15 Nền tảng bán hàng (plugin)
+- Danh mục nền tảng ở `server/lib/platforms.js` (như `industries.js`): `shopee`, `tiktok` (TikTok Shop), `facebook`, `zalo`. Mỗi nền tảng gồm kênh, `is_marketplace`, phương thức payout (chỉ sàn), mẫu import dựng sẵn, chức năng (`import`, `reconciliation`). Thêm nền tảng = thêm một mục ở đó + migration seed kênh (lưu trữ sẵn) và mẫu import.
+- Cài đặt `enabled_platforms` (mặc định `["shopee","facebook"]`, tài khoản cũ giữ hành vi cũ) chỉ đổi qua `POST /platforms/:id/enable|disable`, không qua `PATCH /settings`. **Bật**: bỏ lưu trữ kênh, bảo đảm mẫu import tồn tại, bảo đảm phương thức payout thuộc một quỹ (mặc định quỹ ngân hàng). **Tắt**: chỉ lưu trữ kênh; đơn, tiền treo, mẫu import, phương thức payout giữ nguyên. Đều ghi `audit_log`.
+- Phương thức thanh toán hợp lệ = phương thức gốc + payout của mọi nền tảng (`paymentMethods()`), nên đơn cũ trả bằng payout của nền tảng đã tắt vẫn hợp lệ; giao diện chỉ ẩn payout của nền tảng đang tắt khỏi bộ chọn.
+- Kênh tuỳ chỉnh: `POST/PATCH /channels` (id `ch_…`, tên không trùng, `is_marketplace`, lưu trữ). Kênh dựng sẵn không sửa qua đây. Đã có đơn thì không đổi loại kênh (sàn/thường) vì đổi cách tính số tiền cần thu. `GET /channels` chỉ trả kênh đang bật; `?include_archived=1` trả cả kênh đã tắt (để đọc tên kênh của đơn cũ).
+- Mẫu import TikTok (`imp_tiktok`) là **mẫu khởi đầu** theo tên cột file xuất đơn của TikTok Seller Center, chưa kiểm với file thật, sửa được ở trình sửa mẫu; file xuất đơn không có phí sàn.
+- Giao diện: Cài đặt → "Nền tảng bán hàng" (thẻ nền tảng + công tắc Kết nối + kênh tuỳ chỉnh); tab "Đối soát sàn" ở Chi phí & đối soát (chọn sàn trong các sàn đang bật, ẩn nếu không có sàn nào); Tổng quan tách "Tiền sàn đang treo" theo sàn. `session` có `platforms`, `platformEnabled(id)`, `marketplaces`, `channels` (đang bật) và `allChannels` (gồm đã tắt).
+
 ### 5.14 Ngành bán
 - Mỗi shop chọn một **ngành bán** (`shops.industry`, đổi trong Cài đặt → Shop & kho). Danh mục ngành nằm ở `server/lib/industries.js`: `general` (Bán lẻ chung), `phong_thuy`, `nuoc_hoa_o_to` (nước hoa/tinh dầu/phụ kiện thơm cho xe: nhóm hương, dòng xe, mua cho xe nào), `nuoc_hoa` (nước hoa mặc cho người: nhóm hương, nồng độ, thương hiệu yêu thích, phong cách, dịp dùng, ngân sách, sinh nhật). Hai ngành nước hoa **tách biệt**: khách và cách bán khác nhau nên trường khách và giao diện khác nhau. Thêm ngành = thêm một mục ở đó (và một theme CSS nếu muốn giao diện riêng).
 - Ngành quyết định: (1) **theme giao diện** (mục 7A), (2) **tính năng** bật theo ngành (`feng_shui`: mệnh, ngũ hành, âm lịch, doanh thu theo ngũ hành, gợi ý theo mệnh), (3) **trường thông tin khách tạo sẵn** cho shop.
@@ -300,7 +308,7 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | (master.db) `accounts`, `sessions`, `api_key_index` | sổ tài khoản: đăng nhập, phiên, tra key → tài khoản (mục 3A) |
 | `shops` | mảng kinh doanh; `default_warehouse_id`, `code_prefix` |
 | `warehouses` | kho |
-| `channels` | kênh bán (seed sẵn 4 kênh) |
+| `channels` | kênh bán (seed sẵn direct/facebook/shopee/other; tiktok, zalo seed ở trạng thái tắt; kênh tuỳ chỉnh `ch_…`) |
 | `categories` | danh mục sản phẩm (cây) |
 | `products`, `variants` | sản phẩm gốc & SKU |
 | `shop_listings` | biến thể bán ở shop nào, giá bao nhiêu |
@@ -344,10 +352,10 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | Nhập hàng | phiếu nhập, nhà cung cấp, công nợ NCC |
 | Khách hàng | danh sách theo shop (lọc nhãn, mệnh, cột riêng), thêm khách vào shop, hồ sơ (đơn, mệnh, hạng, nhãn, thông tin riêng, ghi chú), xoá khỏi shop, gộp trùng, xuất file |
 | Loyalty & Campaign | hôm nay nên liên hệ (nhắc mua lại, sinh nhật), gợi ý theo mệnh, hạng khách, mẫu tin nhắn, tự động hoá (chưa có) |
-| Chi phí & đối soát | tab Chi phí (danh sách, thêm nhanh, chọn phương thức trả), Quỹ tiền (số dư, chuyển quỹ, kiểm đếm, sổ quỹ), Đối soát Shopee |
+| Chi phí & đối soát | tab Chi phí (danh sách, thêm nhanh, chọn phương thức trả), Quỹ tiền (số dư, chuyển quỹ, kiểm đếm, sổ quỹ), Đối soát sàn (chọn sàn) |
 | Báo cáo | các tab: Doanh thu, Lợi nhuận (kèm ước tính thuế), Chi phí, Kênh, Sản phẩm (lọc danh mục), Khách, Kho, Tiền & công nợ (số dư quỹ, dòng tiền, tuổi nợ), Chỉ số tuỳ chỉnh, Sức khoẻ; xuất Excel từng tab |
 | Cách đọc số liệu | 5 câu hỏi sức khoẻ kinh doanh có màu và việc nên làm, màu nghĩa là gì, từ điển các con số |
-| Cài đặt | shop, kho, kênh, ngưỡng sức khoẻ và cách chia chi phí chung, trường tuỳ chỉnh, thuế ước tính, API key, webhook, sao lưu, mật khẩu |
+| Cài đặt | shop, kho, nền tảng bán hàng và kênh, ngưỡng sức khoẻ và cách chia chi phí chung, trường tuỳ chỉnh, thuế ước tính, API key, webhook, sao lưu, mật khẩu |
 
 ### Phong cách
 - Nhận diện, bảng màu và quy tắc dùng màu: xem mục 7A. Token màu nằm ở `brand/tokens.css`.
@@ -538,3 +546,4 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Route PATCH dùng `patchOf`; huỷ phiếu nhập đã trả tiền phải kèm NCC hoàn tiền | `.partial()` của zod 4 áp `.default()` làm sửa đơn nháp xoá phí ship/phí sàn/giảm giá và sửa đơn đã chốt luôn bị 409. Huỷ phiếu nhập đã trả để tiền đã chi nằm đó không hàng, không công nợ. |
 | 2026-11-03 | Trang "Cách đọc số liệu" chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên | Chủ shop nhìn nhiều chỉ số không biết xem gì. Ngưỡng bịa thêm sẽ gây báo động giả; quỹ âm hoặc đang lỗ thì đúng với mọi shop. |
 | 2026-11-04 | Đổi slogan "Dấu vết của thời gian" → **"Hành Trình Phương Đông"** (thanh bên, trang đăng nhập, `logo-lockup.svg`) | Slogan mới nói hành trình làm ăn trên mảnh đất phương đông. Tên concept thiết kế "Dấu vết thời gian" (mục 7A) giữ nguyên vì là ngôn ngữ thiết kế, không phải slogan. Chữ trong lockup tạo lại outline bằng Noto Serif SemiBold. |
+| 2026-11-04 | Nền tảng bán hàng dạng plugin (`platforms.js`), bật/tắt từng nền tảng; thêm TikTok Shop và Zalo; bỏ code cứng Shopee ở phương thức thanh toán, đối soát, import; đối soát theo từng sàn | Chủ shop bán thêm TikTok Shop và chưa muốn thấy nền tảng mình không dùng. Mặc định giữ Shopee + Facebook để tài khoản cũ không đổi hành vi. Tắt chỉ lưu trữ kênh (không xoá dữ liệu) và chặn tạo đơn mới ở kênh tắt; phương thức payout luôn hợp lệ kể cả khi nền tảng tắt để thanh toán cũ không thành rác. Mẫu import TikTok dựng theo tên cột công khai, chưa kiểm với file thật nên ghi rõ trong mẫu. |

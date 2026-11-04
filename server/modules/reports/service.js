@@ -443,6 +443,15 @@ export function cashflow(filter) {
        WHERE ch.is_marketplace = 1 AND o.status = 'completed' AND o.net_amount - o.returned_amount - o.paid_amount > 0 ${shopFilter}`,
     )
     .get(...(f.shopIds || []));
+  // Tiền sàn treo tách theo từng sàn (Shopee, TikTok Shop…); cộng lại bằng marketplace_pending
+  const hangingByChannel = db()
+    .prepare(
+      `SELECT o.channel_id, ch.name AS channel_name, COALESCE(SUM(o.net_amount - o.returned_amount - o.paid_amount),0) AS pending, COUNT(*) AS orders
+       FROM orders o JOIN channels ch ON ch.id = o.channel_id
+       WHERE ch.is_marketplace = 1 AND o.status = 'completed' AND o.net_amount - o.returned_amount - o.paid_amount > 0 ${shopFilter}
+       GROUP BY o.channel_id ORDER BY pending DESC`,
+    )
+    .all(...(f.shopIds || []));
   const payable = db()
     .prepare(`SELECT COALESCE(SUM(total_amount - paid_amount),0) AS v, COUNT(*) AS n FROM purchases WHERE status = 'received' AND total_amount - paid_amount > 0`)
     .get();
@@ -459,6 +468,7 @@ export function cashflow(filter) {
     customer_receivable_orders: receivable.n,
     marketplace_pending: hanging.v,
     marketplace_pending_orders: hanging.n,
+    marketplace_by_channel: hangingByChannel,
     supplier_payable: payable.v,
     supplier_payable_purchases: payable.n,
   };

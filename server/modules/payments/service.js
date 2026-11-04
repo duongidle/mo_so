@@ -3,7 +3,11 @@ import { newId } from '../../lib/id.js';
 import { nowIso, businessDate, toIso } from '../../lib/time.js';
 import { notFound } from '../../lib/errors.js';
 
-export const PAYMENT_METHODS = ['cash', 'bank', 'shopee_payout', 'cod', 'card', 'ewallet', 'other'];
+import { paymentMethods } from '../../lib/platforms.js';
+
+/** Phương thức thanh toán hợp lệ: gốc + payout của các nền tảng (danh mục ở lib/platforms.js) */
+export { paymentMethods };
+export const PAYMENT_METHODS = paymentMethods();
 
 export function recordPayment({ direction, refType, refId, shopId, amount, method = 'cash', paidAt, note }, actor) {
   const id = newId('pay');

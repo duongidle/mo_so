@@ -13,7 +13,7 @@
 | M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng. Danh sách khách theo shop, xoá khỏi một shop, nhãn theo shop, xuất danh sách khách (Excel/CSV) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
 | M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Có trình sửa mẫu map cột (gợi ý cột từ file, ánh xạ trạng thái) |
-| M7 | Chi phí, đối soát Shopee, quỹ tiền | ✅ | ✅ | ✅ | Chi phí huỷ mềm, có phương thức trả; đối soát theo lô; quỹ tiền (chuyển quỹ, kiểm đếm, sổ quỹ) |
+| M7 | Chi phí, đối soát sàn (Shopee, TikTok Shop…), quỹ tiền | ✅ | ✅ | ✅ | Chi phí huỷ mềm, có phương thức trả; đối soát theo lô; quỹ tiền (chuyển quỹ, kiểm đếm, sổ quỹ) |
 | M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | `daily_stats` bằng trigger; báo cáo chi phí, tuổi nợ, thuế ước tính, xuất Excel, trang Cách đọc số liệu |
 | M9 | Loyalty & Campaign | ✅ | ✅ | ✅ | Một module `/loyalty`: hôm nay (nhắc mua lại, sinh nhật), gợi ý theo mệnh (shop phong thuỷ), hạng khách, mẫu tin nhắn (soạn + sao chép, không tự gửi). Tự động hoá: chưa làm |
 | M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
@@ -32,6 +32,16 @@
 - Thanh bên không còn kẹt mở sau khi click chuột: `:focus-within` đổi thành `:has(:focus-visible)` (luật riêng), thêm blur khi click chuột ở menu, nút ghim, đăng xuất.
 - Nền theme phong thuỷ sáng hơn một tông (`#F6F0E4` / `#FCF9F3`), tương phản đã kiểm, ghi vào nhật ký quyết định.
 - Thêm smoke e2e cho thanh bên tự thu gọn. Kế hoạch cả đợt: `docs/plans/2026-11-dot-nang-cap.md`.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 2: nền tảng bán hàng dạng plugin
+
+- Migration `019`: kênh `tiktok` (TikTok Shop, sàn) và `zalo` seed ở trạng thái tắt; mẫu `imp_tiktok` (mẫu khởi đầu, chưa kiểm với file thật); `tiktok_payout` vào quỹ ngân hàng; cài đặt `enabled_platforms` = Shopee + Facebook (tài khoản cũ giữ hành vi).
+- `server/lib/platforms.js`: danh mục nền tảng. `paymentMethods()` thay hằng cũ ở thanh toán, chi phí, quỹ. Import lấy phương thức tiền về theo kênh (`payoutMethodOf`).
+- Module `platforms`: `GET /platforms`, `POST /platforms/:id/enable|disable`; `POST/PATCH /channels` (kênh tuỳ chỉnh `ch_…`); `GET /channels?include_archived=1`. Tạo đơn ở kênh đã tắt bị chặn (`CHANNEL_DISABLED`).
+- Đối soát nhận `channel_id`; báo cáo dòng tiền thêm `marketplace_by_channel`.
+- Giao diện: Cài đặt → Nền tảng bán hàng; tab "Đối soát sàn" có bộ chọn sàn (ẩn khi không có sàn); Tổng quan tách tiền sàn treo theo sàn; Import mặc định theo nền tảng đầu tiên đang bật; session có `platforms`, `platformEnabled`, `marketplaces`, `allChannels`.
+- Test: `tests/platforms.test.js` (6 nhóm), `web/src/__tests__/platforms.test.jsx`. `npm test` 82/82, `npm run test:web` 96/96, build qua.
+- Còn mở: mẫu TikTok cần file xuất thật để kiểm tên cột và cột phí; chưa có `platformEnabled` test riêng ở SessionProvider.
 
 ### 2026-11-03 — Phiên 11: rà soát báo cáo và tài chính
 

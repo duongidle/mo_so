@@ -282,8 +282,9 @@ function resolveCustomer(input, actor) {
 
 export function createOrder(input, actor, { source = 'manual' } = {}) {
   const shop = getShop(input.shop_id);
-  const channel = db().prepare('SELECT id FROM channels WHERE id = ?').get(input.channel_id || 'direct');
+  const channel = db().prepare('SELECT id, name, archived_at FROM channels WHERE id = ?').get(input.channel_id || 'direct');
   if (!channel) throw badRequest('INVALID_CHANNEL', `Kênh ${input.channel_id} không tồn tại`);
+  if (channel.archived_at) throw badRequest('CHANNEL_DISABLED', `Kênh ${channel.name} đang tắt. Bật lại ở Cài đặt → Nền tảng bán hàng để tạo đơn mới (đơn cũ vẫn xem được).`);
   const warehouseId = input.warehouse_id || shop.default_warehouse_id;
   if (!warehouseId) throw badRequest('NO_WAREHOUSE', `Shop ${shop.name} chưa có kho mặc định`);
   if (input.external_id) {
