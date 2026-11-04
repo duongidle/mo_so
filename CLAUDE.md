@@ -192,6 +192,7 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
   - `cancelled` từ confirmed/shipping: **cộng lại kho**.
   - Trả hàng: phiếu trả (`order_returns`) cộng kho với giá vốn đã chụp, ghi giảm doanh thu.
   - Bán trực tiếp: nút "Bán ngay" đi thẳng `draft → completed` + thanh toán đủ trong 1 bước.
+  - Giao diện luôn gửi `customer_id` (khách mới được tạo qua `POST /customers` trước rồi mới chọn) nên đơn từ giao diện không tự sinh hồ sơ trùng. Đơn nháp sửa được qua `PATCH /orders/:id` (chỉ nháp).
 - **Tiền trên đơn**:
   - `subtotal` = Σ(đơn giá × SL) dòng
   - `discount_amount` (giảm giá đơn) + giảm giá từng dòng
@@ -354,8 +355,8 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 |---|---|
 | Đăng nhập / Đăng ký / Thiết lập lần đầu | đăng ký tài khoản; tạo shop (chọn ngành) → popup tạo kho → tạo sản phẩm đầu tiên |
 | Tổng quan | doanh thu hôm nay/tháng, LN gộp, đơn chờ xử lý, cảnh báo sức khoẻ, hàng sắp hết, khách cần nhắc |
-| Bán nhanh (POS) | tìm SKU, giỏ hàng, chọn khách (gõ SĐT), giảm giá, thu tiền, "Bán ngay" |
-| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; chi tiết đơn; đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
+| Bán nhanh (POS) | tìm SKU (có ảnh), giỏ hàng, chọn khách bằng bộ chọn gọn (`CustomerPicker`, luôn gửi `customer_id`), giảm giá, thu tiền, "Bán ngay"; tự phân bổ kho, chỉ báo khi lấy từ kho phụ |
+| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; **form tạo/sửa đơn** `/orders/new`, `/orders/:id/edit` (bố cục 7:5, một cột trên điện thoại, thanh hành động dính đáy: sản phẩm có ảnh/tồn theo kho, chọn khách có sẵn hoặc tạo nhanh, kênh, phí sàn chỉ với kênh sàn, tổng + lãi gộp ước tính, chia kho tay từ `allocation-preview`, "Lưu nháp / Xác nhận đơn / Bán xong"); chi tiết đơn (nút Sửa cho đơn nháp); đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
 | Import đơn | chọn file → chọn mẫu map cột → xem thử → xác nhận → kết quả |
 | Sản phẩm | danh sách theo shop, chi tiết sản phẩm + biến thể, niêm yết theo shop, đồng bộ sang shop khác |
 | Kho | tồn theo kho, lịch sử biến động, kiểm kê, chuyển kho |

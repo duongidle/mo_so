@@ -27,6 +27,16 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, Phase 5: form tạo đơn mới + chọn khách có sẵn
+
+- `web/src/components/CustomerPicker.jsx` (dùng chung, có chế độ `compact` cho POS): tìm theo tên/SĐT/mã (khách của shop trước, "khách ở shop khác" sau), mỗi dòng có hạng, số đơn, đơn gần nhất; phím mũi tên/Enter/Esc; thẻ khách đã chọn (Đổi), hạng + % giảm gợi ý có nút áp dụng; "+ Khách mới" tạo qua `POST /customers` rồi chọn, SĐT trùng khách có sẵn thì chặn tạo và gợi ý chọn khách đó. Luôn trả khách có id.
+- `web/src/pages/OrderForm.jsx` ở `/orders/new` và `/orders/:id/edit` (đơn nháp; đơn khác chuyển về chi tiết): bố cục 7:5, một cột trên điện thoại, thanh Lưu nháp / Xác nhận đơn / Bán xong dính đáy (trên thanh tab). Chia kho tay theo từng dòng từ `allocation-preview`, chặn lưu khi tổng chia lệch số lượng. Phí sàn và ship shop chịu chỉ hiện với kênh sàn.
+- `web/src/lib/orderForm.js`: hàm thuần (tính tiền theo công thức server, kiểm phân bổ, payload, tiền thu theo hành động).
+- `Orders.jsx`: "Đơn mới" trỏ `/orders/new`; chi tiết đơn nháp có nút Sửa. `Pos.jsx`: bộ chọn khách gọn, ảnh sản phẩm trong giỏ, gửi `customer_id`.
+- Sửa lỗi: khoá `Idempotency-Key` bị lưu cả với phản hồi lỗi 4xx nên bấm lại sau khi sửa dữ liệu vẫn nhận lỗi cũ. POS và form mới đổi khoá sau mỗi lần thất bại.
+- Test: web 149 (thêm customer-picker, order-form, order-form-lib), API 111, e2e thêm 1 ca (tự bỏ qua khi thiếu Playwright). Không đổi server, không migration.
+- Chưa làm: kiểm tay trên iPhone thật, kiểm bằng mắt 4 theme (chỉ dùng biến CSS nên theo theme tự động).
+
 ### 2026-11-04 — Đợt nâng cấp, Phase 4: một đơn lấy hàng từ nhiều kho
 
 - Migration `022_multi_warehouse.sql`: `shop_warehouses` (seed từ kho mặc định, ưu tiên 1), `order_line_allocations`, `order_lines.cogs_amount` và `planned_allocations`. Backfill đơn cũ: phân bổ từ `orders.warehouse_id` + `unit_cost`/`order_line_components`; đơn huỷ sau khi từng xác nhận có phân bổ đã hoàn hết; tổng giá vốn không đổi (có test).

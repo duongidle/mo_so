@@ -36,7 +36,7 @@ export function OrderList() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/pos" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
+      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/orders/new" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
       <Chips options={TABS} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
       <div className="row wrap">
         <SearchBox value={text} onChange={setText} placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" />
@@ -47,7 +47,7 @@ export function OrderList() {
         {(res) => {
           const rows = [...res.data, ...extra];
           const next = extra.length || cursor ? cursor : res.next_cursor;
-          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/pos" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
+          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/orders/new" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
           return (
             <Card flat>
               <div className="table-wrap"><table className="stackable">
@@ -111,6 +111,7 @@ export function OrderDetail() {
               {o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
               <div className="row wrap no-print">
                 {(NEXT[o.status] || []).map(([st, label]) => <button key={st} className={`btn ${st === NEXT[o.status][0][0] ? 'primary' : ''}`} disabled={act.busy} onClick={() => doStatusForce(st)}>{label}</button>)}
+                {o.status === 'draft' && <Link className="btn" to={`/orders/${o.id}/edit`}>Sửa</Link>}
                 {['draft', 'confirmed', 'shipping'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
                 {o.amount_due > 0 && !['cancelled', 'draft'].includes(o.status) && <button className="btn" onClick={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}>Thu tiền ({vnd(o.amount_due)})</button>}
                 {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm({ lines: {}, reason: '', refund: 0, method: 'cash' }); setModal('return'); }}>Trả hàng</button>}

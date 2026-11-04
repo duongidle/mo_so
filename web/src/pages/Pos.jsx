@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Card, Field, ErrorBox, useAction, useDebounced, Empty } from '../components/ui.jsx';
+import CustomerPicker from '../components/CustomerPicker.jsx';
 import { vnd, num, METHODS } from '../lib.js';
 
 const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : `k${Date.now()}${Math.random()}`);
@@ -15,8 +16,7 @@ export default function Pos() {
   const [results, setResults] = useState([]);
   const [cart, setCart] = useState([]);
   const [channel, setChannel] = useState('direct');
-  const [cust, setCust] = useState({ phone: '', name: '' });
-  const [tier, setTier] = useState(null);
+  const [cust, setCust] = useState(null);
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [shipping, setShipping] = useState(0);
   const [method, setMethod] = useState('cash');
@@ -42,44 +42,36 @@ export default function Pos() {
     setCart((c) => {
       const i = c.findIndex((l) => l.id === v.id);
       if (i >= 0) return c.map((l, j) => (j === i ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { id: v.id, sku: v.sku, name: v.variant_name ? `${v.product_name} — ${v.variant_name}` : v.product_name, price: v.price, qty: 1, discount: 0, on_hand: v.on_hand }];
+      return [...c, { id: v.id, sku: v.sku, name: v.variant_name ? `${v.product_name} — ${v.variant_name}` : v.product_name, price: v.price, qty: 1, discount: 0, on_hand: v.on_hand, image_url: v.image_url }];
     });
     setQ('');
     searchRef.current?.focus();
   };
   const upd = (id, patch) => setCart((c) => c.map((l) => (l.id === id ? { ...l, ...patch } : l)).filter((l) => l.qty > 0));
 
-  const lookup = async () => {
-    setTier(null);
-    if (cust.phone.replace(/\D/g, '').length < 9) return;
-    try {
-      const r = await api.get('/customers/lookup', { phone: cust.phone });
-      if (r.data) {
-        setCust((c) => ({ ...c, name: c.name || r.data.name }));
-        const l = await api.get(`/loyalty/customers/${r.data.id}`);
-        setTier({ ...l.data, name: r.data.name });
-      }
-    } catch { /* tra cứu lỗi không chặn bán hàng */ }
-  };
-
   const submit = (status) =>
     run(async () => {
       const payload = {
         shop_id: shop.id,
         channel_id: channel,
-        customer: cust.phone || cust.name ? { phone: cust.phone || null, name: cust.name || null } : null,
+        customer_id: cust?.id || null,
         lines: cart.map((l) => ({ variant_id: l.id, qty: l.qty, unit_price: l.price, discount_amount: l.discount })),
         discount_amount: orderDiscount,
         shipping_fee: shipping,
         status,
         payments: status === 'completed' && total > 0 ? [{ amount: total, method }] : [],
       };
-      const r = await api.post('/orders?source=pos', payload, { 'Idempotency-Key': key.current });
-      setDone(r.data);
+      try {
+        const r = await api.post('/orders?source=pos', payload, { 'Idempotency-Key': key.current });
+        setDone(r.data);
+      } catch (e) {
+        key.current = newKey(); // lỗi 4xx được lưu theo khoá; lần thử lại phải dùng khoá mới
+        throw e;
+      }
     });
 
   const reset = () => {
-    setCart([]); setCust({ phone: '', name: '' }); setTier(null); setOrderDiscount(0); setShipping(0); setDone(null); clear();
+    setCart([]); setCust(null); setOrderDiscount(0); setShipping(0); setDone(null); clear();
     key.current = newKey();
   };
 
@@ -100,8 +92,6 @@ export default function Pos() {
       </div>
     );
   }
-
-  const suggested = tier ? Math.round((sub * tier.tier.discount_pct) / 100) : 0;
 
   return (
     <div className="page">
@@ -128,7 +118,7 @@ export default function Pos() {
             {cart.length === 0 && <span className="muted">Chọn sản phẩm bên trái để thêm vào giỏ.</span>}
             {cart.map((l) => (
               <div key={l.id} className="stack" style={{ gap: 4, borderBottom: '1px solid var(--hairline)', paddingBottom: 8 }}>
-                <div className="row between"><span>{l.name}</span><b className="num">{vnd(l.qty * l.price - l.discount)}</b></div>
+                <div className="row between"><span className="row" style={{ gap: 10 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><span>{l.name}</span></span><b className="num">{vnd(l.qty * l.price - l.discount)}</b></div>
                 <div className="row between">
                   <span className="qty">
                     <button onClick={() => upd(l.id, { qty: l.qty - 1 })} aria-label="Giảm">−</button><span>{l.qty}</span><button onClick={() => upd(l.id, { qty: l.qty + 1 })} aria-label="Tăng">+</button>
@@ -143,15 +133,7 @@ export default function Pos() {
 
             {cart.length > 0 && (
               <>
-                <div className="grid cols-2">
-                  <Field label="SĐT khách"><input inputMode="tel" value={cust.phone} onChange={(e) => setCust({ ...cust, phone: e.target.value })} onBlur={lookup} /></Field>
-                  <Field label="Tên khách"><input value={cust.name} onChange={(e) => setCust({ ...cust, name: e.target.value })} /></Field>
-                </div>
-                {tier && (
-                  <div className="alert warn small">
-                    {tier.name}: hạng <b>{tier.tier.name}</b>{tier.tier.discount_pct > 0 && <> — gợi ý giảm {tier.tier.discount_pct}% ({vnd(suggested)}) <button className="btn sm" onClick={() => setOrderDiscount(suggested)}>Áp dụng</button></>}
-                  </div>
-                )}
+                <CustomerPicker compact shopId={shop.id} value={cust} onChange={setCust} subtotal={sub} onApplyDiscount={setOrderDiscount} />
                 <div className="grid cols-2">
                   <Field label="Giảm giá đơn"><input type="number" inputMode="numeric" min="0" value={orderDiscount} onChange={(e) => setOrderDiscount(Math.max(0, Number(e.target.value) || 0))} /></Field>
                   <Field label="Phí ship khách trả"><input type="number" inputMode="numeric" min="0" value={shipping} onChange={(e) => setShipping(Math.max(0, Number(e.target.value) || 0))} /></Field>
