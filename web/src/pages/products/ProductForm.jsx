@@ -5,7 +5,7 @@ import { ErrorBox, Field, Modal, useAction, useAsync } from '../../components/ui
 import ImageGallery from '../../components/ImageGallery.jsx';
 import ProductThumb from '../../components/ProductThumb.jsx';
 import FieldInput from '../../components/FieldInput.jsx';
-import { applyToAll, cleanOptions, mergeRows, rebaseSkus, skuBase } from '../../lib/matrix.js';
+import { applyToAll, assignCombo, cleanOptions, comboChoices, effectiveRenames, hasDuplicateCombos, noteAttrRename, noteValueRename, rebaseSkus, reconcile, skuBase, combinations } from '../../lib/matrix.js';
 import { flattenTree, indent } from '../../lib/categories.js';
 
 const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -13,19 +13,21 @@ const blankRow = () => ({ sku: '', default_price: 0, opening_cost: '', opening_q
 
 /** Dữ liệu ban đầu của form từ một sản phẩm đã có (GET /products/:id) hoặc sản phẩm trống */
 export function initialForm(p, shopId, isAll) {
-  if (!p) return { name: '', category_id: '', brand: '', unit: 'cái', description: '', consumption_days: '', images: [], shop_ids: isAll ? [] : [shopId], mode: 'single', options: [{ name: '', values: [] }], rows: [blankRow()], removed: [], opening_warehouse_id: '', custom: {} };
+  if (!p) return { name: '', category_id: '', brand: '', unit: 'cái', description: '', consumption_days: '', images: [], shop_ids: isAll ? [] : [shopId], mode: 'single', options: [{ name: '', values: [] }], rows: [blankRow()], removed: [], opening_warehouse_id: '', custom: {}, renames: [] };
   const hasOptions = (p.options || []).length > 0;
   // Ma trận: chỉ các biến thể còn khớp thuộc tính hiện tại (biến thể đã lưu trữ do bỏ giá trị không hiện lại)
   const live = hasOptions ? p.variants.filter((v) => p.options.every((o) => o.values.includes(v.option_values?.[o.name]))) : p.variants;
-  return {
+  const form = {
     id: p.id, existing: true, name: p.name, category_id: p.category_id || '', brand: p.brand || '', unit: p.unit || 'cái', description: p.description || '',
     consumption_days: p.consumption_days ?? '', images: (p.images || []).map((i) => ({ id: i.id, url: i.url })),
     shop_ids: [...new Set(p.variants.flatMap((v) => (v.listings || []).map((l) => l.shop_id)))],
     mode: hasOptions ? 'matrix' : p.variants.length > 1 ? 'list' : 'single',
     options: hasOptions ? p.options : [{ name: '', values: [] }],
     rows: live.map((v) => ({ id: v.id, sku: v.sku, name: v.name || '', default_price: v.default_price, min_stock: v.min_stock, barcode: v.barcode || '', option_values: v.option_values || {}, image_id: v.image_id || null, active: !v.archived_at, kind: v.kind })),
-    removed: [], opening_warehouse_id: '', custom: {},
+    removed: [], opening_warehouse_id: '', custom: {}, renames: [],
   };
+  // Bản gốc để quay lại khi bỏ tick "Có biến thể" (chỉ có nghĩa với sản phẩm chưa có thuộc tính)
+  return { ...form, origMode: form.mode, origRows: form.rows, origOptions: form.options };
 }
 
 /** Dựng nội dung gửi lên API từ form. Tách riêng để test. */
@@ -48,6 +50,7 @@ export function buildPayload(f, { customShopId } = {}) {
     images: f.images.map(({ id }) => ({ id })),
     variants: [...rows.map(variant), ...f.removed.filter((r) => r.id).map((r) => ({ id: r.id, remove: true }))],
     ...(f.mode === 'matrix' ? { options: cleanOptions(f.options) } : {}),
+    ...(f.mode === 'matrix' && f.existing && effectiveRenames(f.renames).length ? { option_renames: effectiveRenames(f.renames) } : {}),
   };
   if (f.opening_warehouse_id) payload.opening_warehouse_id = f.opening_warehouse_id;
   if (Object.keys(f.custom).length) (payload.custom = f.custom, (payload.custom_shop_id = customShopId));
@@ -72,15 +75,43 @@ export default function ProductForm({ init, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base]);
 
-  const setOptions = (options) => {
-    const merged = mergeRows(f.rows, options, { base });
-    set({ options, rows: merged.rows, removed: [...f.removed.filter((r) => !merged.rows.some((n) => n.id === r.id)), ...merged.removed].filter((r, i, a) => a.findIndex((x) => x.id === r.id && x.sku === r.sku) === i) });
+  const ctx = { base };
+  const apply = (options, rows, removedPool, extra = {}) => {
+    const r = reconcile([...rows, ...removedPool], options, ctx);
+    set({ options, rows: r.rows, removed: r.removed.filter((x) => x.id), ...extra });
+  };
+  const setOptions = (options) => apply(options, f.rows, f.removed);
+  const renameAttr = (i, name) => {
+    const old = f.options[i].name;
+    const n = name.trim();
+    if (!n || n === old || f.options.some((o, j) => j !== i && o.name.toLowerCase() === n.toLowerCase())) return;
+    const re = (r) => ({ ...r, option_values: Object.fromEntries(Object.entries(r.option_values || {}).map(([k, v]) => [k === old ? n : k, v])) });
+    apply(f.options.map((o, j) => (j === i ? { ...o, name: n } : o)), f.rows.map(re), f.removed.map(re), f.existing ? { renames: noteAttrRename(f.renames, old, n) } : {});
+  };
+  const renameValue = (i, oldV, newV) => {
+    const n = newV.trim();
+    const o = f.options[i];
+    if (!n || n === oldV || o.values.some((v) => v.toLowerCase() === n.toLowerCase())) return;
+    const re = (r) => (r.option_values?.[o.name] === oldV ? { ...r, option_values: { ...r.option_values, [o.name]: n } } : r);
+    apply(f.options.map((x, j) => (j === i ? { ...x, values: x.values.map((v) => (v === oldV ? n : v)) } : x)), f.rows.map(re), f.removed.map(re), f.existing ? { renames: noteValueRename(f.renames, o.name, oldV, n) } : {});
+  };
+  const removeAttr = (i) => {
+    const name = f.options[i].name;
+    const strip = (r) => ({ ...r, option_values: Object.fromEntries(Object.entries(r.option_values || {}).filter(([k]) => k !== name)) });
+    apply(f.options.filter((_, j) => j !== i), f.rows.map(strip), f.removed.map(strip));
+  };
+  const pickCombo = (i, ov) => {
+    const r = assignCombo(f.rows, f.options, i, ov, ctx);
+    set({ rows: r.rows, removed: [...f.removed, ...r.removed.filter((x) => x.id)] });
   };
   const switchMode = (matrix) => {
-    if (matrix) {
-      const options = f.options.some((o) => o.name && o.values.length) ? f.options : [{ name: 'Mùi', values: [] }];
-      set({ mode: 'matrix', options, rows: [], removed: f.rows.filter((r) => r.id) });
-    } else set({ mode: 'single', rows: [{ ...blankRow(), sku: base }], removed: [] });
+    if (!f.existing) {
+      if (matrix) set({ mode: 'matrix', options: f.options.some((o) => o.name && o.values.length) ? f.options : [{ name: 'Mùi', values: [] }], rows: [], removed: [] });
+      else set({ mode: 'single', rows: [{ ...blankRow(), sku: base }], removed: [] });
+    } else if (matrix) {
+      // Giữ nguyên các biến thể đang có: chúng sẽ được gán vào một tổ hợp khi nhập giá trị thuộc tính
+      set({ mode: 'matrix', options: [{ name: 'Mùi', values: [] }], removed: [], renames: [] });
+    } else set({ mode: f.origMode, rows: f.origRows, options: f.origOptions, removed: [], renames: [] });
   };
   const setRow = (i, patch) => set({ rows: f.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
   const hasWarehouseChoice = warehouses.length > 1;
@@ -94,7 +125,7 @@ export default function ProductForm({ init, onClose, onSaved }) {
   });
 
   return (
-    <Modal wide title={f.existing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'} onClose={onClose} footer={<button className="btn primary" disabled={busy || !f.name.trim()} onClick={save}>Lưu</button>}>
+    <Modal wide title={f.existing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'} onClose={onClose} footer={<button className="btn primary" disabled={busy || !f.name.trim() || (f.mode === 'matrix' && (!combinations(f.options).length || hasDuplicateCombos(f.rows, f.options)))} onClick={save}>Lưu</button>}>
       <Field label="Tên sản phẩm"><input value={f.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></Field>
       <div className="grid cols-2">
         <Field label="Danh mục">
@@ -111,7 +142,7 @@ export default function ProductForm({ init, onClose, onSaved }) {
       <div><div className="small muted" style={{ marginBottom: 6 }}>Ảnh sản phẩm</div><ImageGallery images={f.images} onChange={(images) => set({ images })} /></div>
       <ProductFields productId={f.id} shopId={fieldShop} value={f.custom} onChange={(custom) => set({ custom })} />
 
-      {!f.existing && (
+      {(!f.existing || f.origMode !== 'matrix') && (
         <label className="check"><input type="checkbox" checked={f.mode === 'matrix'} onChange={(e) => switchMode(e.target.checked)} />Có biến thể (mùi, size, màu…)</label>
       )}
 
@@ -147,7 +178,7 @@ export default function ProductForm({ init, onClose, onSaved }) {
         </div>
       )}
 
-      {f.mode === 'matrix' && <Matrix f={f} set={set} setOptions={setOptions} setRow={setRow} images={f.images} existing={f.existing} />}
+      {f.mode === 'matrix' && <Matrix f={f} set={set} setOptions={setOptions} setRow={setRow} images={f.images} renameAttr={renameAttr} renameValue={renameValue} removeAttr={removeAttr} pickCombo={pickCombo} />}
 
       {needsWarehouse && hasWarehouseChoice && f.rows.some((r) => !r.id && Number(r.opening_qty) > 0) && (
         <Field label="Kho nhập tồn đầu kỳ">
@@ -185,8 +216,17 @@ function ProductFields({ productId, shopId, value, onChange }) {
   );
 }
 
-function TagInput({ values, onChange, label }) {
+/** Ô nhập có sửa khi rời ô / Enter: tránh đổi nhãn từng phím (giữa chừng có thể rỗng hoặc trùng) */
+function CommitInput({ value, onCommit, ...rest }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const done = () => { if (text.trim() && text.trim() !== value) onCommit(text); else setText(value); };
+  return <input {...rest} value={text} onChange={(e) => setText(e.target.value)} onBlur={done} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), e.currentTarget.blur())} />;
+}
+
+function TagInput({ values, onChange, onRename, label }) {
   const [text, setText] = useState('');
+  const [editing, setEditing] = useState(null);
   const commit = () => {
     const parts = text.split(',').map((s) => s.trim()).filter(Boolean);
     if (parts.length) onChange([...values, ...parts.filter((p) => !values.some((v) => v.toLowerCase() === p.toLowerCase()))]);
@@ -194,31 +234,46 @@ function TagInput({ values, onChange, label }) {
   };
   return (
     <div className="tag-input">
-      {values.map((v) => <span key={v} className="tag">{v}<button type="button" aria-label={`Bỏ ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>✕</button></span>)}
+      {values.map((v) => (
+        <span key={v} className="tag">
+          {editing === v
+            ? <CommitInput value={v} aria-label={`Đổi tên giá trị ${v}`} autoFocus style={{ minWidth: 80, minHeight: 28, padding: '0 6px' }} onCommit={(n) => { setEditing(null); onRename(v, n); }} />
+            : <span role="button" tabIndex={0} title="Bấm để đổi tên" onClick={() => setEditing(v)} onKeyDown={(e) => e.key === 'Enter' && setEditing(v)}>{v}</span>}
+          <button type="button" aria-label={`Bỏ ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>✕</button>
+        </span>
+      ))}
       <input value={text} aria-label={label} placeholder={values.length ? '' : 'Nhập giá trị rồi bấm Enter'} onChange={(e) => setText(e.target.value)} onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(); } else if (e.key === 'Backspace' && !text && values.length) onChange(values.slice(0, -1)); }} />
     </div>
   );
 }
 
-function Matrix({ f, set, setOptions, setRow, images, existing }) {
+function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, removeAttr, pickCombo }) {
   const [all, setAll] = useState({ default_price: '', opening_cost: '', opening_qty: '' });
   const upd = (i, patch) => setOptions(f.options.map((o, j) => (j === i ? { ...o, ...patch } : o)));
-  // Sản phẩm đã có: không đổi tên/số thuộc tính (các biến thể cũ sẽ mất đúng tổ hợp), chỉ thêm/bớt giá trị
-  const lockedStructure = existing && f.rows.some((r) => r.id);
+  const choices = comboChoices(f.options);
+  const hasExisting = f.rows.some((r) => r.id);
+  const dup = hasDuplicateCombos(f.rows, f.options);
   return (
     <div className="stack">
       <h3>Thuộc tính</h3>
       {f.options.map((o, i) => (
         <div key={i} className="grid cols-2" style={{ alignItems: 'end' }}>
-          <Field label={`Thuộc tính ${i + 1}`}><input value={o.name} disabled={lockedStructure} placeholder="Mùi, Size, Màu…" onChange={(e) => upd(i, { name: e.target.value })} /></Field>
-          <Field label="Giá trị"><TagInput values={o.values} label={`Giá trị của ${o.name || 'thuộc tính'}`} onChange={(values) => upd(i, { values })} /></Field>
+          <Field label={`Thuộc tính ${i + 1}`}>
+            <div className="row" style={{ gap: 6 }}>
+              <CommitInput className="grow" value={o.name} placeholder="Mùi, Size, Màu…" aria-label={`Tên thuộc tính ${i + 1}`} onCommit={(n) => (o.name ? renameAttr(i, n) : upd(i, { name: n.trim() }))} />
+              {f.options.length > 1 && <button type="button" className="btn sm" aria-label={`Xoá thuộc tính ${o.name || i + 1}`} onClick={() => removeAttr(i)}>✕</button>}
+            </div>
+          </Field>
+          <Field label="Giá trị (bấm vào thẻ để đổi tên)"><TagInput values={o.values} label={`Giá trị của ${o.name || 'thuộc tính'}`} onChange={(values) => upd(i, { values })} onRename={(a, b) => renameValue(i, a, b)} /></Field>
         </div>
       ))}
-      {!lockedStructure && f.options.length < 3 && <button type="button" className="btn sm" onClick={() => set({ options: [...f.options, { name: '', values: [] }] })}>+ Thuộc tính</button>}
+      {f.options.length < 3 && <button type="button" className="btn sm" onClick={() => set({ options: [...f.options, { name: '', values: [] }] })}>+ Thuộc tính</button>}
+      {hasExisting && choices.length > 0 && <p className="small muted" style={{ margin: 0 }}>Biến thể đã có giữ nguyên SKU, tồn kho và lịch sử. Ở cột Biến thể, chọn mỗi biến thể đã có ứng với tổ hợp nào.</p>}
+      {dup && <div className="alert err" role="alert">Hai biến thể đang cùng một tổ hợp. Chọn tổ hợp khác cho một trong hai.</div>}
       {f.removed.length > 0 && <div className="alert">Bỏ giá trị sẽ ngừng bán {f.removed.length} biến thể: có lịch sử kho/đơn thì lưu trữ, chưa dùng thì xoá hẳn.</div>}
-      {f.rows.length === 0 && <span className="small muted">Nhập ít nhất một thuộc tính và một giá trị để sinh bảng biến thể.</span>}
-      {f.rows.length > 0 && (
+      {choices.length === 0 && <span className="small muted">Nhập ít nhất một thuộc tính và một giá trị để sinh bảng biến thể.</span>}
+      {choices.length > 0 && (
         <div className="table-wrap"><table className="matrix">
           <thead><tr><th>Ảnh</th><th>Biến thể</th><th>SKU</th><th className="num">Giá bán</th><th className="num">Giá vốn</th><th className="num">Tồn đầu kỳ</th><th>Mã vạch</th><th>Bán</th></tr></thead>
           <tbody>
@@ -229,8 +284,7 @@ function Matrix({ f, set, setOptions, setRow, images, existing }) {
               <td><input type="number" min="0" aria-label="Tồn đầu kỳ cho tất cả" value={all.opening_qty} onChange={(e) => setAll({ ...all, opening_qty: e.target.value })} /></td>
               <td colSpan={2}><button type="button" className="btn sm" onClick={() => {
                 // Tồn đầu kỳ và giá vốn chỉ áp cho dòng mới (dòng đã có không ghi lại tồn đầu kỳ)
-                const patch = { ...all };
-                set({ rows: f.rows.map((r) => (r.id ? { ...r, ...(patch.default_price !== '' ? { default_price: patch.default_price } : {}) } : applyToAll([r], patch)[0])) });
+                set({ rows: f.rows.map((r) => (r.id ? { ...r, ...(all.default_price !== '' ? { default_price: all.default_price } : {}) } : applyToAll([r], all)[0])) });
               }}>Áp dụng</button></td>
             </tr>
             {f.rows.map((r, i) => (
@@ -241,7 +295,11 @@ function Matrix({ f, set, setOptions, setRow, images, existing }) {
                   </select>
                   <ProductThumb src={images.find((im) => im.id === r.image_id)?.url} name={r.sku} size={28} />
                 </td>
-                <td>{Object.values(r.option_values).join(' / ')}</td>
+                <td>{r.id
+                  ? <select aria-label={`Biến thể hiện có là ${r.sku}`} value={choices.find((c) => c.label === Object.values(r.option_values).join(' / '))?.key ?? ''} onChange={(e) => pickCombo(i, choices.find((c) => c.key === e.target.value).ov)} style={{ minWidth: 130 }}>
+                    {choices.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                  : Object.values(r.option_values).join(' / ')}</td>
                 <td><input className="sku" aria-label={`SKU ${Object.values(r.option_values).join(' ')}`} value={r.sku} onChange={(e) => setRow(i, { sku: e.target.value.toUpperCase(), autoSku: false })} /></td>
                 <td><input type="number" min="0" aria-label={`Giá bán ${r.sku}`} value={r.default_price} onChange={(e) => setRow(i, { default_price: e.target.value })} /></td>
                 <td>{r.id ? <span className="muted small">đã có</span> : <input type="number" min="0" aria-label={`Giá vốn ${r.sku}`} value={r.opening_cost} onChange={(e) => setRow(i, { opening_cost: e.target.value })} />}</td>

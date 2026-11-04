@@ -124,3 +124,32 @@ describe('ComboForm', () => {
     expect(api.post.mock.calls[0][1].variants).toEqual([{ sku: 'CB2', kind: 'bundle', default_price: 0, components: [{ variant_id: 'var_a', qty: 2 }] }]);
   });
 });
+
+describe('chuyển sản phẩm một biến thể sang ma trận', () => {
+  const single = { id: 'prd_1', name: 'Tinh dầu', unit: 'chai', options: [], images: [], variants: [{ id: 'var_1', sku: 'TD-1', default_price: 99000, min_stock: 0, option_values: null, listings: [{ shop_id: 'shp_1' }] }] };
+  it('tick "Có biến thể", nhập giá trị: biến thể cũ giữ id/SKU và gán vào tổ hợp được chọn; dòng mới là biến thể mới', async () => {
+    render(<ProductForm init={initialForm(single, 'shp_1', false)} onClose={() => {}} onSaved={() => {}} />);
+    fireEvent.click(screen.getByLabelText(/Có biến thể/));
+    const vals = screen.getByLabelText('Giá trị của Mùi');
+    for (const v of ['Cam', 'Chanh']) { fireEvent.change(vals, { target: { value: v } }); fireEvent.keyDown(vals, { key: 'Enter' }); }
+    const pick = await screen.findByLabelText('Biến thể hiện có là TD-1');
+    expect(pick).toHaveProperty('value', 'Cam');
+    fireEvent.change(pick, { target: { value: 'Chanh' } });
+    expect(await screen.findByLabelText('SKU Cam')).toBeTruthy(); // tổ hợp bị bỏ trống sinh dòng mới
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalled());
+    const [path, body] = api.patch.mock.calls[0];
+    expect(path).toBe('/products/prd_1');
+    expect(body.options).toEqual([{ name: 'Mùi', values: ['Cam', 'Chanh'] }]);
+    expect(body.variants.find((v) => v.id === 'var_1')).toMatchObject({ sku: 'TD-1', option_values: { Mùi: 'Chanh' }, default_price: 99000 });
+    const fresh = body.variants.find((v) => !v.id);
+    expect(fresh).toMatchObject({ sku: 'TINHDAU-CAM', option_values: { Mùi: 'Cam' } });
+    expect(body.option_renames).toBeUndefined();
+  });
+  it('bỏ tick quay lại sản phẩm thường như cũ', async () => {
+    render(<ProductForm init={initialForm(single, 'shp_1', false)} onClose={() => {}} onSaved={() => {}} />);
+    fireEvent.click(screen.getByLabelText(/Có biến thể/));
+    fireEvent.click(screen.getByLabelText(/Có biến thể/));
+    expect(screen.getByLabelText('SKU')).toHaveProperty('value', 'TD-1');
+  });
+});
