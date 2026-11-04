@@ -1,3 +1,4 @@
+import ProductThumb from '../components/ProductThumb.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
@@ -112,7 +113,7 @@ export default function Pos() {
           <div className="card flat">
             {results.length === 0 ? <Empty>{q ? 'Không tìm thấy trong shop này.' : 'Shop chưa niêm yết sản phẩm nào.'}</Empty> : results.map((v) => (
               <div key={v.id} className="pick" onClick={() => add(v)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && add(v)}>
-                <div className="grow"><div>{v.product_name}{v.variant_name ? ` — ${v.variant_name}` : ''}</div><div className="small muted">{v.sku} · {v.kind === 'bundle' ? 'combo, bán được' : 'tồn'} {num(v.on_hand)}</div></div>
+                <ProductThumb src={v.image_url} name={v.product_name} size={44} /><div className="grow"><div>{v.product_name}{v.variant_name ? ` — ${v.variant_name}` : ''}</div><div className="small muted">{v.sku} · {v.kind === 'bundle' ? 'combo, bán được' : 'tồn'} {num(v.on_hand)}</div></div>
                 <b className="num">{vnd(v.price)}</b>
               </div>
             ))}

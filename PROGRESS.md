@@ -27,6 +27,14 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, Phase 3: sản phẩm (danh mục, ảnh, ma trận, combo, ngũ hành theo ngành)
+
+- Migration `020` (`product_images`, `variants.image_id`) và `021` (`products.options`, `variants.option_values`, chỉ mục khoá trường sản phẩm theo shop, tạo trường `ngu_hanh` cho shop phong thuỷ có sẵn và chép `products.elements` sang giá trị trường).
+- Server: `server/lib/categories.js` (con cháu dùng chung cho sản phẩm, `/variants`, `/stock`, báo cáo); `CATEGORY_CYCLE`, `CATEGORY_IN_USE`, `CATEGORY_HAS_CHILDREN`, `GET /categories?tree=1`; `createProduct`/`updateProduct` nhận `options`, `option_values`, `opening_*`, `active`, `remove`, `images`, `custom`; SKU trùng báo đúng dòng; `PUT /products/:id/images`; `POST /uploads/images`, `GET /files/images/:id`; backup chép ảnh; ngũ hành chuyển sang trường sản phẩm theo shop (báo cáo + gợi ý theo mệnh đọc theo shop), `productInput` bỏ `elements`.
+- Giao diện: `ProductForm` mới (`web/src/pages/products/`), `ComboForm`, tab Danh mục, lọc loại/danh mục, `ProductThumb` ở danh sách sản phẩm, POS, Kho, dòng đơn; Kho có lọc danh mục; `web/src/lib/{matrix,image,categories}.js`.
+- Test: `catalog_matrix`, `uploads`, `categories` (mới); sửa `finance_integrity`, `loyalty`, `reports`, `finance`, `business` cho ngũ hành mới; vitest `matrix.test.js`, `product-form.test.jsx`.
+- Còn mở: ảnh tải lên chưa gắn sản phẩm chưa có việc dọn; chưa thử thu nhỏ ảnh trên trình duyệt thật (canvas WebP chỉ chạy được trong trình duyệt, vitest không phủ `resizeImage`); form chưa cho đổi sản phẩm một biến thể đã tạo sang ma trận; thứ tự danh mục chỉ đổi bằng nút lên/xuống.
+
 ### 2026-11-04 — Đợt nâng cấp, phase 1: sửa nhanh giao diện
 
 - Thanh bên không còn kẹt mở sau khi click chuột: `:focus-within` đổi thành `:has(:focus-visible)` (luật riêng), thêm blur khi click chuột ở menu, nút ghim, đăng xuất.

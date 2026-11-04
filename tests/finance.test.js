@@ -222,7 +222,8 @@ test('Lọc danh mục sản phẩm (kể cả danh mục con) ở báo cáo s�
   const { api, nh, wh } = await base();
   const parent = (await api.post('/categories', { name: 'Hương' })).body.data;
   const child = (await api.post('/categories', { name: 'Hương xe', parent_id: parent.id })).body.data;
-  const mk = async (name, sku, cat, el) => (await api.post('/products', { name, category_id: cat, elements: el, variants: [{ sku, default_price: 100000 }], shop_ids: [nh.id] })).body.data.variants[0];
+  await api.patch(`/shops/${nh.id}`, { industry: 'phong_thuy' });
+  const mk = async (name, sku, cat, el) => (await api.post('/products', { name, category_id: cat, custom: { ngu_hanh: el }, custom_shop_id: nh.id, variants: [{ sku, default_price: 100000 }], shop_ids: [nh.id] })).body.data.variants[0];
   const c1 = await mk('Trong con', 'C1', child.id, ['Mộc']);
   const c2 = await mk('Ngoài', 'C2', null, ['Kim']);
   await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: c1.id, qty: 5, unit_cost: 10000 }, { variant_id: c2.id, qty: 5, unit_cost: 10000 }] });
