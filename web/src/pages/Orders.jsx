@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, SearchBox, StatusBadge, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, PageHeader, SearchBox, StatusBadge, Toolbar, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
 import ExportOrders from '../components/ExportOrders.jsx';
@@ -13,6 +13,7 @@ import MoneyInput from '../components/MoneyInput.jsx';
 import ReturnModal, { emptyReturnForm } from './ReturnModal.jsx';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
+const PAY_CLASS = { paid: 'st-completed', partial: 'st-returned', unpaid: 'st-draft', refunded: 'st-returned' };
 
 export function OrderList() {
   const { shopId, allChannels: channels } = useSession();
@@ -28,44 +29,54 @@ export function OrderList() {
   const showImport = sp.get('import') === '1';
   const [showExport, setShowExport] = useState(false);
   const setImport = (on) => { const n = new URLSearchParams(sp); on ? n.set('import', '1') : n.delete('import'); setSp(n, { replace: true }); };
-  const params = { shop_id: shopId === 'all' ? undefined : shopId, status: status || undefined, channel: channel || undefined, q: dq || undefined, from: range.from || undefined, to: range.to || undefined };
+  const base = { shop_id: shopId === 'all' ? undefined : shopId, channel: channel || undefined, q: dq || undefined, from: range.from || undefined, to: range.to || undefined };
+  const params = { ...base, status: status || undefined };
   const state = useAsync(async () => { setExtra([]); setCursor(null); return api.get('/orders', { ...params, limit: 50 }); }, [shopId, status, channel, dq, range.from, range.to]);
+  // Số đơn trên từng tab: cùng bộ lọc với danh sách, trừ trạng thái. Lỗi thì tab chỉ không hiện số.
+  const counts = useAsync(() => api.get('/orders/status-counts', base).catch(() => null), [shopId, channel, dq, range.from, range.to]);
+  const cnt = counts.data?.data;
   const more = async (next) => {
     const r = await api.get('/orders', { ...params, limit: 50, cursor: next });
     setExtra((e) => [...e, ...r.data]);
     setCursor(r.next_cursor);
   };
+  const chName = (id) => channels.find((c) => c.id === id)?.name;
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/orders/new" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
-      <Chips options={TABS} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
-      <div className="row wrap">
+      <PageHeader title="Đơn hàng" actions={<><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/orders/new" className="btn primary"><Icon name="plus" />Đơn mới</Link></>} />
+      <Toolbar>
+        <Chips options={TABS.map(([v, l]) => [v, l, cnt ? (v === '' ? cnt.all : cnt[v] || 0) : undefined])} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
+      </Toolbar>
+      <Toolbar>
         <SearchBox value={text} onChange={setText} placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" />
-        <select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 160 }} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}{c.archived_at ? ' (đã tắt)' : ''}</option>)}</select>
+        <select value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}{c.archived_at ? ' (đã tắt)' : ''}</option>)}</select>
         <DateRange from={range.from} to={range.to} onChange={setRange} />
-      </div>
+      </Toolbar>
       <Async state={state}>
         {(res) => {
           const rows = [...res.data, ...extra];
           const next = extra.length || cursor ? cursor : res.next_cursor;
           if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/orders/new" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
           return (
-            <Card flat>
-              <div className="table-wrap"><table className="stackable">
-                <thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách</th><th>Kênh</th><th>Trạng thái</th><th>Thu tiền</th><th className="num">Tổng</th></tr></thead>
+            <Card flat className="list-card sticky-head">
+              <div className="table-wrap"><table className="stackable order-table">
+                <thead><tr><th>Đơn</th><th>Khách</th><th className="hide-sm">Kênh</th><th className="hide-sm num">SP</th><th className="num">Khách phải trả</th><th>Thanh toán</th><th>Trạng thái</th></tr></thead>
                 <tbody>
-                  {rows.map((o) => (
-                    <tr key={o.id} className="click" onClick={() => nav(`/orders/${o.id}`)}>
-                      <td><b style={{ whiteSpace: 'nowrap' }}>{o.code}</b>{o.external_id && <div className="small muted">{o.external_id}</div>}{o.stock_warning ? <div className="small h-yellow">⚠ âm kho</div> : null}</td>
-                      <td className="hide-sm">{fmtDate(o.business_date)}</td>
-                      <td className="full">{o.customer_name || <span className="muted">Khách lẻ</span>}<div className="small muted">{o.shop_name}<span className="only-sm"> · {channels.find((c) => c.id === o.channel_id)?.name} · {fmtDate(o.business_date)}</span></div></td>
-                      <td className="hide-sm">{channels.find((c) => c.id === o.channel_id)?.name}</td>
-                      <td><StatusBadge status={o.status} /></td>
-                      <td className="small hide-sm">{PAY_STATUS[o.payment_status]}</td>
-                      <td className="num"><b>{vnd(o.total_amount)}</b></td>
-                    </tr>
-                  ))}
+                  {rows.map((o) => {
+                    const debt = o.status === 'completed' && (o.payment_status === 'unpaid' || o.payment_status === 'partial');
+                    return (
+                      <tr key={o.id} className="click" tabIndex={0} onClick={() => nav(`/orders/${o.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/orders/${o.id}`)}>
+                        <td className="o1"><b style={{ whiteSpace: 'nowrap' }}>{o.code}</b>{o.stock_warning ? <span className="dotflag" title="Âm kho" aria-label="Âm kho" /> : null}{debt ? <span className="dotflag red" title="Còn nợ" aria-label="Còn nợ" /> : null}<span className="sub">{fmtDate(o.ordered_at)}{o.external_id ? ` · ${o.external_id}` : ''}</span></td>
+                        <td className="o3 full">{o.customer_name || <span className="muted">Khách lẻ</span>}<span className="sub">{o.customer_phone || o.shop_name}<span className="only-sm"> · {chName(o.channel_id)}</span></span></td>
+                        <td className="hide-sm"><span className="badge plain">{chName(o.channel_id)}</span></td>
+                        <td className="hide-sm num">{num(o.item_count || 0)}</td>
+                        <td className="num o2"><b>{vnd(o.total_amount)}</b></td>
+                        <td className="o5"><span className={`badge ${PAY_CLASS[o.payment_status] || 'plain'}`}>{PAY_STATUS[o.payment_status]}</span></td>
+                        <td className="o4"><StatusBadge status={o.status} /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table></div>
               <LoadMore next={next} onMore={() => more(next)} />
@@ -74,7 +85,7 @@ export function OrderList() {
         }}
       </Async>
       {showExport && <ExportOrders filters={Object.fromEntries(Object.entries(params).filter(([, v]) => v))} onClose={() => setShowExport(false)} />}
-      {showImport && <ImportPanel defaultShop={shopId} onClose={() => { setImport(false); state.reload(); }} />}
+      {showImport && <ImportPanel defaultShop={shopId} onClose={() => { setImport(false); state.reload(); counts.reload(); }} />}
     </div>
   );
 }

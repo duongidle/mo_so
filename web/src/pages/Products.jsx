@@ -1,72 +1,75 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Empty, ErrorBox, Field, Modal, Tabs, useAction, useAsync, useDebounced } from '../components/ui.jsx';
-import { vnd } from '../lib.js';
+import { Link, useNavigate } from 'react-router-dom';
+import { Async, Card, Chips, Empty, ErrorBox, Field, Modal, PageHeader, SearchBox, Tabs, Toolbar, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { vnd, num } from '../lib.js';
 import { Element } from '../components/Motif.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
-import ProductForm, { initialForm } from './products/ProductForm.jsx';
-import ComboForm, { initialCombo } from './products/ComboForm.jsx';
 import Categories from './products/Categories.jsx';
 import { flattenTree, indent } from '../lib/categories.js';
 
 export default function Products() {
   const { shopId, shops, isAll, has } = useSession();
+  const nav = useNavigate();
   const [tab, setTab] = useState('products');
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [type, setType] = useState('');
   const [cat, setCat] = useState('');
-  const [edit, setEdit] = useState(null);
-  const [combo, setCombo] = useState(null);
   const [sync, setSync] = useState(false);
   const cats = useAsync(() => api.get('/categories'), []);
   const catList = useMemo(() => flattenTree(cats.data?.data || []), [cats.data]);
+  const catName = useMemo(() => Object.fromEntries(catList.map((c) => [c.id, c.name])), [catList]);
   const state = useAsync(() => api.get('/products', { shop_id: isAll ? undefined : shopId, q: dq || undefined, type: type || undefined, category_id: cat || undefined, limit: 200 }), [shopId, dq, type, cat]);
-
-  const open = async (p) => {
-    const full = (await api.get(`/products/${p.id}`)).data;
-    if (full.variants.some((v) => v.kind === 'bundle')) setCombo(initialCombo(full, shopId, isAll));
-    else setEdit(initialForm(full, shopId, isAll));
-  };
+  const fengShui = has('feng_shui') && !isAll;
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Sản phẩm</h1>
-        <div className="row">{!isAll && shops.length > 1 && <button className="btn" onClick={() => setSync(true)}>Đồng bộ từ shop khác</button>}
-          <button className="btn" onClick={() => setCombo(initialCombo(null, shopId, isAll))}>+ Combo</button>
-          <button className="btn primary" onClick={() => setEdit(initialForm(null, shopId, isAll))}>+ Sản phẩm</button></div>
-      </div>
-      <Tabs options={[['products', 'Sản phẩm'], ['categories', 'Danh mục']]} value={tab} onChange={setTab} />
-      {tab === 'categories' ? <Categories onChanged={cats.reload} /> : <>
-        <div className="row wrap">
-          <input placeholder="Tìm sản phẩm…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Tìm sản phẩm" className="grow" />
-          <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục" style={{ width: 220 }}>
+      <PageHeader
+        title="Sản phẩm"
+        actions={<>
+          {!isAll && shops.length > 1 && <button className="btn" onClick={() => setSync(true)}>Đồng bộ từ shop khác</button>}
+          <Link to="/products/combo/new" className="btn">+ Combo</Link>
+          <Link to="/products/new" className="btn primary">+ Sản phẩm</Link>
+        </>}
+      />
+      <Toolbar>
+        <Tabs options={[['products', 'Sản phẩm'], ['categories', 'Danh mục']]} value={tab} onChange={setTab} />
+        {tab === 'products' && <>
+          <Chips options={[['', 'Tất cả'], ['single', 'Sản phẩm'], ['combo', 'Combo']]} value={type} onChange={setType} />
+          <SearchBox value={q} onChange={setQ} placeholder="Tìm tên, SKU, mã vạch…" />
+          <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục">
             <option value="">Mọi danh mục</option>{catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
           </select>
-        </div>
-        <Chips options={[['', 'Tất cả'], ['single', 'Sản phẩm'], ['combo', 'Combo']]} value={type} onChange={setType} />
+        </>}
+      </Toolbar>
+      {tab === 'categories' ? <Categories onChanged={cats.reload} /> : (
         <Async state={state}>
           {({ data }) => !data.length ? <Empty>{q || type || cat ? 'Không có sản phẩm khớp bộ lọc.' : 'Chưa có sản phẩm. Bấm “+ Sản phẩm” để thêm.'}</Empty> : (
-            <Card flat><div className="table-wrap"><table>
-              <thead><tr><th>Sản phẩm</th><th>SKU</th>{has('feng_shui') && !isAll && <th>Ngũ hành</th>}<th className="num">Giá bán</th></tr></thead>
+            <Card flat className="list-card sticky-head"><div className="table-wrap"><table className="stackable product-table">
+              <thead><tr><th>Sản phẩm</th><th className="hide-sm num">Biến thể</th><th className="num">Giá bán</th><th className="num">Tồn</th>{fengShui && <th className="hide-sm">Ngũ hành</th>}<th className="hide-sm">Trạng thái</th></tr></thead>
               <tbody>{data.map((p) => {
                 const img = p.image_url || p.variants.find((v) => v.image_url)?.image_url;
-                const prices = p.variants.filter((v) => !v.archived_at).map((v) => v.listings.find((l) => l.shop_id === shopId)?.price ?? v.default_price);
+                const live = p.variants.filter((v) => !v.archived_at);
+                const prices = live.map((v) => v.listings.find((l) => l.shop_id === shopId)?.price ?? v.default_price);
+                const isCombo = p.variants.some((v) => v.kind === 'bundle');
+                const selling = !isAll ? live.some((v) => v.listings.some((l) => l.shop_id === shopId && l.active !== 0 && l.active !== false)) : live.length > 0;
+                const low = p.low_stock_count > 0;
                 return (
-                  <tr key={p.id} className="click" onClick={() => open(p)}>
-                    <td><div className="row" style={{ gap: 10 }}><ProductThumb src={img} name={p.name} /><div><b>{p.name}</b><div className="small muted">{p.variants.length} biến thể</div></div></div></td>
-                    <td className="small">{p.variants.slice(0, 3).map((v) => v.sku).join(', ')}{p.variants.length > 3 ? '…' : ''}{p.variants.some((v) => v.kind === 'bundle') && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}</td>
-                    {has('feng_shui') && !isAll && <td><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>}
+                  <tr key={p.id} className="click" tabIndex={0} onClick={() => nav(`/products/${p.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/products/${p.id}`)}>
+                    <td className="pcell"><div className="row" style={{ gap: 12 }}><ProductThumb src={img} name={p.name} size={40} /><div className="grow"><b>{p.name}</b>{isCombo && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<span className="sub">{[p.category_id && catName[p.category_id], live.slice(0, 2).map((v) => v.sku).join(', ') + (live.length > 2 ? '…' : '')].filter(Boolean).join(' · ')}</span></div></div></td>
+                    <td className="hide-sm num">{live.length}</td>
                     <td className="num">{prices.length ? (Math.min(...prices) === Math.max(...prices) ? vnd(prices[0]) : `${vnd(Math.min(...prices))} – ${vnd(Math.max(...prices))}`) : ''}</td>
+                    <td className={`num${low ? ' h-red' : ''}`}>{isCombo || p.stock_total === null || p.stock_total === undefined ? <span className="muted">—</span> : <b>{num(p.stock_total)}</b>}{low && <span className="sub h-red">dưới tối thiểu</span>}</td>
+                    {fengShui && <td className="hide-sm"><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>}
+                    <td className="hide-sm">{selling ? <span className="badge st-completed">Đang bán</span> : <span className="badge plain">Ngừng bán</span>}</td>
                   </tr>);
               })}</tbody>
             </table></div></Card>
           )}
         </Async>
-      </>}
-      {edit && <ProductForm init={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); state.reload(); }} />}
-      {combo && <ComboForm init={combo} onClose={() => setCombo(null)} onSaved={() => { setCombo(null); state.reload(); }} />}
+      )}
       {sync && <SyncForm onClose={() => setSync(false)} onSaved={() => { setSync(false); state.reload(); }} />}
     </div>
   );

@@ -32,3 +32,12 @@ test('đếm đơn theo trạng thái dùng chung bộ lọc với danh sách', 
   const list = (await api.get(`/orders?shop_id=${nh.id}&status=draft`)).body;
   assert.equal(list.data.length, one.draft);
 });
+
+test('danh sách sản phẩm kèm tồn tổng và số biến thể dưới mức tối thiểu', async () => {
+  const { api, nh, wh } = await setup();
+  const p = (await api.post('/products', { name: 'Tinh dầu', variants: [{ sku: 'LS-1', default_price: 1000, min_stock: 5 }], shop_ids: [nh.id] })).body.data;
+  await api.post('/purchases', { warehouse_id: wh.id, lines: [{ variant_id: p.variants[0].id, qty: 3, unit_cost: 500 }], receive: true });
+  const row = (await api.get(`/products?shop_id=${nh.id}`)).body.data.find((x) => x.id === p.id);
+  assert.equal(row.stock_total, 3);
+  assert.equal(row.low_stock_count, 1);
+});

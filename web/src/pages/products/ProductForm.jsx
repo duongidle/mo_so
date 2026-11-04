@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import { useSession } from '../../session.jsx';
-import { ErrorBox, Field, Modal, useAction, useAsync } from '../../components/ui.jsx';
+import { ErrorBox, Field, Fold, Modal, Section, useAction, useAsync } from '../../components/ui.jsx';
+import FormPage from '../../components/FormPage.jsx';
 import ImageGallery from '../../components/ImageGallery.jsx';
 import ProductThumb from '../../components/ProductThumb.jsx';
 import FieldInput from '../../components/FieldInput.jsx';
@@ -59,9 +60,11 @@ export function buildPayload(f, { customShopId } = {}) {
   return payload;
 }
 
-export default function ProductForm({ init, onClose, onSaved }) {
+export default function ProductForm({ init, onClose, onSaved, onDirty }) {
   const { shops, shopId, isAll, warehouses } = useSession();
   const [f, setF] = useState(init);
+  const initJson = useMemo(() => JSON.stringify(init), [init]);
+  useEffect(() => { onDirty?.(JSON.stringify(f) !== initJson); }, [f, initJson, onDirty]);
   const { busy, error, run } = useAction();
   const [confirm, setConfirm] = useState(null);
   const cats = useAsync(() => api.get('/categories'), []);
@@ -123,6 +126,7 @@ export default function ProductForm({ init, onClose, onSaved }) {
     const payload = buildPayload(f, { customShopId: fieldShop });
     if (f.existing) await api.patch(`/products/${f.id}`, payload);
     else await api.post('/products', payload);
+    onDirty?.(false);
     onSaved();
   };
   const doSave = () => run(async () => { await send(); setConfirm(null); });
@@ -139,72 +143,108 @@ export default function ProductForm({ init, onClose, onSaved }) {
     await send();
   });
 
+  const matrix = f.mode === 'matrix';
+  const canSave = !busy && f.name.trim() && !(matrix && (!combinations(f.options).length || hasDuplicateCombos(f.rows, f.options)));
+  const single = f.mode === 'single' && f.rows[0];
+
   return (
-    <Modal wide title={f.existing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'} onClose={onClose} footer={<button className="btn primary" disabled={busy || !f.name.trim() || (f.mode === 'matrix' && (!combinations(f.options).length || hasDuplicateCombos(f.rows, f.options)))} onClick={save}>Lưu</button>}>
-      <Field label="Tên sản phẩm"><input value={f.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></Field>
-      <div className="grid cols-2">
-        <Field label="Danh mục">
-          <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
-            <option value="">Chưa phân loại</option>
-            {catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
-          </select>
-        </Field>
-        <Field label="Thương hiệu"><input value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Field>
-        <Field label="Đơn vị"><input value={f.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
-        <Field label="Chu kỳ dùng hết (ngày)" hint="Để nhắc khách mua lại"><input type="number" min="1" value={f.consumption_days} onChange={(e) => set({ consumption_days: e.target.value })} /></Field>
-      </div>
-      <Field label="Mô tả"><textarea rows={3} value={f.description} onChange={(e) => set({ description: e.target.value })} /></Field>
-      <div><div className="small muted" style={{ marginBottom: 6 }}>Ảnh sản phẩm</div><ImageGallery images={f.images} onChange={(images) => set({ images })} /></div>
-      <ProductFields productId={f.id} shopId={fieldShop} value={f.custom} onChange={(custom) => set({ custom })} />
-
-      {(!f.existing || f.origMode !== 'matrix') && (
-        <label className="check"><input type="checkbox" checked={f.mode === 'matrix'} onChange={(e) => switchMode(e.target.checked)} />Có biến thể (mùi, size, màu…)</label>
-      )}
-
-      {f.mode === 'single' && f.rows[0] && (
-        <div className="grid cols-2">
-          <Field label="SKU"><input value={f.rows[0].sku} onChange={(e) => setRow(0, { sku: e.target.value.toUpperCase(), skuEdited: true })} /></Field>
-          <Field label="Mã vạch"><input value={f.rows[0].barcode} onChange={(e) => setRow(0, { barcode: e.target.value })} /></Field>
-          <Field label="Giá bán"><MoneyInput value={f.rows[0].default_price} onChange={(e) => setRow(0, { default_price: e.target.value })} /></Field>
-          <Field label="Tồn tối thiểu"><input type="number" min="0" value={f.rows[0].min_stock} onChange={(e) => setRow(0, { min_stock: e.target.value })} /></Field>
-          {!f.rows[0].id && <>
-            <Field label="Giá vốn"><MoneyInput value={f.rows[0].opening_cost} onChange={(e) => setRow(0, { opening_cost: e.target.value })} /></Field>
-            <Field label="Tồn đầu kỳ"><input type="number" min="0" value={f.rows[0].opening_qty} onChange={(e) => setRow(0, { opening_qty: e.target.value })} /></Field>
-          </>}
-        </div>
-      )}
-
-      {f.mode === 'list' && (
+    <FormPage
+      title={f.existing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}
+      sub={f.existing ? f.name : 'Điền tên và giá là đủ để bán. Phần còn lại có thể bổ sung sau.'}
+      onBack={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={!canSave} onClick={save}>Lưu</button></>}
+      error={<ErrorBox error={error} />}
+      side={<>
+        <Section title="Ảnh"><ImageGallery images={f.images} onChange={(images) => set({ images })} /></Section>
+        <Section title="Phân loại">
+          <div className="stack">
+            <Field label="Danh mục">
+              <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
+                <option value="">Chưa phân loại</option>
+                {catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
+              </select>
+            </Field>
+            <Field label="Thương hiệu"><input value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Field>
+            <Field label="Đơn vị"><input value={f.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
+            <Fold title="Nhắc mua lại">
+              <Field label="Chu kỳ dùng hết (ngày)" hint="Để nhắc khách mua lại"><input type="number" min="1" value={f.consumption_days} onChange={(e) => set({ consumption_days: e.target.value })} /></Field>
+            </Fold>
+          </div>
+        </Section>
+        {!f.existing && (
+          <Section title="Bán ở shop">
+            <div className="stack" style={{ gap: 8 }}>{shops.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.shop_ids.includes(s.id)} onChange={() => set({ shop_ids: toggle(f.shop_ids, s.id) })} />{s.name}</label>)}</div>
+          </Section>
+        )}
+        <ProductFields productId={f.id} shopId={fieldShop} value={f.custom} onChange={(custom) => set({ custom })} />
+      </>}
+    >
+      <Section title="Thông tin cơ bản">
         <div className="stack">
-          <h3>Biến thể</h3>
-          {f.rows.map((r, i) => (
-            <div key={r.id || i} className="grid cols-2" style={{ borderBottom: '1px solid var(--rule)', paddingBottom: 10 }}>
-              <Field label="SKU"><input value={r.sku} onChange={(e) => setRow(i, { sku: e.target.value.toUpperCase() })} /></Field>
-              <Field label="Tên biến thể"><input value={r.name || ''} onChange={(e) => setRow(i, { name: e.target.value })} /></Field>
-              <Field label="Giá bán"><MoneyInput value={r.default_price} onChange={(e) => setRow(i, { default_price: e.target.value })} /></Field>
-              <Field label="Tồn tối thiểu"><input type="number" min="0" value={r.min_stock} onChange={(e) => setRow(i, { min_stock: e.target.value })} /></Field>
-              {!r.id && <>
-                <Field label="Giá vốn"><MoneyInput value={r.opening_cost} onChange={(e) => setRow(i, { opening_cost: e.target.value })} /></Field>
-                <Field label="Tồn đầu kỳ"><input type="number" min="0" value={r.opening_qty} onChange={(e) => setRow(i, { opening_qty: e.target.value })} /></Field>
-              </>}
-            </div>
-          ))}
-          <button type="button" className="btn sm" onClick={() => set({ rows: [...f.rows, blankRow()] })}>+ Biến thể</button>
+          <Field label="Tên sản phẩm"><input value={f.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></Field>
+          <Field label="Mô tả"><textarea rows={3} value={f.description} onChange={(e) => set({ description: e.target.value })} /></Field>
         </div>
+      </Section>
+
+      {(f.mode === 'single' || f.mode === 'list') && (
+        <Section title={f.mode === 'list' ? 'Biến thể' : 'Giá & kho'} actions={(!f.existing || f.origMode !== 'matrix') && (
+          <label className="check small"><input type="checkbox" checked={false} onChange={(e) => switchMode(e.target.checked)} />Có biến thể (mùi, size, màu…)</label>
+        )}>
+          {single && (
+            <div className="stack">
+              <div className="grid cols-2 collapse">
+                <Field label="SKU"><input value={f.rows[0].sku} onChange={(e) => setRow(0, { sku: e.target.value.toUpperCase(), skuEdited: true })} /></Field>
+                <Field label="Giá bán"><MoneyInput value={f.rows[0].default_price} onChange={(e) => setRow(0, { default_price: e.target.value })} /></Field>
+                {!f.rows[0].id && <>
+                  <Field label="Giá vốn"><MoneyInput value={f.rows[0].opening_cost} onChange={(e) => setRow(0, { opening_cost: e.target.value })} /></Field>
+                  <Field label="Tồn đầu kỳ"><input type="number" min="0" value={f.rows[0].opening_qty} onChange={(e) => setRow(0, { opening_qty: e.target.value })} /></Field>
+                </>}
+              </div>
+              <Fold title="Thêm thông tin (mã vạch, tồn tối thiểu)">
+                <div className="grid cols-2 collapse">
+                  <Field label="Mã vạch"><input value={f.rows[0].barcode} onChange={(e) => setRow(0, { barcode: e.target.value })} /></Field>
+                  <Field label="Tồn tối thiểu"><input type="number" min="0" value={f.rows[0].min_stock} onChange={(e) => setRow(0, { min_stock: e.target.value })} /></Field>
+                </div>
+              </Fold>
+            </div>
+          )}
+          {f.mode === 'list' && (
+            <div className="stack">
+              {f.rows.map((r, i) => (
+                <div key={r.id || i} className="grid cols-2 collapse" style={{ borderBottom: '1px solid var(--hair)', paddingBottom: 12 }}>
+                  <Field label="SKU"><input value={r.sku} onChange={(e) => setRow(i, { sku: e.target.value.toUpperCase() })} /></Field>
+                  <Field label="Tên biến thể"><input value={r.name || ''} onChange={(e) => setRow(i, { name: e.target.value })} /></Field>
+                  <Field label="Giá bán"><MoneyInput value={r.default_price} onChange={(e) => setRow(i, { default_price: e.target.value })} /></Field>
+                  <Field label="Tồn tối thiểu"><input type="number" min="0" value={r.min_stock} onChange={(e) => setRow(i, { min_stock: e.target.value })} /></Field>
+                  {!r.id && <>
+                    <Field label="Giá vốn"><MoneyInput value={r.opening_cost} onChange={(e) => setRow(i, { opening_cost: e.target.value })} /></Field>
+                    <Field label="Tồn đầu kỳ"><input type="number" min="0" value={r.opening_qty} onChange={(e) => setRow(i, { opening_qty: e.target.value })} /></Field>
+                  </>}
+                </div>
+              ))}
+              <div><button type="button" className="btn sm" onClick={() => set({ rows: [...f.rows, blankRow()] })}>+ Biến thể</button></div>
+            </div>
+          )}
+        </Section>
       )}
 
-      {f.mode === 'matrix' && <Matrix f={f} set={set} setOptions={setOptions} setRow={setRow} images={f.images} renameAttr={renameAttr} renameValue={renameValue} removeAttr={removeAttr} pickCombo={pickCombo} />}
+      {matrix && (
+        <Section title="Biến thể" actions={(!f.existing || f.origMode !== 'matrix') && (
+          <label className="check small"><input type="checkbox" checked onChange={(e) => switchMode(e.target.checked)} />Có biến thể (mùi, size, màu…)</label>
+        )}>
+          <Matrix f={f} set={set} setOptions={setOptions} setRow={setRow} images={f.images} renameAttr={renameAttr} renameValue={renameValue} removeAttr={removeAttr} pickCombo={pickCombo} />
+        </Section>
+      )}
 
       {needsWarehouse && hasWarehouseChoice && f.rows.some((r) => !r.id && Number(r.opening_qty) > 0) && (
-        <Field label="Kho nhập tồn đầu kỳ">
-          <select value={f.opening_warehouse_id} onChange={(e) => set({ opening_warehouse_id: e.target.value })}>
+        <Section title="Kho nhập tồn đầu kỳ">
+          <select value={f.opening_warehouse_id} onChange={(e) => set({ opening_warehouse_id: e.target.value })} aria-label="Kho nhập tồn đầu kỳ">
             <option value="">Kho mặc định của shop</option>
             {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </select>
-        </Field>
+        </Section>
       )}
-      {!f.existing && <div><div className="small muted" style={{ marginBottom: 4 }}>Bán ở shop</div><div className="row wrap">{shops.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.shop_ids.includes(s.id)} onChange={() => set({ shop_ids: toggle(f.shop_ids, s.id) })} />{s.name}</label>)}</div></div>}
-      <ErrorBox error={error} />
+
       {confirm && (
         <Modal title="Xác nhận bỏ biến thể" onClose={() => setConfirm(null)} footer={<><button className="btn" onClick={() => setConfirm(null)}>Quay lại</button><button className="btn primary" disabled={busy} onClick={doSave}>Vẫn lưu</button></>}>
           <p>Các biến thể sau sẽ ngừng bán khi lưu:</p>
@@ -215,7 +255,7 @@ export default function ProductForm({ init, onClose, onSaved }) {
           </ul>
         </Modal>
       )}
-    </Modal>
+    </FormPage>
   );
 }
 
@@ -232,12 +272,14 @@ function ProductFields({ productId, shopId, value, onChange }) {
   if (!state.data?.fields.length) return null;
   const { fields, values } = state.data;
   return (
-    <div className="stack" style={{ gap: 8 }}>
-      {fields.map((fd) => {
-        const cur = fd.key in value ? value[fd.key] : values[fd.key];
-        return <Field key={fd.id} label={fd.type === 'boolean' ? '' : fd.label}><FieldInput field={fd} value={cur} onChange={(v) => onChange({ ...value, [fd.key]: v })} /></Field>;
-      })}
-    </div>
+    <Section title="Thông tin riêng của shop">
+      <div className="stack" style={{ gap: 10 }}>
+        {fields.map((fd) => {
+          const cur = fd.key in value ? value[fd.key] : values[fd.key];
+          return <Field key={fd.id} label={fd.type === 'boolean' ? '' : fd.label}><FieldInput field={fd} value={cur} onChange={(v) => onChange({ ...value, [fd.key]: v })} /></Field>;
+        })}
+      </div>
+    </Section>
   );
 }
 
@@ -305,7 +347,7 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
   const dup = hasDuplicateCombos(f.rows, f.options);
   return (
     <div className="stack">
-      <h3>Thuộc tính</h3>
+      <div className="eyebrow">Thuộc tính</div>
       {f.options.map((o, i) => (
         <div key={i} className="grid cols-2" style={{ alignItems: 'end' }}>
           <Field label={`Thuộc tính ${i + 1}`}>
@@ -317,26 +359,25 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
           <Field label="Giá trị (bấm vào thẻ để đổi tên)"><TagInput values={o.values} label={`Giá trị của ${o.name || 'thuộc tính'}`} onChange={(values) => upd(i, { values })} onRename={(a, b) => renameValue(i, a, b)} /></Field>
         </div>
       ))}
-      {f.options.length < 3 && <button type="button" className="btn sm" onClick={() => set({ options: [...f.options, { name: '', values: [] }] })}>+ Thuộc tính</button>}
+      {f.options.length < 3 && <div><button type="button" className="btn sm" onClick={() => set({ options: [...f.options, { name: '', values: [] }] })}>+ Thuộc tính</button></div>}
       {hasExisting && choices.length > 0 && <p className="small muted" style={{ margin: 0 }}>Biến thể đã có giữ nguyên SKU, tồn kho và lịch sử. Ở cột Biến thể, chọn mỗi biến thể đã có ứng với tổ hợp nào.</p>}
       {dup && <div className="alert err" role="alert">Hai biến thể đang cùng một tổ hợp. Chọn tổ hợp khác cho một trong hai.</div>}
       {f.removed.length > 0 && <div className="alert">Bỏ giá trị sẽ ngừng bán {f.removed.length} biến thể: có lịch sử kho/đơn thì lưu trữ, chưa dùng thì xoá hẳn.</div>}
       {choices.length === 0 && <span className="small muted">Nhập ít nhất một thuộc tính và một giá trị để sinh bảng biến thể.</span>}
       {choices.length > 0 && (
-        <div className="table-wrap matrix-wrap"><table className="matrix">
+        <div className="matrix-box">
+          <div className="applybar">
+            <Field label="Giá bán cho tất cả"><MoneyInput value={all.default_price} onChange={(e) => setAll({ ...all, default_price: e.target.value })} /></Field>
+            <Field label="Giá vốn cho tất cả"><MoneyInput value={all.opening_cost} onChange={(e) => setAll({ ...all, opening_cost: e.target.value })} /></Field>
+            <Field label="Tồn đầu kỳ cho tất cả"><input type="number" min="0" value={all.opening_qty} onChange={(e) => setAll({ ...all, opening_qty: e.target.value })} /></Field>
+            <button type="button" className="btn sm" onClick={() => {
+              // Tồn đầu kỳ và giá vốn chỉ áp cho dòng mới (dòng đã có không ghi lại tồn đầu kỳ)
+              set({ rows: f.rows.map((r) => (r.id ? { ...r, ...(all.default_price !== '' ? { default_price: all.default_price } : {}) } : applyToAll([r], all)[0])) });
+            }}>Áp dụng</button>
+          </div>
+          <div className="table-wrap matrix-wrap"><table className="matrix">
           <thead><tr><th className="sticky-col">Biến thể</th><th>Ảnh</th><th>SKU</th><th className="num">Giá bán</th><th className="num">Giá vốn</th><th className="num">Tồn đầu kỳ</th><th>Mã vạch</th><th>Bán</th></tr></thead>
           <tbody>
-            <tr className="apply-all">
-              <td className="sticky-col"><b>Áp dụng cho tất cả</b></td>
-              <td className="mx-skip" colSpan={2} />
-              <td data-label="Giá bán"><MoneyInput aria-label="Giá bán cho tất cả" value={all.default_price} onChange={(e) => setAll({ ...all, default_price: e.target.value })} /></td>
-              <td data-label="Giá vốn"><MoneyInput aria-label="Giá vốn cho tất cả" value={all.opening_cost} onChange={(e) => setAll({ ...all, opening_cost: e.target.value })} /></td>
-              <td data-label="Tồn đầu kỳ"><input type="number" min="0" aria-label="Tồn đầu kỳ cho tất cả" value={all.opening_qty} onChange={(e) => setAll({ ...all, opening_qty: e.target.value })} /></td>
-              <td colSpan={2} className="mx-full"><button type="button" className="btn sm" onClick={() => {
-                // Tồn đầu kỳ và giá vốn chỉ áp cho dòng mới (dòng đã có không ghi lại tồn đầu kỳ)
-                set({ rows: f.rows.map((r) => (r.id ? { ...r, ...(all.default_price !== '' ? { default_price: all.default_price } : {}) } : applyToAll([r], all)[0])) });
-              }}>Áp dụng</button></td>
-            </tr>
             {f.rows.map((r, i) => (
               <tr key={r.id || r.sku + i} className={r.active === false ? 'off' : ''}>
                 <td className="sticky-col mx-name">{r.id
@@ -355,6 +396,7 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
             ))}
           </tbody>
         </table></div>
+        </div>
       )}
     </div>
   );

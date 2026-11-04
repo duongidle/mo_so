@@ -559,3 +559,38 @@ td.num b, td b { font-weight: 600; }
 }
 
 .section-body > .fold:only-child { border-top: 0; padding-top: 0; }
+
+/* ===== Danh sách dễ quan sát: ô hai dòng, hàng gọn, chữ phụ muted ===== */
+.list-card { overflow: visible; }
+.list-card .table-wrap { overflow-x: auto; }
+.list-card th:first-child, .list-card td:first-child { padding-left: var(--card-pad); }
+.list-card th:last-child, .list-card td:last-child { padding-right: var(--card-pad); }
+.list-card tbody tr:last-child td { border-bottom: 0; }
+.sticky-head.list-card .table-wrap { overflow: visible; }
+.product-table td.pcell { min-width: 220px; }
+.pick-list { border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+/* dòng hàng phiếu nhập */
+.pl-lines { display: flex; flex-direction: column; }
+.pl-head, .pl-row { display: grid; grid-template-columns: minmax(0, 1fr) 84px 130px 110px 36px; gap: 10px; align-items: center; }
+.pl-head { padding: 0 0 6px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--rule); }
+.pl-row { padding: 10px 0; border-bottom: 1px solid var(--hair); }
+.pl-row:last-child { border-bottom: 0; }
+.pl-row .btn { padding: 0; min-width: 34px; }
+@media (max-width: 720px) {
+  .pl-head { display: none; }
+  .pl-row { grid-template-columns: 1fr 1fr 34px; grid-template-areas: "name name rm" "qty cost cost" "tot tot tot"; }
+  .pl-row > .pl-name { grid-area: name; }
+  .pl-row > input[type=number] { grid-area: qty; }
+  .pl-row > .btn { grid-area: rm; }
+  .pl-row > .num { grid-area: tot; text-align: right; }
+}
+.matrix-box { border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+.matrix-box .matrix-wrap { border: 0; }
+@media (max-width: 719px) { .matrix-box { border: 0; } .applybar { border: 1px solid var(--rule); border-radius: 12px; margin-bottom: 10px; } }
+
+@media (max-width: 720px) {
+  table.stackable td.o1 { order: 1; } table.stackable td.o2 { order: 2; text-align: right; } table.stackable td.o3 { order: 3; }
+  table.stackable td.o4 { order: 4; } table.stackable td.o5 { order: 5; text-align: right; }
+  table.stackable td.o2 b { font-size: 15px; }
+  .list-card { border-radius: var(--radius); }
+}

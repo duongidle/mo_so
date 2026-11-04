@@ -10,8 +10,9 @@ import Dashboard from './pages/Dashboard.jsx';
 import OrderForm from './pages/OrderForm.jsx';
 import { OrderList, OrderDetail } from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
+import ProductPage from './pages/products/ProductPage.jsx';
 import Stock from './pages/Stock.jsx';
-import Purchases from './pages/Purchases.jsx';
+import Purchases, { NewPurchasePage, PurchasePage } from './pages/Purchases.jsx';
 import { CustomerList, CustomerDetail } from './pages/Customers.jsx';
 import Loyalty from './pages/Loyalty.jsx';
 import Expenses from './pages/Expenses.jsx';
@@ -116,8 +117,13 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/orders/:id" element={<OrderDetail />} />
           <Route path="/import" element={<Navigate to="/orders?import=1" replace />} />
           <Route path="/products" element={<Products />} />
+          <Route path="/products/new" element={<ProductPage />} />
+          <Route path="/products/combo/new" element={<ProductPage combo />} />
+          <Route path="/products/:id" element={<ProductPage />} />
           <Route path="/stock" element={<Stock />} />
           <Route path="/purchases" element={<Purchases />} />
+          <Route path="/purchases/new" element={<NewPurchasePage />} />
+          <Route path="/purchases/:id" element={<PurchasePage />} />
           <Route path="/customers" element={<CustomerList />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/loyalty" element={<Loyalty />} />

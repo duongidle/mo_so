@@ -156,6 +156,18 @@ export function listProducts({ shopId, q, categoryId, type, includeArchived, inc
     .all(...params, limit + 1);
   const hasMore = rows.length > limit;
   const data = (hasMore ? rows.slice(0, limit) : rows).map(hydrateProduct);
+  if (data.length) {
+    // Tồn tổng (mọi kho) và số biến thể dưới mức tối thiểu, chỉ để hiển thị ở danh sách. Combo không có tồn riêng nên bỏ qua.
+    const ph = data.map(() => '?').join(',');
+    const st = db()
+      .prepare(`SELECT v.product_id AS id, COALESCE(SUM(sl.on_hand), 0) AS stock_total,
+                       SUM(CASE WHEN v.min_stock > 0 AND COALESCE((SELECT SUM(x.on_hand) FROM stock_levels x WHERE x.variant_id = v.id), 0) < v.min_stock THEN 1 ELSE 0 END) AS low_count
+                FROM variants v LEFT JOIN stock_levels sl ON sl.variant_id = v.id
+                WHERE v.kind != 'bundle' AND v.archived_at IS NULL AND v.product_id IN (${ph}) GROUP BY v.product_id`)
+      .all(...data.map((d) => d.id));
+    const sm = new Map(st.map((r) => [r.id, r]));
+    for (const d of data) { d.stock_total = sm.get(d.id)?.stock_total ?? null; d.low_stock_count = sm.get(d.id)?.low_count ?? 0; }
+  }
   if (shopId && data.length) {
     // Ngũ hành của sản phẩm theo shop đang xem (trường vai trò element của shop đó), chỉ để hiển thị ở danh sách
     const ev = db()

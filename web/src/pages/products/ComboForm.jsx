@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import { useSession } from '../../session.jsx';
-import { ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../../components/ui.jsx';
+import { ErrorBox, Field, Section, useAction, useAsync, useDebounced } from '../../components/ui.jsx';
+import FormPage from '../../components/FormPage.jsx';
 import ImageGallery from '../../components/ImageGallery.jsx';
 import { vnd, num } from '../../lib.js';
 import { flattenTree, indent } from '../../lib/categories.js';
@@ -27,9 +28,11 @@ export function initialCombo(p, shopId, isAll) {
   };
 }
 
-export default function ComboForm({ init, onClose, onSaved }) {
+export default function ComboForm({ init, onClose, onSaved, onDirty }) {
   const { shops, shopId, isAll } = useSession();
   const [f, setF] = useState(init);
+  const initJson = useMemo(() => JSON.stringify(init), [init]);
+  useEffect(() => { onDirty?.(JSON.stringify(f) !== initJson); }, [f, initJson, onDirty]);
   const { busy, error, run } = useAction();
   const cats = useAsync(() => api.get('/categories'), []);
   const catList = useMemo(() => flattenTree(cats.data?.data || []), [cats.data]);
@@ -58,36 +61,56 @@ export default function ComboForm({ init, onClose, onSaved }) {
     } else {
       await api.post('/products', { ...common, unit: 'combo', variants: [{ sku: f.sku, kind: 'bundle', default_price: Number(f.default_price) || 0, components }], shop_ids: f.shop_ids });
     }
+    onDirty?.(false);
     onSaved();
   });
 
   return (
-    <Modal wide title={f.existing ? 'Sửa combo' : 'Thêm combo'} onClose={onClose} footer={<button className="btn primary" disabled={busy || !f.name.trim() || !f.sku.trim() || !f.components.length} onClick={save}>Lưu</button>}>
-      <Field label="Tên combo"><input value={f.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></Field>
-      <div className="grid cols-2">
-        <Field label="SKU"><input value={f.sku} onChange={(e) => set({ sku: e.target.value.toUpperCase() })} /></Field>
-        <Field label="Giá bán"><MoneyInput value={f.default_price} onChange={(e) => set({ default_price: e.target.value })} /></Field>
-        <Field label="Danh mục">
-          <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
-            <option value="">Chưa phân loại</option>
-            {catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
-          </select>
-        </Field>
-      </div>
-      <div><div className="small muted" style={{ marginBottom: 6 }}>Ảnh combo</div><ImageGallery images={f.images} onChange={(images) => set({ images })} max={5} /></div>
-      <ComponentPicker value={f.components} warehouseId={wh} selfId={f.variantId} onChange={(components) => set({ components })} />
-      {f.components.length > 0 && (
-        <div className="ledger-line"><span className="muted">Giá vốn ước tính</span><b>{stats.complete ? vnd(stats.cost) : '…'}</b></div>
-      )}
-      {f.components.length > 0 && (
-        <div className="ledger-line"><span className="muted">Bán được ngay</span><b>{stats.sellable === null ? '…' : `${num(stats.sellable)} combo`}</b></div>
-      )}
-      {f.components.length > 0 && stats.complete && Number(f.default_price) > 0 && (
-        <div className="ledger-line"><span className="muted">Lãi gộp ước tính mỗi combo</span><b>{vnd(Number(f.default_price) - stats.cost)}</b></div>
-      )}
-      {!f.existing && <div><div className="small muted" style={{ marginBottom: 4 }}>Bán ở shop</div><div className="row wrap">{shops.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.shop_ids.includes(s.id)} onChange={() => set({ shop_ids: f.shop_ids.includes(s.id) ? f.shop_ids.filter((x) => x !== s.id) : [...f.shop_ids, s.id] })} />{s.name}</label>)}</div></div>}
-      <ErrorBox error={error} />
-    </Modal>
+    <FormPage
+      title={f.existing ? 'Sửa combo' : 'Thêm combo'}
+      sub={f.existing ? f.name : 'Combo gồm nhiều sản phẩm bán cùng nhau. Bán combo trừ kho từng thành phần.'}
+      onBack={onClose}
+      error={<ErrorBox error={error} />}
+      footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !f.sku.trim() || !f.components.length} onClick={save}>Lưu</button></>}
+      side={<>
+        <Section title="Ảnh"><ImageGallery images={f.images} onChange={(images) => set({ images })} max={5} /></Section>
+        <Section title="Phân loại">
+          <Field label="Danh mục">
+            <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
+              <option value="">Chưa phân loại</option>
+              {catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
+            </select>
+          </Field>
+        </Section>
+        {!f.existing && (
+          <Section title="Bán ở shop">
+            <div className="stack" style={{ gap: 8 }}>{shops.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.shop_ids.includes(s.id)} onChange={() => set({ shop_ids: f.shop_ids.includes(s.id) ? f.shop_ids.filter((x) => x !== s.id) : [...f.shop_ids, s.id] })} />{s.name}</label>)}</div>
+          </Section>
+        )}
+      </>}
+    >
+      <Section title="Thông tin cơ bản">
+        <div className="stack">
+          <Field label="Tên combo"><input value={f.name} onChange={(e) => set({ name: e.target.value })} autoFocus /></Field>
+          <div className="grid cols-2 collapse">
+            <Field label="SKU"><input value={f.sku} onChange={(e) => set({ sku: e.target.value.toUpperCase() })} /></Field>
+            <Field label="Giá bán"><MoneyInput value={f.default_price} onChange={(e) => set({ default_price: e.target.value })} /></Field>
+          </div>
+        </div>
+      </Section>
+      <Section title="Thành phần của combo">
+        <ComponentPicker value={f.components} warehouseId={wh} selfId={f.variantId} onChange={(components) => set({ components })} />
+        {f.components.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div className="ledger-line"><span className="muted">Giá vốn ước tính</span><b>{stats.complete ? vnd(stats.cost) : '…'}</b></div>
+            <div className="ledger-line"><span className="muted">Bán được ngay</span><b>{stats.sellable === null ? '…' : `${num(stats.sellable)} combo`}</b></div>
+            {stats.complete && Number(f.default_price) > 0 && (
+              <div className="ledger-line"><span className="muted">Lãi gộp ước tính mỗi combo</span><b>{vnd(Number(f.default_price) - stats.cost)}</b></div>
+            )}
+          </div>
+        )}
+      </Section>
+    </FormPage>
   );
 }
 
@@ -98,7 +121,6 @@ export function ComponentPicker({ value, onChange, selfId, warehouseId }) {
   const found = useAsync(() => (dq ? api.get('/variants', { q: dq, all: '1', warehouse_id: warehouseId, limit: 8 }) : Promise.resolve({ data: [] })), [dq, warehouseId]);
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <div className="eyebrow">Thành phần của combo</div>
       {value.length === 0 && <span className="small muted">Chưa có thành phần nào. Tìm sản phẩm bên dưới để thêm.</span>}
       {value.map((c) => (
         <div className="row wrap" key={c.variant_id}>

@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import '@fontsource/be-vietnam-pro/latin-400.css';
 import '@fontsource/be-vietnam-pro/vietnamese-400.css';
 import '@fontsource/be-vietnam-pro/latin-500.css';
@@ -17,10 +17,10 @@ import './styles.css';
 import App from './App.jsx';
 
 document.documentElement.dataset.theme = 'general';
+// Data router (một tuyến bắt mọi đường dẫn) để form dạng trang chặn được việc rời đi khi chưa lưu
+const router = createBrowserRouter([{ path: '*', element: <App /> }]);
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 );
