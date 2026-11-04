@@ -16,10 +16,10 @@ export function OrderList() {
   const { shopId, allChannels: channels } = useSession();
   const [sp, setSp] = useSearchParams();
   const status = sp.get('status') || '';
-  const [channel, setChannel] = useState('');
+  const [channel, setChannel] = useState(sp.get('channel') || '');
   const [text, setText] = useState('');
   const dq = useDebounced(text);
-  const [range, setRange] = useState({ from: '', to: '' });
+  const [range, setRange] = useState({ from: sp.get('from') || '', to: sp.get('to') || '' }); // từ link "Xem dữ liệu gốc" của báo cáo
   const [extra, setExtra] = useState([]);
   const [cursor, setCursor] = useState(null);
   const nav = useNavigate();

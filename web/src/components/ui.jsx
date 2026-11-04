@@ -3,6 +3,7 @@ import { STATUS, vnd } from '../lib.js';
 import Icon, { OpenBook } from './Icon.jsx';
 import { Dongson, Ripple, Gauge } from './Motif.jsx';
 import { useSession } from '../session.jsx';
+import MetricInfo, { ScopeBadge } from './MetricInfo.jsx';
 
 export function useAsync(fn, deps = []) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
@@ -90,10 +91,11 @@ export const SearchBox = ({ value, onChange, placeholder, ...rest }) => (
   </div>
 );
 
-export function Kpi({ label, value, delta, hint, tone }) {
+export function Kpi({ label, value, delta, hint, tone, metric }) {
   return (
     <div className="card kpi">
-      <span className="l">{label}</span>
+      <span className="l">{label}{metric && <MetricInfo metric={metric} />}</span>
+      {metric && <ScopeBadge metric={metric} />}
       <span className={`v ${tone ? `h-${tone}` : ''}`}>{value}</span>
       {delta !== undefined && delta !== null && (
         <span className={`d ${delta >= 0 ? 'h-green' : 'h-red'}`}>

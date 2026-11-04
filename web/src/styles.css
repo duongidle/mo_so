@@ -473,3 +473,18 @@ body { background-image: var(--fibre); background-size: 320px; }
 .formula-spot { margin: 6px 0 0; font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
 .formula-spot mark { background: color-mix(in srgb, var(--st-cancelled) 22%, transparent); color: inherit; text-decoration: underline wavy var(--st-cancelled); }
 @media (max-width: 600px) { .formula-list li { flex-direction: column; align-items: flex-start; gap: 2px; } }
+
+/* Giải thích chỉ số (ⓘ) và dải phạm vi báo cáo: phẳng, viền champagne mảnh */
+.metric-info { display: inline-block; margin-left: 4px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.metric-btn { background: none; border: 0; padding: 0 3px; min-width: 24px; min-height: 24px; cursor: pointer; color: var(--ink-soft); font-size: 14px; line-height: 1; }
+.metric-btn:hover, .metric-btn:focus-visible { color: var(--text); }
+.metric-pop { position: fixed; z-index: 60; left: 50%; bottom: 16px; transform: translateX(-50%); width: 440px; max-width: calc(100vw - 32px); max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--paper); border: 1px solid var(--champagne); border-radius: 8px; color: var(--text); text-align: left; font-size: 13px; line-height: 1.5; }
+.metric-close { background: none; border: 0; cursor: pointer; color: var(--ink-soft); min-width: 28px; min-height: 28px; }
+.scope-badge { display: inline-block; margin: 0 4px 2px 0; padding: 1px 8px; border: 1px solid var(--champagne); border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--ink-soft); background: transparent; text-transform: none; letter-spacing: 0; }
+.kpi .scope-badge { align-self: flex-start; }
+.metric-label { display: inline-flex; align-items: center; }
+.scope-strip { padding: 10px 14px; border: 1px solid var(--champagne); border-radius: 8px; font-size: 14px; background: var(--paper); }
+.tab-intro { margin: 0; color: var(--ink-soft); font-size: 14px; }
+@media (max-width: 720px) {
+  .metric-pop { left: 0; right: 0; bottom: 0; transform: none; width: auto; max-width: none; border-radius: 14px 14px 0 0; padding: 16px 16px 24px; }
+}
