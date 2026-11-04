@@ -31,7 +31,7 @@ export default function Auth({ hasAccounts, registrationOpen, onDone }) {
   return (
     <div className="login-shell">
       <aside className="login-art">
-        <div className="row" style={{ gap: 14, position: 'relative' }}><img src="/logo-mark.svg" alt="" width="44" height="44" style={{ borderRadius: 11 }} /><div><b style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--linen)' }}>Mở Sổ</b><div className="eyebrow" style={{ color: 'var(--champagne)' }}>Dấu vết của thời gian</div></div></div>
+        <div className="row" style={{ gap: 14, position: 'relative' }}><img src="/logo-mark.svg" alt="" width="44" height="44" style={{ borderRadius: 11 }} /><div><b style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--linen)' }}>Mở Sổ</b><div className="eyebrow" style={{ color: 'var(--champagne)' }}>Hành Trình Phương Đông</div></div></div>
         <div><h2>Mỗi đơn hàng là một nét ghi vào sổ.</h2><p>Một cuốn sổ cái cho mọi shop, mọi kênh. Mở ra là thấy.</p></div>
         <div style={{ position: 'relative' }}><Seal size={120}>MỞ<br />SỔ</Seal></div>
       </aside>

@@ -82,7 +82,7 @@ function Shell({ progress, reopenGuide }) {
     <div className="shell">
       <div className={`rail-space ${pinned ? 'pinned' : ''}`} aria-hidden="true" />
       <nav className={`sidebar ${pinned ? 'pinned' : ''}`} aria-label="Điều hướng chính">
-        <div className="brand"><img src="/logo-mark.svg" alt="" /><div className="lbl"><b>Mở Sổ</b><span className="tag">Dấu vết của thời gian</span></div></div>
+        <div className="brand"><img src="/logo-mark.svg" alt="" /><div className="lbl"><b>Mở Sổ</b><span className="tag">Hành Trình Phương Đông</span></div></div>
         {NAV.map((g, i) => (
           <div key={i}>
             {i > 0 && <div className="nav-sep" />}
