@@ -321,4 +321,14 @@
 - Đổi hàng trong một bước.
 - Trạng thái "chờ hàng về" cho phiếu trả của sàn.
 - Phí ship chiều về của đơn sàn đang ghi Có 3388 (phải trả khác); nếu sàn thực tế trừ thẳng vào payout thì nên ghi giảm 1388.
-- Phí trả hàng chưa tính vào "Tổng chi tiêu" và hạng của khách (chỉ tính hàng thuần).
+- Phí trả hàng chưa tính vào "Tổng chi tiêu" và hạng của khách (chỉ tính hàng thuần). Để quyết khi làm lại module Loyalty (mục dưới).
+
+**Việc chờ làm: làm lại module Loyalty cho hoàn chỉnh** (chủ shop dặn ngày 2026-11-04)
+- Chủ shop sẽ tự lên yêu cầu sau vì module có nhiều cài đặt. Khi bắt đầu, **làm trọn một lần**: hạng, chi tiêu, cài đặt, tự động hoá, báo cáo. Không vá từng mảnh nhỏ, để sau không phải quay lại sửa lắt nhắt.
+- Hiện đã có bản cơ bản (M9, mục 5.10 `CLAUDE.md`): hạng theo tổng chi tiêu 12 tháng, ngưỡng Thành viên/Bạc/Vàng/Kim cương, % giảm gợi ý; tab Tự động hoá chưa chạy gì. Bản làm lại thay thế hoặc mở rộng bản này, không chạy song song hai cách tính.
+- Câu hỏi phải chốt khi làm:
+  - "Chi tiêu" của khách tính bằng gì: hàng thuần (hiện tại), có cộng phí trả hàng không, có cộng phí ship không.
+  - Đơn trả hàng có làm giảm chi tiêu và hạ hạng khách không; hạ ngay hay chỉ xét lại theo kỳ.
+  - Hạng tính theo toàn tài khoản (hiện tại) hay theo từng shop.
+  - Cửa sổ thời gian (12 tháng lăn, năm dương lịch, hay giữ hạng đến hết kỳ).
+  - Tích điểm (CLAUDE.md đang ghi không làm vì là khoản nợ với khách) và tiền khách gửi (mục trả hàng ở trên) có gộp vào module này không.
