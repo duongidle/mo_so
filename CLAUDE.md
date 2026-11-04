@@ -129,7 +129,7 @@ moso/
 
 ### 5.1 Shop, Kho, Kênh
 - **Shop** = một mảng kinh doanh (giống chi nhánh). Vào app chọn shop đang làm việc; mọi màn hình bán hàng, sản phẩm, báo cáo mặc định lọc theo shop đó. Có chế độ **"Tất cả shop"** cho báo cáo.
-- **Kho** = nơi để hàng thật. Tách khỏi shop. Một shop có **kho mặc định** để trừ hàng khi bán; một kho phục vụ được nhiều shop.
+- **Kho** = nơi để hàng thật. Tách khỏi shop. Một shop có **danh sách kho xếp theo ưu tiên** (`shop_warehouses`, API `GET/PUT /shops/:id/warehouses`): đơn lấy hàng từ kho ưu tiên 1, thiếu thì lấy tiếp kho kế tiếp. Kho đầu là **kho chính**; `shops.default_warehouse_id` luôn bằng kho đó (service giữ đồng bộ). Một kho phục vụ được nhiều shop.
 - **Kênh** (`channel`): `direct`, `other` (luôn có), kênh của các **nền tảng** (`shopee`, `tiktok`, `facebook`, `zalo`, mục 5.15) và kênh tuỳ chỉnh (`ch_…`, tạo ở Cài đặt → Nền tảng bán hàng). Mỗi đơn thuộc 1 shop và 1 kênh. Kênh bị tắt (`archived_at`) ẩn khỏi bộ chọn tạo đơn và không tạo đơn mới được (`CHANNEL_DISABLED`), nhưng đơn cũ vẫn xem và lọc được. Kênh sàn (`is_marketplace = 1`) quyết định cách tính số tiền cần thu (xem 5.6).
 
 ### 5.1A Thiết lập lần đầu của tài khoản mới
@@ -158,6 +158,7 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
 - Không cho tồn âm theo mặc định (cấu hình `allow_negative_stock` trong settings, mặc định `false`). Đơn import từ kênh có thể vượt tồn → được phép nhưng gắn cờ cảnh báo.
 - **Kiểm kho**: phiếu kiểm kê nhiều bước (`stock_counts`): tạo phiếu (chụp tồn) → nhập số đếm dần, lưu giữa chừng → hoàn tất sinh `adjust_in/out` theo chênh lệch. Chênh lệch tính theo tồn hệ thống **tại lúc nhập số đếm của từng dòng**, nên hàng bán trước hoặc sau lúc đếm không làm sai. Dòng chưa đếm: bỏ qua (mặc định) hoặc coi là 0. Thiếu giá vốn cho hàng nhập lần đầu thì cả phiếu không áp. Phiếu đã chốt không sửa.
 - **Chuyển kho**: `transfer_out` + `transfer_in` với cùng giá vốn.
+- **Một đơn lấy từ nhiều kho**: khi xác nhận, `planAllocation` (`server/modules/orders/allocation.js`) chia từng biến thể có tồn (combo tách thành thành phần × SL) theo thứ tự kho của shop; tồn được trừ ảo dần qua các dòng. Hết tồn mọi kho thì phần còn lại dồn vào kho ưu tiên 1 và đánh dấu thiếu: bị chặn `STOCK_NOT_ENOUGH` trừ khi cho phép âm kho (đơn import). Mỗi phần ghi một `sale_out` riêng và một dòng `order_line_allocations` (kho, SL, `unit_cost` = giá bình quân của **chính kho đó** lúc xuất, chụp lại, không tính lại). Phân bổ tay (`lines[].allocations`, lưu ở `order_lines.planned_allocations` cho đơn nháp): tổng từng biến thể phải bằng SL cần (`ALLOCATION_MISMATCH`), kho ngoài danh sách của shop chỉ bị cảnh báo. `POST /orders/allocation-preview` xem trước, không ghi.
 
 ### 5.4 Nhập hàng (Purchase)
 - **Nhà cung cấp** (`suppliers`).
@@ -200,6 +201,8 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
   - `net_amount` = total − platform_fee − seller_shipping (**shop thực nhận**)
   - `cogs_amount` = Σ giá vốn dòng
   - `gross_profit` = net − cogs (tính khi báo cáo, có cả chi phí trả hàng)
+  - **Giá vốn lưu thành tổng tiền**: `order_lines.cogs_amount` = Σ (SL − đã nhập lại) × `unit_cost` của các phân bổ còn hiệu lực (0 khi nháp/huỷ); `orders.cogs_amount` = Σ các dòng. `order_lines.unit_cost` chỉ để hiển thị (`round(cogs/SL)`) vì chia nhiều kho thì đơn giá không còn nguyên. Mọi báo cáo dùng `SUM(cogs_amount)`; báo cáo theo kho cộng từ phân bổ của kho đó. `orders.warehouse_id` = kho chính.
+  - **Huỷ / trả hàng**: nhập lại đúng kho đã xuất, đúng giá vốn đã chụp. Trả một phần lấy từ phân bổ tạo sau cùng trước (LIFO); phiếu trả có thể chọn kho nhận khác (giá vốn hoàn vẫn là giá đã chụp). Trả không nhập lại (hàng hỏng) không đổi giá vốn. `cogs_amount` giảm đúng bằng giá vốn đã hoàn. `npm run check-stock` đối chiếu tồn với sổ kho và `cogs_amount` với phân bổ.
   - `paid_amount`, `payment_status`: `unpaid | partial | paid | refunded`
   - **Số tiền cần thu** khác nhau theo kênh: kênh sàn (`channels.is_marketplace = 1`) → cần thu `net_amount` (sàn trừ phí rồi mới trả shop); kênh khác → cần thu `total_amount` (phí ship shop chịu là khoản chi riêng). Đều trừ phần hàng đã trả.
 - **Phiếu bán hàng**: trang in khổ A5/80mm từ đơn, có logo/tên shop, không gọi là "hoá đơn".
@@ -318,6 +321,8 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | `product_images` | chỉ mục ảnh sản phẩm (file ở `data/uploads/<account>/`), nơi kiểm quyền đọc ảnh |
 | `shop_listings` | biến thể bán ở shop nào, giá bao nhiêu |
 | `stock_levels`, `stock_movements` | tồn kho & sổ cái kho |
+| `shop_warehouses` | danh sách kho của shop theo ưu tiên (1 = lấy trước) |
+| `order_line_allocations` | từng phần xuất kho của dòng đơn: kho, SL, giá vốn chụp, SL đã nhập lại |
 | `stock_counts`, `stock_count_lines` | kiểm kê |
 | `suppliers`, `purchases`, `purchase_lines` | nhập hàng |
 | `customers`, `customer_notes` | hồ sơ khách chung |
@@ -550,6 +555,10 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Lọc danh mục chỉ áp dụng cho báo cáo sản phẩm và ngũ hành | Doanh thu, phí ship, phí sàn, chi phí thuộc cả đơn chứ không thuộc từng dòng; chia theo danh mục phải bịa tỷ lệ. |
 | 2026-11-03 | Route PATCH dùng `patchOf`; huỷ phiếu nhập đã trả tiền phải kèm NCC hoàn tiền | `.partial()` của zod 4 áp `.default()` làm sửa đơn nháp xoá phí ship/phí sàn/giảm giá và sửa đơn đã chốt luôn bị 409. Huỷ phiếu nhập đã trả để tiền đã chi nằm đó không hàng, không công nợ. |
 | 2026-11-03 | Trang "Cách đọc số liệu" chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên | Chủ shop nhìn nhiều chỉ số không biết xem gì. Ngưỡng bịa thêm sẽ gây báo động giả; quỹ âm hoặc đang lỗ thì đúng với mọi shop. |
+| 2026-11-04 | Shop có danh sách kho xếp ưu tiên (`shop_warehouses`) thay cho một kho mặc định; đơn tự lấy từ kho đầu rồi tới kho sau | Hàng thật nằm ở nhiều chỗ; một đơn thiếu ở kho này vẫn bán được nếu kho kia còn. `default_warehouse_id` giữ nguyên và đồng bộ với kho đầu để code cũ không vỡ. |
+| 2026-11-04 | Giá vốn lưu thành tổng tiền `order_lines.cogs_amount`, phân bổ lưu ở `order_line_allocations` với giá vốn chụp từng kho | Hai kho có giá bình quân khác nhau thì đơn giá trung bình của dòng không nguyên; nhân ngược `unit_cost × SL` sẽ lệch vài đồng. Cộng số nguyên theo phần thì đúng từng đồng (nguyên tắc 1). Hoàn kho/trả hàng đi đúng phần đã chụp nên không phải tính lại giá vốn. |
+| 2026-11-04 | Trả một phần hoàn theo LIFO phân bổ; cho chọn kho nhận khác | Phiếu trả không ghi hàng đến từ kho nào. LIFO xác định được, dễ giải thích; kho nhận khác vì hàng trả có thể nhập về chỗ khác, giá vốn hoàn vẫn là giá đã chụp. |
+| 2026-11-04 | `/variants` không truyền `warehouse_id` thì tính tổng các kho của shop cho cả biến thể đơn và combo | Trước đây biến thể đơn ra 0 còn combo cộng mọi kho, không nhất quán. Tổng theo kho của shop đúng với những gì đơn thật sự lấy được. |
 | 2026-11-04 | Đổi slogan "Dấu vết của thời gian" → **"Hành Trình Phương Đông"** (thanh bên, trang đăng nhập, `logo-lockup.svg`) | Slogan mới nói hành trình làm ăn trên mảnh đất phương đông. Tên concept thiết kế "Dấu vết thời gian" (mục 7A) giữ nguyên vì là ngôn ngữ thiết kế, không phải slogan. Chữ trong lockup tạo lại outline bằng Noto Serif SemiBold. |
 | 2026-11-04 | Nền tảng bán hàng dạng plugin (`platforms.js`), bật/tắt từng nền tảng; thêm TikTok Shop và Zalo; bỏ code cứng Shopee ở phương thức thanh toán, đối soát, import; đối soát theo từng sàn | Chủ shop bán thêm TikTok Shop và chưa muốn thấy nền tảng mình không dùng. Mặc định giữ Shopee + Facebook để tài khoản cũ không đổi hành vi. Tắt chỉ lưu trữ kênh (không xoá dữ liệu) và chặn tạo đơn mới ở kênh tắt; phương thức payout luôn hợp lệ kể cả khi nền tảng tắt để thanh toán cũ không thành rác. Mẫu import TikTok dựng theo tên cột công khai, chưa kiểm với file thật nên ghi rõ trong mẫu. |
 | 2026-11-04 | Ngũ hành chuyển từ cột `products.elements` sang trường sản phẩm riêng của từng shop phong thuỷ (`product_fields` của ngành, vai trò `element`); migration 021 tạo trường cho shop phong thuỷ đang có và chép giá trị cho sản phẩm niêm yết ở shop đó, giữ cột cũ | Ngũ hành chỉ có nghĩa ở shop phong thuỷ, cùng nguyên tắc với mệnh của khách (thông tin riêng theo shop). Cột chung buộc mọi shop thấy ô ngũ hành. Báo cáo đọc theo shop của đơn nên tổng 5 hành + "chưa gán" vẫn bằng doanh thu hàng. Phải đổi chỉ mục khoá trường: trước đây khoá trường sản phẩm duy nhất toàn hệ thống nên hai shop không cùng có `ngu_hanh` được. |

@@ -7,7 +7,7 @@ import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { dailyCode } from '../../lib/codes.js';
 import { applyMovement } from '../inventory/service.js';
 import { recordPayment, netPaid, listPaymentsFor } from '../payments/service.js';
-import { isBundle, componentsOf } from '../catalog/bundles.js';
+import { planAllocation, shopWarehouseIds } from './allocation.js';
 import { findOrCreateCustomer, recalcCustomerStats, getCustomer, ensureMember } from '../customers/service.js';
 import { getShop } from '../shops/service.js';
 
@@ -41,6 +41,17 @@ export function getOrder(id) {
     .prepare(`SELECT l.*, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url FROM order_lines l
               LEFT JOIN variants v ON v.id = l.variant_id LEFT JOIN products p ON p.id = v.product_id WHERE l.order_id = ? ORDER BY l.sort_order`)
     .all(o.id);
+  const allocs = db()
+    .prepare(
+      `SELECT a.*, w.name AS warehouse_name, v.sku FROM order_line_allocations a
+       JOIN warehouses w ON w.id = a.warehouse_id JOIN variants v ON v.id = a.variant_id
+       WHERE a.order_line_id IN (SELECT id FROM order_lines WHERE order_id = ?) ORDER BY a.rowid`,
+    )
+    .all(o.id);
+  for (const l of o.lines) {
+    l.allocations = allocs.filter((a) => a.order_line_id === l.id);
+    l.planned_allocations = l.planned_allocations ? JSON.parse(l.planned_allocations) : null;
+  }
   o.history = db().prepare('SELECT * FROM order_status_history WHERE order_id = ? ORDER BY created_at').all(o.id);
   o.payments = listPaymentsFor('order', o.id);
   o.returns = db()
@@ -128,6 +139,7 @@ function resolveLines(shopId, lines) {
       unit_price: price,
       discount_amount: discount,
       line_total: price * l.qty - discount,
+      allocations: l.allocations?.length ? l.allocations : null,
     };
   });
 }
@@ -159,7 +171,7 @@ function refreshDerived(orderId) {
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(orderId);
   const returned = db().prepare('SELECT COALESCE(SUM(goods_amount),0) AS v FROM order_returns WHERE order_id = ?').get(orderId).v;
   const active = STOCK_OUT_STATUSES.has(o.status);
-  const cogs = active ? lines.reduce((a, l) => a + (l.qty - l.restocked_qty) * l.unit_cost, 0) : 0;
+  const cogs = active ? lines.reduce((a, l) => a + l.cogs_amount, 0) : 0; // cogs_amount của dòng đã trừ phần nhập lại kho
   const netRevenue = active ? o.goods_revenue - returned : 0;
   const paid = netPaid('order', orderId);
   const due = dueAmount({ ...o, returned_amount: returned });
@@ -175,52 +187,83 @@ function refreshDerived(orderId) {
 }
 
 // ---------- Tồn kho theo trạng thái ----------
+/**
+ * Xuất kho khi xác nhận đơn. Mỗi dòng có thể lấy từ nhiều kho (planAllocation). Mỗi phần ghi một biến động kho riêng,
+ * giá vốn của phần đó là giá bình quân của CHÍNH kho đó lúc xuất, chụp vào allocation và không tính lại.
+ * Giá vốn dòng (cogs_amount) = Σ SL × giá vốn từng phần: cộng số nguyên nên đúng từng đồng; unit_cost chỉ để hiển thị.
+ */
 function deductStock(o, actor, allowNegative) {
   let warning = false;
   // Đơn import từ sàn đã xảy ra ở quá khứ: ghi biến động kho theo ngày đặt, không phải lúc bấm import
   const at = o.source === 'import' ? o.ordered_at : undefined;
-  const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(o.id);
-  for (const l of lines) {
-    const move = (variantId, qty) =>
-      applyMovement({ warehouseId: o.warehouse_id, variantId, type: 'sale_out', qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at });
-    if (isBundle(l.variant_id)) {
-      // Combo: trừ từng thành phần, chụp thành phần + giá vốn từng cái để hoàn kho/trả hàng sau này đúng
-      const comps = componentsOf(l.variant_id);
-      if (!comps.length) throw conflict('BUNDLE_EMPTY', `Combo ${l.sku} chưa có thành phần nào`);
-      let cost = 0;
-      for (const c of comps) {
-        const res = move(c.component_variant_id, c.qty * l.qty);
-        if (res.negative) warning = true;
-        db().prepare('INSERT INTO order_line_components (id, order_line_id, variant_id, per_bundle_qty, unit_cost) VALUES (?,?,?,?,?)').run(newId('olc'), l.id, c.component_variant_id, c.qty, res.unitCost);
-        cost += c.qty * res.unitCost;
-      }
-      db().prepare('UPDATE order_lines SET unit_cost = ? WHERE id = ?').run(cost, l.id);
-      continue;
+  const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ? ORDER BY sort_order').all(o.id);
+  const plan = planAllocation(
+    o.shop_id,
+    lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty, allocations: l.planned_allocations ? JSON.parse(l.planned_allocations) : null })),
+    { allowNegative, primaryWarehouseId: o.warehouse_id },
+  );
+  const insAlloc = db().prepare('INSERT INTO order_line_allocations (id, order_line_id, variant_id, warehouse_id, qty, unit_cost, restocked_qty, created_at) VALUES (?,?,?,?,?,?,0,?)');
+  lines.forEach((l, i) => {
+    const done = [];
+    for (const it of plan.lines[i].items) {
+      const res = applyMovement({ warehouseId: it.warehouse_id, variantId: it.variant_id, type: 'sale_out', qty: it.qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at });
+      if (res.negative || it.short_qty > 0) warning = true;
+      insAlloc.run(newId('ola'), l.id, it.variant_id, it.warehouse_id, it.qty, res.unitCost, nowIso());
+      done.push({ variant_id: it.variant_id, qty: it.qty, cost: it.qty * res.unitCost });
     }
-    const res = move(l.variant_id, l.qty);
-    if (res.negative) warning = true;
-    db().prepare('UPDATE order_lines SET unit_cost = ? WHERE id = ?').run(res.unitCost, l.id);
-  }
+    const cogs = done.reduce((a, d) => a + d.cost, 0);
+    if (plan.lines[i].items.some((it) => it.variant_id !== l.variant_id)) {
+      // Combo: chụp từng thành phần (SL mỗi combo + giá vốn trung bình hiển thị) cho phiếu và để biết công thức lúc bán
+      const comps = new Map();
+      for (const d of done) {
+        const c = comps.get(d.variant_id) ?? { qty: 0, cost: 0 };
+        c.qty += d.qty;
+        c.cost += d.cost;
+        comps.set(d.variant_id, c);
+      }
+      for (const [vid, c] of comps) {
+        db().prepare('INSERT INTO order_line_components (id, order_line_id, variant_id, per_bundle_qty, unit_cost) VALUES (?,?,?,?,?)').run(newId('olc'), l.id, vid, c.qty / l.qty, Math.round(c.cost / c.qty));
+      }
+    }
+    db().prepare('UPDATE order_lines SET unit_cost = ?, cogs_amount = ? WHERE id = ?').run(Math.round(cogs / l.qty), cogs, l.id);
+  });
   if (warning) db().prepare('UPDATE orders SET stock_warning = 1 WHERE id = ?').run(o.id);
 }
 
-/** Nhập lại kho `qty` đơn vị của một dòng (combo: nhập lại từng thành phần theo ảnh chụp lúc bán) */
-function putBackLine(o, l, qty, { type, note, actor, at }) {
-  const base = { warehouseId: o.warehouse_id, type, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note, actorId: actor?.id, at };
-  const comps = db().prepare('SELECT * FROM order_line_components WHERE order_line_id = ?').all(l.id);
-  if (comps.length) {
-    for (const c of comps) applyMovement({ ...base, variantId: c.variant_id, qty: c.per_bundle_qty * qty, unitCost: c.unit_cost });
-  } else {
-    applyMovement({ ...base, variantId: l.variant_id, qty, unitCost: l.unit_cost });
+/**
+ * Nhập lại kho `qty` đơn vị của một dòng: mỗi phần về đúng giá vốn đã chụp. Lấy từ phân bổ tạo SAU CÙNG trước (LIFO).
+ * Kho nhận mặc định là kho đã xuất; `warehouseId` (tuỳ chọn) đổi kho nhận, giá vốn vẫn là giá đã chụp.
+ * Giảm cogs_amount của dòng đúng bằng giá vốn đã hoàn. Trả về giá vốn đã hoàn.
+ */
+function putBackLine(o, l, qty, { type, note, actor, at, warehouseId }) {
+  const allocs = db()
+    .prepare('SELECT * FROM order_line_allocations WHERE order_line_id = ? AND qty > restocked_qty ORDER BY rowid DESC')
+    .all(l.id);
+  // Combo: mỗi thành phần cần per_bundle × qty; biến thể đơn: qty. per_bundle suy từ tổng phân bổ / SL dòng.
+  const all = db().prepare('SELECT variant_id, SUM(qty) AS q FROM order_line_allocations WHERE order_line_id = ? GROUP BY variant_id').all(l.id);
+  const need = new Map(all.map((r) => [r.variant_id, (r.q / l.qty) * qty]));
+  let restored = 0;
+  for (const a of allocs) {
+    let n = need.get(a.variant_id) ?? 0;
+    if (n <= 0) continue;
+    const take = Math.min(n, a.qty - a.restocked_qty);
+    need.set(a.variant_id, n - take);
+    applyMovement({ warehouseId: warehouseId ?? a.warehouse_id, variantId: a.variant_id, type, qty: take, unitCost: a.unit_cost, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note, actorId: actor?.id, at });
+    db().prepare('UPDATE order_line_allocations SET restocked_qty = restocked_qty + ? WHERE id = ?').run(take, a.id);
+    restored += take * a.unit_cost;
   }
+  for (const [vid, n] of need) if (n > 0) throw conflict('RESTOCK_EXCEEDS', 'Số lượng nhập lại lớn hơn số đã xuất của dòng đơn', { variant_id: vid, missing: n });
+  db().prepare('UPDATE order_lines SET cogs_amount = cogs_amount - ? WHERE id = ?').run(restored, l.id);
+  return restored;
 }
 
 function restoreStock(o, actor, note) {
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(o.id);
   for (const l of lines) {
     const qty = l.qty - l.restocked_qty;
-    if (qty <= 0) continue;
-    putBackLine(o, l, qty, { type: 'sale_cancel_in', note, actor });
+    if (qty > 0) putBackLine(o, l, qty, { type: 'sale_cancel_in', note, actor });
+    // Đơn huỷ không còn giá vốn nào. Phân bổ vẫn giữ lại làm lịch sử, đã hoàn hết.
+    db().prepare('UPDATE order_lines SET cogs_amount = 0 WHERE id = ?').run(l.id);
   }
 }
 
@@ -283,13 +326,46 @@ function resolveCustomer(input, actor) {
   return findOrCreateCustomer({ ...c, source_channel: input.channel_id }, actor);
 }
 
+/** Kiểm phân bổ kho tay của đơn nháp ngay lúc lưu (tổng phải khớp SL), để lỗi hiện sớm chứ không đợi tới lúc xác nhận */
+function checkPlanned(shopId, lines, primaryWarehouseId) {
+  if (!lines.some((l) => l.allocations?.length)) return;
+  planAllocation(shopId, lines, { allowNegative: true, primaryWarehouseId });
+}
+
+/** Xem trước cách đơn sẽ lấy hàng: phân bổ đề xuất (hoặc theo phân bổ tay) kèm tồn từng kho của shop. Không ghi gì. */
+export function previewAllocation(input) {
+  const shop = getShop(input.shop_id);
+  const lines = resolveLines(shop.id, input.lines.map((l) => ({ ...l, discount_amount: 0 })));
+  const plan = planAllocation(shop.id, lines, { allowNegative: true, primaryWarehouseId: input.warehouse_id || undefined });
+  const names = new Map(db().prepare('SELECT id, name FROM warehouses').all().map((w) => [w.id, w.name]));
+  const level = db().prepare('SELECT on_hand FROM stock_levels WHERE warehouse_id = ? AND variant_id = ?');
+  const stockOf = new Map();
+  const outLines = plan.lines.map((r, i) => {
+    const items = r.items.map((it) => ({ ...it, warehouse_name: names.get(it.warehouse_id) }));
+    for (const it of items) {
+      if (stockOf.has(it.variant_id)) continue;
+      stockOf.set(it.variant_id, { variant_id: it.variant_id, sku: it.sku, warehouses: plan.warehouses.map((w) => ({ warehouse_id: w, warehouse_name: names.get(w), on_hand: level.get(w, it.variant_id)?.on_hand ?? 0 })) });
+    }
+    return { index: i, variant_id: lines[i].variant_id, sku: lines[i].sku, qty: lines[i].qty, items };
+  });
+  return {
+    primary_warehouse_id: plan.warehouses[0],
+    warehouses: plan.warehouses.map((w) => ({ id: w, name: names.get(w) })),
+    lines: outLines,
+    stock: [...stockOf.values()],
+    shortages: plan.shortages,
+    warnings: plan.warnings,
+    ok: plan.shortages.length === 0,
+  };
+}
+
 export function createOrder(input, actor, { source = 'manual' } = {}) {
   const shop = getShop(input.shop_id);
   const channel = db().prepare('SELECT id, name, archived_at FROM channels WHERE id = ?').get(input.channel_id || 'direct');
   if (!channel) throw badRequest('INVALID_CHANNEL', `Kênh ${input.channel_id} không tồn tại`);
   if (channel.archived_at) throw badRequest('CHANNEL_DISABLED', `Kênh ${channel.name} đang tắt. Bật lại ở Cài đặt → Nền tảng bán hàng để tạo đơn mới (đơn cũ vẫn xem được).`);
-  const warehouseId = input.warehouse_id || shop.default_warehouse_id;
-  if (!warehouseId) throw badRequest('NO_WAREHOUSE', `Shop ${shop.name} chưa có kho mặc định`);
+  const warehouseId = input.warehouse_id || shopWarehouseIds(shop.id)[0] || shop.default_warehouse_id; // kho chính = ưu tiên 1
+  if (!warehouseId) throw badRequest('NO_WAREHOUSE', `Shop ${shop.name} chưa có kho nào. Thêm kho ở Cài đặt → Shop & kho.`);
   if (input.external_id) {
     const dup = db().prepare('SELECT id, code FROM orders WHERE shop_id = ? AND channel_id = ? AND external_id = ?').get(shop.id, channel.id, input.external_id);
     if (dup) throw conflict('DUPLICATE_ORDER', `Đơn ${input.external_id} đã tồn tại (${dup.code})`, { order_id: dup.id });
@@ -298,6 +374,7 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
   if (customer) ensureMember(customer.id, shop.id); // mua ở shop nào thì là khách của shop đó
   const lines = resolveLines(shop.id, input.lines);
   const h = computeHeader(lines, input);
+  checkPlanned(shop.id, h.lines, warehouseId);
   const orderedAt = toIso(input.ordered_at) || nowIso();
   const id = newId('ord');
   const at = nowIso();
@@ -341,10 +418,10 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
       at,
     );
   const ins = db().prepare(
-    `INSERT INTO order_lines (id, order_id, variant_id, sku, name, qty, unit_price, discount_amount, line_total, allocated_order_discount, sort_order)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO order_lines (id, order_id, variant_id, sku, name, qty, unit_price, discount_amount, line_total, allocated_order_discount, sort_order, planned_allocations)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
-  h.lines.forEach((l, i) => ins.run(newId('orl'), id, l.variant_id, l.sku, l.name, l.qty, l.unit_price, l.discount_amount, l.line_total, l.allocated_order_discount, i));
+  h.lines.forEach((l, i) => ins.run(newId('orl'), id, l.variant_id, l.sku, l.name, l.qty, l.unit_price, l.discount_amount, l.line_total, l.allocated_order_discount, i, l.allocations ? JSON.stringify(l.allocations) : null));
   logStatus(id, null, 'draft', null, actor);
   emit('order.created', { entityType: 'order', entityId: id, shopId: shop.id, data: { id, shop_id: shop.id, channel_id: channel.id, external_id: input.external_id ?? null } });
 
@@ -379,11 +456,13 @@ export function updateOrder(id, input, actor) {
       merged.customer_phone = input.customer?.phone ?? c.phone;
     }
   }
+  if (!merged.warehouse_id) merged.warehouse_id = before.warehouse_id;
   let lines = before.lines;
   if (isDraft && input.lines) {
     lines = resolveLines(before.shop_id, input.lines);
   }
   const h = computeHeader(lines.map((l) => ({ ...l, line_total: l.line_total ?? l.qty * l.unit_price - l.discount_amount })), merged);
+  if (isDraft && input.lines) checkPlanned(before.shop_id, h.lines, merged.warehouse_id);
   const orderedAt = input.ordered_at ? toIso(input.ordered_at) : before.ordered_at;
   db()
     .prepare(
@@ -420,10 +499,10 @@ export function updateOrder(id, input, actor) {
   if (isDraft && input.lines) {
     db().prepare('DELETE FROM order_lines WHERE order_id = ?').run(before.id);
     const ins = db().prepare(
-      `INSERT INTO order_lines (id, order_id, variant_id, sku, name, qty, unit_price, discount_amount, line_total, allocated_order_discount, sort_order)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO order_lines (id, order_id, variant_id, sku, name, qty, unit_price, discount_amount, line_total, allocated_order_discount, sort_order, planned_allocations)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
     );
-    h.lines.forEach((l, i) => ins.run(newId('orl'), before.id, l.variant_id, l.sku, l.name, l.qty, l.unit_price, l.discount_amount, l.line_total, l.allocated_order_discount, i));
+    h.lines.forEach((l, i) => ins.run(newId('orl'), before.id, l.variant_id, l.sku, l.name, l.qty, l.unit_price, l.discount_amount, l.line_total, l.allocated_order_discount, i, l.allocations ? JSON.stringify(l.allocations) : null));
   } else {
     const upd = db().prepare('UPDATE order_lines SET allocated_order_discount = ? WHERE id = ?');
     h.lines.forEach((l) => upd.run(l.allocated_order_discount, l.id));
@@ -451,7 +530,8 @@ export function addOrderPayment(id, { amount, method, paidAt, note, direction = 
 
 // ---------- Trả hàng ----------
 /**
- * lines: [{ order_line_id, qty, restock }] — restock=false nghĩa là hàng hỏng, không nhập lại kho
+ * lines: [{ order_line_id, qty, restock, warehouse_id? }] — restock=false nghĩa là hàng hỏng, không nhập lại kho (giá vốn không đổi);
+ *   restock=true nhập lại theo LIFO về đúng kho đã xuất, hoặc `warehouse_id` nếu chọn kho nhận khác
  * refund: { amount, method } — tiền hoàn thực tế (có thể khác giá trị hàng)
  */
 export function createReturn(orderId, { lines, reason, refund, returnedAt }, actor) {
@@ -468,13 +548,14 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt }, act
     // Giá trị hàng trả = phần doanh thu thực của dòng (sau giảm giá dòng + phân bổ giảm giá đơn) theo tỷ lệ SL
     const value = Math.round(((l.line_total - l.allocated_order_discount) * r.qty) / l.qty);
     goods += value;
+    let restoredCost = 0;
     if (r.restock) {
-      putBackLine(o, l, r.qty, { type: 'sale_return_in', note: reason, actor, at });
+      restoredCost = putBackLine(o, l, r.qty, { type: 'sale_return_in', note: reason, actor, at, warehouseId: r.warehouse_id });
     }
     db()
       .prepare('UPDATE order_lines SET returned_qty = returned_qty + ?, restocked_qty = restocked_qty + ? WHERE id = ?')
       .run(r.qty, r.restock ? r.qty : 0, l.id);
-    result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!r.restock, value, unit_cost: l.unit_cost });
+    result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!r.restock, value, unit_cost: l.unit_cost, restored_cost: restoredCost });
   }
   const refundAmount = refund?.amount ?? 0;
   db()

@@ -28,7 +28,8 @@ export default function Pos() {
   useEffect(() => {
     if (!shop) return;
     let off = false;
-    api.get('/variants', { shop_id: shop.id, warehouse_id: shop.default_warehouse_id, q: dq, limit: 20 }).then((r) => !off && setResults(r.data)).catch(() => !off && setResults([]));
+    // Tồn = tổng các kho của shop; đơn tự lấy hàng theo thứ tự ưu tiên
+    api.get('/variants', { shop_id: shop.id, q: dq, limit: 20 }) .then((r) => !off && setResults(r.data)).catch(() => !off && setResults([]));
     return () => { off = true; };
   }, [shop, dq]);
 
@@ -85,9 +86,11 @@ export default function Pos() {
   if (!shop) return <div className="page"><Empty>Chưa có shop nào. Tạo shop trong Cài đặt.</Empty></div>;
 
   if (done) {
+    const elsewhere = (done.lines || []).flatMap((l) => (l.allocations || []).filter((a) => a.warehouse_id !== done.warehouse_id).map((a) => `${a.sku} × ${a.qty} từ ${a.warehouse_name}`));
     return (
       <div className="page stack" style={{ maxWidth: 520 }}>
         <div className="alert ok"><span className="seal">ĐÃ CHỐT</span> Đơn <b>{done.code}</b> — {vnd(done.total_amount)}</div>
+        {elsewhere.length > 0 && <div className="alert warn small">Có hàng lấy từ kho phụ: {elsewhere.join('; ')}.</div>}
         <div className="row wrap">
           <a className="btn" href={`/api/v1/orders/${done.id}/receipt`} target="_blank" rel="noreferrer">In phiếu A5</a>
           <a className="btn" href={`/api/v1/orders/${done.id}/receipt?size=80mm`} target="_blank" rel="noreferrer">In phiếu 80mm</a>

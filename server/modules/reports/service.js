@@ -272,7 +272,7 @@ export function byProduct(filter, { limit = 50 } = {}) {
       `SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name,
               SUM(l.qty - l.returned_qty) AS qty_sold,
               SUM(${LINE_NET}) AS revenue,
-              SUM((l.qty - l.restocked_qty) * l.unit_cost) AS cogs
+              SUM(l.cogs_amount) AS cogs
        FROM order_lines l JOIN orders o ON o.id = l.order_id
        JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
        WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql}
@@ -380,10 +380,14 @@ export function inventoryMetrics({ shopId, warehouseId } = {}) {
   const where = ['o.business_date > ?', `o.status IN ${COUNTED}`];
   const params = [addDays(today, -30)];
   if (shopId) (where.push('o.shop_id = ?'), params.push(shopId));
-  if (warehouseId) (where.push('o.warehouse_id = ?'), params.push(warehouseId));
-  const cogs30 = db()
-    .prepare(`SELECT COALESCE(SUM((l.qty - l.restocked_qty) * l.unit_cost),0) AS v FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE ${where.join(' AND ')}`)
-    .get(...params).v;
+  // Theo kho: giá vốn của đúng những phần đã xuất từ kho đó (một đơn có thể lấy từ nhiều kho); không lọc kho: cogs_amount của dòng
+  const cogs30 = warehouseId
+    ? db()
+        .prepare(`SELECT COALESCE(SUM((a.qty - a.restocked_qty) * a.unit_cost),0) AS v FROM order_line_allocations a JOIN order_lines l ON l.id = a.order_line_id JOIN orders o ON o.id = l.order_id WHERE a.warehouse_id = ? AND ${where.join(' AND ')}`)
+        .get(warehouseId, ...params).v
+    : db()
+        .prepare(`SELECT COALESCE(SUM(l.cogs_amount),0) AS v FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE ${where.join(' AND ')}`)
+        .get(...params).v;
   const daily = cogs30 / 30;
   return {
     stock_value: stockValue,
