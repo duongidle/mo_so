@@ -323,7 +323,17 @@
 - Danh sách Đơn (tab có số đếm, `GET /orders/status-counts`, có test) và Sản phẩm (`stock_total`, `low_stock_count` thêm vào `GET /products`) dễ quan sát; Kho, Khách dùng bảng dính header.
 - Sổ kế toán một hàng công cụ, KQKD/Cân đối thẳng lề; Báo cáo, Kho, Khách, Loyalty, Chi phí, Cài đặt, Guide dùng khung chung.
 - Test: server 161 (thêm 2), web 207 (thêm: định dạng tiền, form dạng trang, phiếu nhập, điều hướng `/pos`).
-- Chưa làm / còn thô: form Chi phí, Chứng từ tay, Tài sản, Chi phí định kỳ vẫn là popup (chưa kiểm popup nào dài quá 6 ô); chi tiết đơn và hồ sơ khách còn dùng `page-head` cũ; chưa chụp thử cỡ 390px (công cụ trình duyệt không đổi được viewport); chưa chạy e2e Playwright sau khi sửa case POS; chưa kiểm kỹ cả bốn theme bằng mắt (chỉ theme ô tô).
+- Chưa làm / còn thô: form Chi phí, Chứng từ tay, Tài sản, Chi phí định kỳ vẫn là popup (chưa kiểm popup nào dài quá 6 ô); (đã xử lý ở đợt dưới: chi tiết đơn và hồ sơ khách dùng PageHeader/Section); chưa chụp thử cỡ 390px (công cụ trình duyệt không đổi được viewport); chưa chạy e2e Playwright sau khi sửa case POS; chưa kiểm kỹ cả bốn theme bằng mắt (chỉ theme ô tô).
+
+**Đợt trường tuỳ chỉnh v2 (2026-11-04, cùng nhánh, kế hoạch `docs/plans/2026-11-truong-tuy-chinh-v2.md`)**
+- A. Xoá trường: `DELETE /custom/fields/:id` (409 `FIELD_REFERENCED` / `CONFIRM_REQUIRED`, snapshot `audit_log`, sự kiện `custom_field.deleted`), `GET /custom/fields/:id/usage`; `FieldsManager` có nút Xoá + hộp xác nhận nói số bản ghi, nút tắt khi còn công thức dùng.
+- B. Ngày/năm sinh là cột chung của khách: form khách, form thêm nhanh, hồ sơ (kèm tuổi), nhắc sinh nhật, xuất file, gộp khách. Migration 028 gom giá trị các shop (ưu tiên phong thuỷ, rồi shop lập trước), ẩn trường cũ, viết lại công thức, ghi ca lệch vào `audit_log`; script `npm run check-birthdates`. Preset ngành bỏ trường ngày sinh.
+- C. Mệnh hiệu lực (`derivedValue`): hồ sơ, cột danh sách (`shop_derived`), bộ lọc, xuất file, biến `{menh}`; ô ghi đè có gợi ý tự tính.
+- D. Công thức: ngày − ngày, ngày ± số, `AGE/DAY/DATE/MONTHS_BETWEEN`, kiểm kiểu lúc lưu, lý do khi trống (preview, hồ sơ khách, panel trường), mẫu “Tuổi”.
+- E. `default_value` (cột mới ở 028) cho trường không phải công thức; `applyIndustry` không tạo lại trường mẫu đã xoá.
+- Hồ sơ khách và chi tiết đơn chuyển sang `PageHeader`/`Section` (thông tin chung → thẻ Mệnh/Hạng/Tổng → nhãn + thông tin riêng). Cảnh báo chưa lưu (`useDirty`) chốt mốc ở lần chạm đầu của người dùng, bỏ đồng hồ 150ms.
+- Test: server 168 (thêm `migration_028`, `custom_v2`, sửa test cũ), web 217 (thêm `use-dirty`, `customer-profile`, xoá trường, lý do công thức, mặc định).
+- Còn thô: form thêm nhanh dạng gọn (`compact`) của `CustomerPicker` không có ô ngày sinh (để POS nhanh); trường công thức lồng nhau chỉ báo lý do ở mức “chưa có <tên trường>”; migration chỉ viết lại công thức “tuổi” có dạng đúng `TODAY() - {biến}` (khoảng trắng tuỳ ý), dạng khác để nguyên và `check-birthdates` liệt kê công thức còn dùng trường cũ.
 
 **Việc chờ làm (từ kế hoạch trả hàng 2026-11-04, ngoài phạm vi lần này)**
 - Dùng tiền khách gửi (store credit) để trừ vào đơn sau.
