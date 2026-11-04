@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { tx } from '../../db/index.js';
 import { body, optionalText } from '../../lib/http.js';
 import { INDUSTRY_IDS } from '../../lib/industries.js';
-import { createShop, getShop, listShops, updateShop } from './service.js';
+import { createShop, getShop, listShops, updateShop, shopWarehouses, setShopWarehouses } from './service.js';
 
 const r = new Hono();
 
@@ -26,6 +27,16 @@ r.patch('/:id', async (c) => {
   if (input.archived !== undefined) input.archived_at = input.archived ? new Date().toISOString() : null;
   delete input.archived;
   return c.json({ data: updateShop(c.req.param('id'), input, c.get('actor')) });
+});
+
+r.get('/:id/warehouses', (c) => {
+  getShop(c.req.param('id'));
+  return c.json({ data: shopWarehouses(c.req.param('id')) });
+});
+// Thay cả danh sách kho của shop, theo thứ tự ưu tiên (kho đầu = kho chính)
+r.put('/:id/warehouses', async (c) => {
+  const input = await body(c, z.object({ warehouse_ids: z.array(z.string()).max(50) }));
+  return c.json({ data: tx(() => setShopWarehouses(c.req.param('id'), input.warehouse_ids, c.get('actor'))) });
 });
 
 export default r;

@@ -25,14 +25,16 @@ function Shops() {
   const save = () => run(async () => {
     const isShop = f.type === 'shop';
     const base = isShop ? '/shops' : '/warehouses';
-    const payload = isShop ? { code: f.code, name: f.name, industry: f.industry || 'general', default_warehouse_id: f.default_warehouse_id || null, receipt_footer: f.receipt_footer || null, phone: f.phone || null, address: f.address || null } : { code: f.code, name: f.name, address: f.address || null };
-    if (f.id) await api.patch(`${base}/${f.id}`, payload); else await api.post(base, payload);
+    const payload = isShop ? { code: f.code, name: f.name, industry: f.industry || 'general', receipt_footer: f.receipt_footer || null, phone: f.phone || null, address: f.address || null } : { code: f.code, name: f.name, address: f.address || null };
+    const saved = f.id ? await api.patch(`${base}/${f.id}`, payload) : await api.post(base, payload);
+    // Danh sách kho của shop (thứ tự = ưu tiên lấy hàng), kho đầu là kho chính
+    if (isShop) await api.put(`/shops/${saved.data.id}/warehouses`, { warehouse_ids: f.warehouse_ids || [] });
     setF(null); reload();
   });
   return (
     <>
-      <Card title="Shop" actions={<button className="btn sm" onClick={() => setF({ type: 'shop', code: '', name: '', default_warehouse_id: warehouses[0]?.id })}>+ Shop</button>}>
-        {shops.map((s) => <div key={s.id} className="pick" onClick={() => setF({ type: 'shop', ...s })}><span><b>{s.name}</b> <span className="muted small">{s.code}</span></span><span className="row"><span className="badge plain">{industries.find((i) => i.id === s.industry)?.name || 'Bán lẻ chung'}</span><span className="muted small">Kho: {warehouses.find((w) => w.id === s.default_warehouse_id)?.name || '—'}</span></span></div>)}
+      <Card title="Shop" actions={<button className="btn sm" onClick={() => setF({ type: 'shop', code: '', name: '', warehouse_ids: warehouses[0] ? [warehouses[0].id] : [] })}>+ Shop</button>}>
+        {shops.map((s) => <div key={s.id} className="pick" onClick={() => setF({ type: 'shop', ...s, warehouse_ids: s.warehouse_ids || [] })}><span><b>{s.name}</b> <span className="muted small">{s.code}</span></span><span className="row"><span className="badge plain">{industries.find((i) => i.id === s.industry)?.name || 'Bán lẻ chung'}</span><span className="muted small">Kho: {(s.warehouse_ids || []).map((id) => warehouses.find((w) => w.id === id)?.name).filter(Boolean).join(' → ') || '—'}</span></span></div>)}
       </Card>
       <Card title="Kho" actions={<button className="btn sm" onClick={() => setF({ type: 'wh', code: '', name: '' })}>+ Kho</button>}>
         {warehouses.map((w) => <div key={w.id} className="pick" onClick={() => setF({ type: 'wh', ...w })}><span><b>{w.name}</b> <span className="muted small">{w.code}</span></span></div>)}
@@ -45,13 +47,42 @@ function Shops() {
               <select value={f.industry || 'general'} onChange={(e) => setF({ ...f, industry: e.target.value })}>{industries.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
             </Field>
             {f.id && f.industry && f.industry !== shops.find((x) => x.id === f.id)?.industry && <div className="alert warn small">Đổi ngành sẽ đổi giao diện của shop{industries.find((i) => i.id === f.industry)?.customer_field_labels.length ? ` và thêm các trường thông tin khách: ${industries.find((i) => i.id === f.industry).customer_field_labels.join(', ')}` : ''}. Trường và dữ liệu khách đã có của shop vẫn được giữ nguyên.</div>}
-            <Field label="Kho mặc định (trừ hàng khi bán)"><select value={f.default_warehouse_id || ''} onChange={(e) => setF({ ...f, default_warehouse_id: e.target.value })}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+            <WarehouseOrder ids={f.warehouse_ids || []} warehouses={warehouses} onChange={(ids) => setF({ ...f, warehouse_ids: ids })} />
             <Field label="Điện thoại in trên phiếu"><input value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
             <Field label="Dòng cuối phiếu bán hàng"><input value={f.receipt_footer || ''} onChange={(e) => setF({ ...f, receipt_footer: e.target.value })} /></Field></>}
           <ErrorBox error={error} />
         </Modal>
       )}
     </>
+  );
+}
+
+/** Kho của shop theo thứ tự ưu tiên: đơn lấy hàng từ kho đầu tiên, thiếu thì lấy tiếp kho sau */
+function WarehouseOrder({ ids, warehouses, onChange }) {
+  const move = (i, d) => { const a = [...ids]; [a[i], a[i + d]] = [a[i + d], a[i]]; onChange(a); };
+  const free = warehouses.filter((w) => !ids.includes(w.id));
+  return (
+    <Field label="Kho lấy hàng khi bán" hint="Đơn lấy từ kho trên cùng trước; thiếu thì lấy tiếp kho kế tiếp. Kho đầu là kho chính.">
+      <div className="stack" style={{ gap: 6 }}>
+        {ids.length === 0 && <span className="muted small">Chưa có kho nào, shop chưa bán được hàng.</span>}
+        {ids.map((id, i) => (
+          <div key={id} className="row between">
+            <span>{i + 1}. {warehouses.find((w) => w.id === id)?.name || id}{i === 0 && <span className="muted small"> (kho chính)</span>}</span>
+            <span className="row">
+              <button type="button" className="btn sm" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Lên">↑</button>
+              <button type="button" className="btn sm" disabled={i === ids.length - 1} onClick={() => move(i, 1)} aria-label="Xuống">↓</button>
+              <button type="button" className="btn sm" onClick={() => onChange(ids.filter((x) => x !== id))} aria-label="Bỏ kho">Bỏ</button>
+            </span>
+          </div>
+        ))}
+        {free.length > 0 && (
+          <select value="" onChange={(e) => e.target.value && onChange([...ids, e.target.value])} aria-label="Thêm kho">
+            <option value="">+ Thêm kho…</option>
+            {free.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        )}
+      </div>
+    </Field>
   );
 }
 

@@ -27,6 +27,16 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, Phase 4: một đơn lấy hàng từ nhiều kho
+
+- Migration `022_multi_warehouse.sql`: `shop_warehouses` (seed từ kho mặc định, ưu tiên 1), `order_line_allocations`, `order_lines.cogs_amount` và `planned_allocations`. Backfill đơn cũ: phân bổ từ `orders.warehouse_id` + `unit_cost`/`order_line_components`; đơn huỷ sau khi từng xác nhận có phân bổ đã hoàn hết; tổng giá vốn không đổi (có test).
+- Server: `orders/allocation.js` (`planAllocation`); `deductStock`/`putBackLine`/`restoreStock`/`createReturn` làm theo phân bổ (LIFO khi trả một phần, chọn được kho nhận); `POST /orders/allocation-preview`; `lines[].allocations` khi tạo/sửa đơn nháp; `GET/PUT /shops/:id/warehouses` (có audit); `/variants` thêm `on_hand_total`, `stock_by_warehouse`, tồn nhất quán khi không truyền `warehouse_id`.
+- Giá vốn đổi sang `SUM(cogs_amount)`: `refreshDerived` (đơn, nguồn của `daily_stats`), báo cáo sản phẩm, `inventoryMetrics` (theo kho: cộng từ phân bổ của kho đó).
+- Mới: `server/modules/inventory/verify.js` + `npm run check-stock` (tồn vs sổ kho, `cogs_amount` vs phân bổ, phân bổ vs sổ kho).
+- Giao diện: Cài đặt → Shop & kho có danh sách kho xếp thứ tự (thêm/bỏ/lên/xuống); chi tiết đơn hiện kho từng dòng lấy từ; POS tồn theo tổng kho của shop và báo khi có hàng lấy từ kho phụ. Trình soạn phân bổ tay đầy đủ để Phase 5.
+- Test: `tests/multi_warehouse.test.js` 8 test. `npm test` 111/111, `npm run test:web` 128/128, build qua.
+- Còn mở: phiếu trả không ghi hàng trả thuộc phân bổ nào nên LIFO là quy ước; cột "Giá vốn / cái" trong file xuất đơn là số làm tròn (tổng đúng nằm ở `Giá vốn` của đơn); chưa thử trên trình duyệt thật.
+
 ### 2026-11-04 — Phase 3 bổ sung: chuyển sản phẩm đã tạo sang ma trận
 
 - Server: `updateProduct` nhận `option_renames`; `relabelVariants` đổi nhãn mọi biến thể (kể cả đã lưu trữ) giữ id; `settleOptions` bỏ khoá thuộc tính đã xoá và kiểm ánh xạ 1-1 (`OPTION_INCOMPLETE`, `OPTIONS_CONFLICT`) trong cùng transaction; tên tự đặt đi theo giá trị mới, tên đặt tay giữ nguyên; audit ghi `option_renames` và `options_before`.

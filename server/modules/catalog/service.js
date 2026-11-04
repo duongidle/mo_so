@@ -7,6 +7,7 @@ import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { categoryWithDescendants, categoryClause } from '../../lib/categories.js';
 import { applyMovement } from '../inventory/service.js';
 import { setValues } from '../custom/service.js';
+import { shopWarehouseIds } from '../orders/allocation.js';
 
 const db = () => getDb();
 const json = (v) => (v == null ? null : JSON.stringify(v));
@@ -516,8 +517,13 @@ export function syncListings({ fromShopId, toShopId, variantIds = null, productI
 /**
  * Tìm biến thể để bán (POS, tạo đơn): kèm giá theo shop và tồn ở kho chỉ định.
  */
+/**
+ * Tìm biến thể để bán. Tồn tính theo phạm vi: `warehouse_id` nếu có; không thì mọi kho của shop (shop_id) — đúng với những kho
+ * đơn có thể lấy hàng; không có cả hai thì mọi kho. Biến thể đơn và combo dùng cùng một phạm vi.
+ * `on_hand_total` = tồn trên phạm vi shop/mọi kho (không phụ thuộc warehouse_id); `stock_by_warehouse` = từng kho của shop.
+ */
 export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30, onlyListed = true }) {
-  const params = [shopId ?? null, warehouseId ?? null];
+  const params = [shopId ?? null];
   const where = ['v.archived_at IS NULL', 'p.archived_at IS NULL'];
   if (q) {
     where.push('(v.sku LIKE ? OR v.name LIKE ? OR p.name LIKE ? OR v.barcode = ?)');
@@ -526,22 +532,44 @@ export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30,
   if (shopId && onlyListed) where.push('l.id IS NOT NULL AND l.active = 1');
   const cat = categoryClause(categoryId);
   if (cat.sql) where.push(cat.sql.slice(5));
+  const shopWh = shopId ? shopWarehouseIds(shopId) : null; // null = mọi kho
+  const allWh = db().prepare('SELECT id, name FROM warehouses WHERE archived_at IS NULL ORDER BY name').all();
+  const whNames = new Map(allWh.map((w) => [w.id, w.name]));
+  const listed = shopWh ?? allWh.map((w) => w.id);
+  const scope = warehouseId ? [warehouseId] : shopWh; // null = mọi kho
+  const levels = db().prepare('SELECT warehouse_id, on_hand, avg_cost FROM stock_levels WHERE variant_id = ?');
+  const sumOn = (variantId, ids) => levels.all(variantId).filter((x) => !ids || ids.includes(x.warehouse_id)).reduce((a, x) => a + x.on_hand, 0);
+  // Giá vốn bình quân gia quyền các kho còn hàng; hết hàng thì lấy giá vốn lớn nhất đã biết
+  const avgCost = (variantId, ids) => {
+    const rows = levels.all(variantId).filter((x) => !ids || ids.includes(x.warehouse_id));
+    const pos = rows.filter((x) => x.on_hand > 0);
+    const n = pos.reduce((a, x) => a + x.on_hand, 0);
+    return n > 0 ? Math.round(pos.reduce((a, x) => a + x.on_hand * x.avg_cost, 0) / n) : Math.max(0, ...rows.map((x) => x.avg_cost));
+  };
+  const onHandOf = (r, ids) => (r.kind === 'bundle' ? availableBundles(r.id, ids ?? undefined) : sumOn(r.id, ids));
   return db()
     .prepare(
       `SELECT v.id, v.sku, v.kind, v.name AS variant_name, v.barcode, v.default_price, v.min_stock,
               p.id AS product_id, p.name AS product_name, p.unit, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url, v.option_values,
-              COALESCE(l.price, v.default_price) AS price, l.active AS listed,
-              COALESCE(s.on_hand, 0) AS on_hand, COALESCE(s.avg_cost, 0) AS avg_cost
+              COALESCE(l.price, v.default_price) AS price, l.active AS listed
        FROM variants v
        JOIN products p ON p.id = v.product_id
        LEFT JOIN shop_listings l ON l.variant_id = v.id AND l.shop_id = ?
-       LEFT JOIN stock_levels s ON s.variant_id = v.id AND s.warehouse_id = ?
        WHERE ${where.join(' AND ')}
        ORDER BY p.name, v.sku LIMIT ?`,
     )
     .all(...params, ...cat.params, limit)
-    .map((r) => ({ ...r, option_values: r.option_values ? JSON.parse(r.option_values) : null }))
-    .map((r) => (r.kind === 'bundle' ? { ...r, on_hand: availableBundles(r.id, warehouseId), avg_cost: componentsOf(r.id).reduce((a, c) => a + c.qty * (costOf(c.component_variant_id, warehouseId)), 0) } : r));
+    .map((r) => {
+      const comps = r.kind === 'bundle' ? componentsOf(r.id) : null;
+      return {
+        ...r,
+        option_values: r.option_values ? JSON.parse(r.option_values) : null,
+        on_hand: onHandOf(r, scope),
+        on_hand_total: onHandOf(r, shopWh),
+        avg_cost: comps ? comps.reduce((a, c) => a + c.qty * avgCost(c.component_variant_id, scope), 0) : avgCost(r.id, scope),
+        stock_by_warehouse: listed.map((w) => ({ warehouse_id: w, warehouse_name: whNames.get(w), on_hand: onHandOf(r, [w]) })),
+      };
+    });
 }
 
 function costOf(variantId, warehouseId) {
