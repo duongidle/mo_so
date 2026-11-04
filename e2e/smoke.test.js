@@ -88,6 +88,18 @@ test('đăng nhập sai mật khẩu báo lỗi, đúng thì vào được', { s
   await ok.ctx.close();
 });
 
+test('thanh bên tự thu gọn sau khi click menu bằng chuột', { skip }, async () => {
+  const { page, errors, ctx } = await login();
+  const width = () => page.locator('.sidebar').evaluate((el) => el.getBoundingClientRect().width);
+  await page.mouse.move(10, 300);
+  await page.locator('.sidebar a.nav[title="Đơn hàng"]').click();
+  await page.mouse.move(700, 400);
+  await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().width < 100, null, { timeout: 5000 });
+  assert.ok(await width() < 100);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('chuyển shop đổi giao diện, tính năng và trường khách đúng theo ngành', { skip }, async () => {
   const { page, errors, ctx } = await login();
   await pickShop(page, 'Nước hoa');

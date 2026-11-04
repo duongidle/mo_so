@@ -75,6 +75,7 @@ function Shell({ progress, reopenGuide }) {
   const togglePin = () => setPinned((p) => { try { localStorage.setItem('moso.pin', p ? '0' : '1'); } catch { /* bỏ qua */ } return !p; });
   const lunar = lunarInfo();
   const dateText = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  const blurOnClick = (e) => { if (e.detail > 0) e.currentTarget.blur(); }; // click chuột không giữ focus; trình duyệt cũ thiếu :has
   const tab = (to, label, icon) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}><Icon name={icon} />{label}</NavLink>
   );
@@ -87,13 +88,13 @@ function Shell({ progress, reopenGuide }) {
           <div key={i}>
             {i > 0 && <div className="nav-sep" />}
             {g.items.map(([to, label, icon, end]) => (
-              <NavLink key={to} to={to} end={end} title={label} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
+              <NavLink key={to} to={to} end={end} title={label} onClick={blurOnClick} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
             ))}
           </div>
         ))}
         <div className="me">
-          <button className="pin" onClick={togglePin} title={pinned ? 'Thu gọn thanh bên' : 'Ghim thanh bên luôn mở'}><Icon name="panel" /><span className="lbl">{pinned ? 'Thu gọn' : 'Ghim thanh bên'}</span></button>
-          <button onClick={onLogout} title="Đăng xuất"><Icon name="out" /><span className="lbl">Đăng xuất · {user.displayName}</span></button>
+          <button className="pin" onClick={(e) => { blurOnClick(e); togglePin(); }} title={pinned ? 'Thu gọn thanh bên' : 'Ghim thanh bên luôn mở'}><Icon name="panel" /><span className="lbl">{pinned ? 'Thu gọn' : 'Ghim thanh bên'}</span></button>
+          <button onClick={(e) => { blurOnClick(e); onLogout(); }} title="Đăng xuất"><Icon name="out" /><span className="lbl">Đăng xuất · {user.displayName}</span></button>
         </div>
       </nav>
       <div className="main">

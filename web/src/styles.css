@@ -57,9 +57,11 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .9em; 
   border-right: 1px solid color-mix(in srgb, var(--champagne) 30%, transparent);
   transition: width .25s var(--ease);
 }
-.sidebar:hover, .sidebar:focus-within, .sidebar.pinned { width: 236px; }
+.sidebar:hover, .sidebar.pinned { width: 236px; }
+.sidebar:has(:focus-visible) { width: 236px; } /* tách luật riêng: trình duyệt thiếu :has bỏ qua luật này mà không làm hỏng hover */
 .lbl { opacity: 0; white-space: nowrap; transition: opacity .15s; pointer-events: none; }
-.sidebar:hover .lbl, .sidebar:focus-within .lbl, .sidebar.pinned .lbl { opacity: 1; transition-delay: .08s; }
+.sidebar:hover .lbl, .sidebar.pinned .lbl { opacity: 1; transition-delay: .08s; }
+.sidebar:has(:focus-visible) .lbl { opacity: 1; transition-delay: .08s; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 4px 14px; min-height: 52px; }
 .brand img { width: 40px; height: 40px; border-radius: 11px; flex: none; }
 .brand b { font-family: var(--font-display); font-size: 20px; font-weight: 600; display: block; line-height: 1.1; }
@@ -338,6 +340,7 @@ body { background-image: var(--fibre); background-size: 320px; }
 
 /* phongthuy: la bàn, lôi văn, vân giấy dó/gỗ, ngũ hành, âm lịch */
 [data-theme=phongthuy] {
+  --bg: #F6F0E4; --paper: #FCF9F3;                    /* sáng hơn nền chung một tông; Walnut/bg 13.9:1, Terracotta/bg 5.1:1, Oxblood/bg 8.2:1 */
   --fibre: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320' fill='none' stroke='%23301F12' stroke-linecap='round'%3E%3Cpath d='M20 30 q14 -5 34 3' stroke-opacity='0.035' stroke-width='0.9'/%3E%3Cpath d='M120 18 q-8 10 26 6' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M250 60 q18 6 40 -4' stroke-opacity='0.03' stroke-width='0.8'/%3E%3Cpath d='M60 110 q10 -8 30 4' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M180 130 q-12 8 44 -3' stroke-opacity='0.035' stroke-width='0.9'/%3E%3Cpath d='M290 150 q8 10 24 2' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M30 200 q16 4 38 -6' stroke-opacity='0.03' stroke-width='0.8'/%3E%3Cpath d='M140 230 q-10 -6 30 5' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M230 250 q12 8 46 2' stroke-opacity='0.035' stroke-width='0.9'/%3E%3Cpath d='M90 290 q14 -4 28 6' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M270 300 q-6 8 22 3' stroke-opacity='0.025' stroke-width='0.7'/%3E%3Cpath d='M200 60 q6 -6 18 4' stroke-opacity='0.02' stroke-width='0.6'/%3E%3Cpath d='M100 170 q-14 4 36 2' stroke-opacity='0.025' stroke-width='0.8'/%3E%3C/svg%3E");
   --grain: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='160' fill='none' stroke='%23EDE3D2' stroke-width='1'%3E%3Cpath d='M0 14 C120 8 240 20 360 11.0 S480 16.0 480 16.0' stroke-opacity='0.05'/%3E%3Cpath d='M0 34 C120 25 240 43 360 29.5 S480 37.0 480 37.0' stroke-opacity='0.035'/%3E%3Cpath d='M0 52 C120 47 240 57 360 49.5 S480 53.666666666666664 480 53.666666666666664' stroke-opacity='0.05'/%3E%3Cpath d='M0 75 C120 65 240 85 360 70.0 S480 78.33333333333333 480 78.33333333333333' stroke-opacity='0.03'/%3E%3Cpath d='M0 96 C120 90 240 102 360 93.0 S480 98.0 480 98.0' stroke-opacity='0.05'/%3E%3Cpath d='M0 118 C120 109 240 127 360 113.5 S480 121.0 480 121.0' stroke-opacity='0.035'/%3E%3Cpath d='M0 140 C120 135 240 145 360 137.5 S480 141.66666666666666 480 141.66666666666666' stroke-opacity='0.045'/%3E%3C/svg%3E");
   --meander: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' fill='none' stroke='%23CDB58D' stroke-width='1.2' stroke-linecap='square'%3E%3Cpath d='M0 9H20M14 9V1H3V6H9V4'/%3E%3C/svg%3E");

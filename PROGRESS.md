@@ -27,6 +27,12 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, phase 1: sửa nhanh giao diện
+
+- Thanh bên không còn kẹt mở sau khi click chuột: `:focus-within` đổi thành `:has(:focus-visible)` (luật riêng), thêm blur khi click chuột ở menu, nút ghim, đăng xuất.
+- Nền theme phong thuỷ sáng hơn một tông (`#F6F0E4` / `#FCF9F3`), tương phản đã kiểm, ghi vào nhật ký quyết định.
+- Thêm smoke e2e cho thanh bên tự thu gọn. Kế hoạch cả đợt: `docs/plans/2026-11-dot-nang-cap.md`.
+
 ### 2026-11-03 — Phiên 11: rà soát báo cáo và tài chính
 
 Đánh giá cho thấy doanh thu, lợi nhuận gộp, đối soát Shopee ổn nhưng chi phí và dòng tiền có lỗi số liệu. Đã chạy thử từng nghi vấn trước khi sửa.
