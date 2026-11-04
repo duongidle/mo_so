@@ -40,7 +40,7 @@ export default function CustomFieldsPanel({ entity, id, shopId, title = 'Thông 
           <Wrap bare={bare} title={title} actions={!editing && editable.length > 0 && <button className="btn sm" onClick={() => setDraft({ ...values })}>Sửa</button>}>
             {editing ? (
               <div className="stack">
-                {editable.map((f) => <Field key={f.id} label={f.type === 'boolean' ? '' : f.label}><FieldInput field={f} value={draft[f.key]} onChange={(v) => setDraft({ ...draft, [f.key]: v })} /></Field>)}
+                {editable.map((f) => <Field key={f.id} label={f.type === 'boolean' ? '' : `${f.label}${f.required ? ' *' : ''}`}><FieldInput field={f} value={draft[f.key]} onChange={(v) => setDraft({ ...draft, [f.key]: v })} /></Field>)}
                 <ErrorBox error={error} />
                 <div className="row"><button className="btn primary" disabled={busy} onClick={save}>Lưu</button><button className="btn" onClick={() => setDraft(null)}>Huỷ</button></div>
               </div>
