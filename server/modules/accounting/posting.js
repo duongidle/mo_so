@@ -5,7 +5,8 @@ import { depreciationSchedule, postedPeriods } from '../../lib/schedule.js';
  * Quy tắc hạch toán: mỗi loại chứng từ một hàm THUẦN (không đụng DB) từ ảnh chụp chứng từ → danh sách bút toán.
  * Quy tắc số liệu: bút toán đơn/trả hàng/chi phí phải khớp ĐÚNG cách báo cáo (reports/stats.js, service.js) đếm từng khoản và vào ngày nào:
  * - Đơn tính khi đã xác nhận trở đi (COUNTED), vào ngày của đơn (business_date). Trả hàng cũng vào ngày của đơn gốc.
- * - Doanh thu hàng = goods_revenue (đã trừ giảm giá); phí ship khách trả riêng (5113); phí sàn không được hoàn khi trả hàng.
+ * - Doanh thu hàng = goods_revenue (đã trừ giảm giá); phí ship khách trả riêng (5113, trừ ship hoàn ở phiếu trả); phí sàn không được hoàn khi trả hàng.
+ * - Phiếu trả: Nợ 5212 hàng, Nợ 5113 ship hoàn, Có 131 (hoặc 1388) phần còn lại sau phí trả hàng, Có 5118 phí trả hàng, Nợ 6412 / Có 3388 ship chiều về.
  * - Giá vốn = cogs_amount của đơn (đã trừ phần nhập lại kho) + giá vốn đã nhập lại ở các phiếu trả (chụp lúc xuất).
  * Mỗi bút toán phải cân (Σ Nợ = Σ Có), nếu không ném lỗi.
  */
@@ -64,9 +65,23 @@ function returnEntry({ ret, o, marketplace }) {
   const cust = o.customer_id ? { partner_type: 'customer', partner_id: o.customer_id } : {};
   const restored = ret.lines.reduce((a, l) => a + (l.restock ? l.restored_cost || 0 : 0), 0);
   const memo = `Trả hàng ngày ${ret.business_date}`;
+  const recv = recvAccount(marketplace);
+  const shipRefund = ret.shipping_refund_amount ?? 0;
+  const fee = ret.return_fee_amount ?? 0;
+  const shipCost = ret.return_shipping_cost ?? 0;
+  // Hàng trả giảm 5212; ship hoàn giảm 5113; phí trả hàng là doanh thu khác 5118 (cấn vào công nợ khách); ship chiều về là chi phí như ship shop chịu
   return entry(
     { source_type: 'return', source_id: ret.id, date: o.business_date, description: `Trả hàng ${ret.code} (đơn ${o.code})`, shop_id: o.shop_id },
-    [dr('5212', ret.goods_amount, { ...sc, memo }), cr(recvAccount(marketplace), ret.goods_amount, { ...sc, ...cust }), dr('156', restored, sc), cr('632', restored, sc)],
+    [
+      dr('5212', ret.goods_amount, { ...sc, memo }),
+      dr('5113', shipRefund, { ...sc, memo }),
+      cr(recv, ret.goods_amount + shipRefund - fee, { ...sc, ...cust }),
+      cr('5118', fee, { ...sc, memo: 'Phí trả hàng shop giữ lại' }),
+      dr('156', restored, sc),
+      cr('632', restored, sc),
+      dr('6412', shipCost, sc),
+      cr('3388', shipCost, { ...sc, memo: 'Ship chiều về shop chịu' }),
+    ],
   );
 }
 

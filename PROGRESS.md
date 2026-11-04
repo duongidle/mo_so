@@ -42,6 +42,14 @@
 
 **Việc chờ làm** (chủ shop hoãn ngày 2026-11-04): lợi nhuận ở Báo cáo → Lợi nhuận và `net_profit_estimate` của tổng quan báo cáo **chưa gồm** (1) điều chỉnh/hao hụt kho (`adjust_in`, `adjust_out`, `damage_out`, chênh lệch kiểm kê) và (2) thừa/thiếu khi kiểm đếm quỹ. Sổ kế toán có gồm, ở tài khoản 711 và 811. Nên với "Tất cả shop": lợi nhuận kế toán = lợi nhuận báo cáo + các khoản này; theo từng shop thì khớp hẳn vì các khoản này không thuộc shop nào. Đề xuất chờ chủ shop quyết: thêm dòng "Thu nhập/chi phí khác" vào báo cáo lãi lỗ cho hai bên khớp (hàng hỏng, mất là chi phí thật). Khi làm phải sửa cùng lúc: `tests/accounting_integrity.test.js` (đoạn so lãi lỗ đang cộng các khoản này vào), `tests/finance_integrity.test.js`, ghi chú `net_profit_estimate`, `acc_other`, `acc_depreciation` trong `web/src/metrics.js`, và trang Cách đọc số liệu (`guide`). Khấu hao là câu hỏi riêng: hiện chỉ có ở lãi lỗ kế toán.
 
+### 2026-11-04 — Làm lại phần tiền của phiếu trả hàng
+
+- Migration 027: cột mới trên `order_returns` (hoàn ship, phí trả hàng, ship chiều về) và `orders` (`returned_goods_amount`, `returned_shipping_amount`, `return_fee_amount`, `return_shipping_cost`, `refund_owed_amount`); `daily_stats` thêm `return_fee`, `return_shipping_cost`; tài khoản 5118. Dữ liệu cũ: phần hàng chép từ `returned_amount`, `refund_owed_amount` tính lại.
+- `createReturn`: làm tròn luỹ kế, các khoản mới, chặn tiền trả khách > cần trả khách, ship hoàn > ship còn lại, phí trả hàng > hàng + ship hoàn, kênh sàn. Hoàn tiền sau (thanh toán chiều chi) bị chặn ở số còn nợ khách.
+- Sổ cái: `returnEntry` ghi 5212/5113/131/5118/6412/3388; KQKD có dòng 5118. Báo cáo: lãi gộp có phí trả hàng và ship chiều về; ship = sau hoàn; `cashflow` có `customer_refund_owed`.
+- Giao diện: `ReturnModal` (khối tiền, cần trả khách, tiền trả ngay, giải thích kết quả, nút "Khách không nhận hàng (COD)"), nút "Hoàn tiền" ở đơn, hồ sơ khách và Tiền & công nợ hiện số còn nợ; từ điển chỉ số và trang Cách đọc số liệu cập nhật.
+- Test: `tests/returns.test.js` (10 kịch bản), `web/src/__tests__/return-form.test.js`. Các test cũ không phải sửa. Thêm `npm run check-returns`.
+
 ### 2026-11-04 — Đợt nâng cấp, Phase 8b: nghiệp vụ kế toán bổ sung (M14 xong)
 - Migration 025 (`vouchers`, `recurring_expenses`, cột `expenses.recurring_id/period_key`), 026 (`assets`, `journal_meta`, `period_lock_snapshots`, trigger tài sản).
 - Server: `accounting/{vouchers,assets,lock}.js`, `expenses/recurring.js`, `jobs/recurring.js`, `lib/{schedule,clock,period}.js`; `cash/balanceOf` cộng chứng từ tay và tài sản; KQKD tách khấu hao; khoá sổ `PERIOD_LOCKED` ở chi phí, thanh toán, quỹ, chứng từ, tài sản.
@@ -307,3 +315,10 @@
 - Điền "chu kỳ dùng hết" cho từng sản phẩm thì mới có nhắc mua lại.
 - Chưa có ngành thứ năm: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
 - `daily_stats` và tính hoàn trả theo ngày trả hàng: đã quyết định chưa làm (xem nhật ký quyết định trong `CLAUDE.md`).
+
+**Việc chờ làm (từ kế hoạch trả hàng 2026-11-04, ngoài phạm vi lần này)**
+- Dùng tiền khách gửi (store credit) để trừ vào đơn sau.
+- Đổi hàng trong một bước.
+- Trạng thái "chờ hàng về" cho phiếu trả của sàn.
+- Phí ship chiều về của đơn sàn đang ghi Có 3388 (phải trả khác); nếu sàn thực tế trừ thẳng vào payout thì nên ghi giảm 1388.
+- Phí trả hàng chưa tính vào "Tổng chi tiêu" và hạng của khách (chỉ tính hàng thuần).

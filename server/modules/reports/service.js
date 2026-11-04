@@ -53,7 +53,9 @@ export const REPORT_VARIABLES = [
   { key: 'goods_revenue', label: 'Tiền hàng sau giảm giá', type: 'money', group: 'Doanh thu' },
   { key: 'returned_amount', label: 'Tiền hàng đã trả', type: 'money', group: 'Doanh thu' },
   { key: 'net_revenue', label: 'Doanh thu thuần', type: 'money', group: 'Doanh thu' },
-  { key: 'shipping_fee', label: 'Phí ship khách trả', type: 'money', group: 'Doanh thu' },
+  { key: 'shipping_fee', label: 'Phí ship khách trả (đã trừ ship hoàn)', type: 'money', group: 'Doanh thu' },
+  { key: 'return_fee', label: 'Phí trả hàng thu được', type: 'money', group: 'Doanh thu' },
+  { key: 'return_shipping_cost', label: 'Phí ship chiều về (trả hàng)', type: 'money', group: 'Chi phí' },
   { key: 'platform_fee', label: 'Phí sàn', type: 'money', group: 'Chi phí' },
   { key: 'seller_shipping', label: 'Phí ship shop chịu', type: 'money', group: 'Chi phí' },
   { key: 'cogs', label: 'Giá vốn hàng bán', type: 'money', group: 'Chi phí' },
@@ -68,7 +70,7 @@ export const REPORT_VARIABLES = [
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
 
 const finish = (r) => {
-  const gross_profit = r.net_revenue + r.shipping_fee - r.platform_fee - r.seller_shipping - r.cogs;
+  const gross_profit = r.net_revenue + r.shipping_fee + r.return_fee - r.platform_fee - r.seller_shipping - r.return_shipping_cost - r.cogs;
   return {
     ...r,
     gross_revenue: r.subtotal,
@@ -184,7 +186,7 @@ function withProfit(s, expenses) {
   return { ...s, expenses_amount: expenses, net_profit_estimate: s.gross_profit - expenses };
 }
 
-const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
+const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả + phí trả hàng thu được', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
 
 /** Cơ sở tính thuế cộng dồn từ `from` đến `to` (toàn bộ shop, mọi kênh) */
 function taxBase(base, from, to) {
@@ -192,7 +194,7 @@ function taxBase(base, from, to) {
   const all = { from, to, shopIds: null, channel: null };
   const s = sumOrders(all);
   if (base === 'net_revenue') return s.net_revenue;
-  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee;
+  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee + s.return_fee;
   return s.gross_profit - expensesFor(all).total;
 }
 
@@ -277,7 +279,7 @@ export function byShop(filter) {
 }
 
 function sumOrdersEmpty() {
-  return { order_count: 0, cancelled_count: 0, returned_count: 0, subtotal: 0, discount_amount: 0, goods_revenue: 0, returned_amount: 0, net_revenue: 0, shipping_fee: 0, platform_fee: 0, seller_shipping: 0, cogs: 0, gross_revenue: 0, gross_profit: 0, gross_margin_pct: null, aov: 0, cancel_rate_pct: null, return_rate_pct: null };
+  return { order_count: 0, cancelled_count: 0, returned_count: 0, subtotal: 0, discount_amount: 0, goods_revenue: 0, returned_amount: 0, net_revenue: 0, shipping_fee: 0, platform_fee: 0, seller_shipping: 0, cogs: 0, return_fee: 0, return_shipping_cost: 0, gross_revenue: 0, gross_profit: 0, gross_margin_pct: null, aov: 0, cancel_rate_pct: null, return_rate_pct: null };
 }
 
 export function byChannel(filter) {
@@ -481,6 +483,13 @@ export function cashflow(filter) {
        GROUP BY o.channel_id ORDER BY pending DESC`,
     )
     .all(...(f.shopIds || []));
+  // Shop nợ khách (trả hàng mà chưa hoàn đủ tiền): đã thu nhiều hơn số phải thu sau trả hàng. Đơn sàn không tính (sàn hoàn tiền cho người mua).
+  const owedToCustomers = db()
+    .prepare(
+      `SELECT COALESCE(SUM(o.refund_owed_amount),0) AS v, COUNT(*) AS n FROM orders o JOIN channels ch ON ch.id = o.channel_id
+       WHERE ch.is_marketplace = 0 AND o.status IN ('confirmed','shipping','completed','returned') AND o.refund_owed_amount > 0 ${shopFilter}`,
+    )
+    .get(...(f.shopIds || []));
   const payable = db()
     .prepare(`SELECT COALESCE(SUM(total_amount - paid_amount),0) AS v, COUNT(*) AS n FROM purchases WHERE status = 'received' AND total_amount - paid_amount > 0`)
     .get();
@@ -495,6 +504,8 @@ export function cashflow(filter) {
     by_method: [...byMethod.values()],
     customer_receivable: receivable.v,
     customer_receivable_orders: receivable.n,
+    customer_refund_owed: owedToCustomers.v,
+    customer_refund_owed_orders: owedToCustomers.n,
     marketplace_pending: hanging.v,
     marketplace_pending_orders: hanging.n,
     marketplace_by_channel: hangingByChannel,

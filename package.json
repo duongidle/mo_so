@@ -22,7 +22,8 @@
     "reset-password": "node scripts/reset-password.js",
     "check-stats": "node scripts/check-stats.js",
     "check-stock": "node scripts/check-stock.js",
-    "check-journal": "node scripts/check-journal.js"
+    "check-journal": "node scripts/check-journal.js",
+    "check-returns": "node scripts/check-returns.js"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",

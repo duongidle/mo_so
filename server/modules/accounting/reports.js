@@ -221,7 +221,7 @@ export function incomeStatement({ from, to, shopIds } = {}) {
   const admin = detail(/^642/);
   const sum = (arr) => arr.reduce((a, r) => a + r.amount, 0);
   const depreciation = [...depMap.entries()].filter(([, v]) => v !== 0).sort(([a], [b]) => a.localeCompare(b)).map(([code, amount]) => ({ code, name: names.get(code), amount }));
-  const revenueNet = g('5111') + g('5113') - g('5212');
+  const revenueNet = g('5111') + g('5113') + g('5118') - g('5212');
   const gross = revenueNet - g('632');
   const operatingBeforeDep = gross - sum(selling) - sum(admin);
   const operating = operatingBeforeDep - sum(depreciation);
@@ -229,6 +229,7 @@ export function incomeStatement({ from, to, shopIds } = {}) {
     filter: f,
     revenue_goods: g('5111'),
     revenue_shipping: g('5113'),
+    revenue_return_fee: g('5118'), // phí trả hàng shop giữ lại
     returns: g('5212'),
     net_revenue: revenueNet,
     net_goods_revenue: g('5111') - g('5212'), // = "doanh thu thuần" của báo cáo bán hàng (chưa gồm phí ship khách trả)

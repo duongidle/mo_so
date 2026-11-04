@@ -215,6 +215,7 @@ function Income({ range, shopParam, report }) {
             <Line l="Doanh thu bán hàng (5111)" v={d.revenue_goods} indent />
             <Line l="Doanh thu phí vận chuyển (5113)" v={d.revenue_shipping} indent />
             <Line l="Hàng bán bị trả lại (5212)" v={-d.returns} indent />
+            {d.revenue_return_fee !== 0 && <Line l="Doanh thu khác: phí trả hàng (5118)" v={d.revenue_return_fee} indent />}
             <Line l="Doanh thu thuần" v={d.net_revenue} bold m="acc_net_revenue" />
             <Line l="Giá vốn hàng bán (632)" v={-d.cogs} m="acc_cogs" />
             <Line l="Lãi gộp" v={d.gross_profit} bold m="acc_gross_profit" />

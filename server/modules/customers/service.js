@@ -169,6 +169,8 @@ export function getCustomerDetail(id, { shopId } = {}) {
        WHERE o.customer_id = ? AND o.status IN ('confirmed','shipping','completed','returned') GROUP BY o.shop_id`,
     )
     .all(c.id);
+  // Shop còn nợ khách này (trả hàng mà chưa hoàn đủ tiền), cộng mọi shop
+  c.refund_owed_amount = db().prepare("SELECT COALESCE(SUM(refund_owed_amount),0) AS v FROM orders WHERE customer_id = ? AND status IN ('confirmed','shipping','completed','returned')").get(c.id).v;
   return c;
 }
 

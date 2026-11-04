@@ -23,6 +23,8 @@ export function buildChecks(d) {
     const flags = [];
     const negative = d.accounts.data.filter((a) => a.balance < 0);
     if (negative.length) { flags.push('red'); todo.push(`Quỹ ${negative.map((a) => `“${a.name}”`).join(', ')} đang âm: có khoản chi chưa gắn đúng quỹ, hoặc thiếu số dư đầu. Vào Quỹ tiền để kiểm đếm và nhập số dư đầu.`); }
+    const refundOwed = d.cash.customer_refund_owed ?? 0;
+    if (refundOwed > 0) { flags.push('yellow'); todo.push(`Shop còn nợ khách ${vnd(refundOwed)} do trả hàng mà chưa hoàn tiền (${d.cash.customer_refund_owed_orders ?? 0} đơn): mở đơn và bấm “Hoàn tiền”, hoặc ghi phí trả hàng nếu shop giữ lại tiền.`); }
     const oldCustomer = stale(d.aging.customer, 31);
     if (oldCustomer.count) { flags.push('yellow'); todo.push(`${oldCustomer.count} khoản khách nợ quá 30 ngày (${vnd(oldCustomer.amount)}): liên hệ đòi hoặc xác nhận đã thu mà chưa ghi.`); }
     const oldMarket = stale(d.aging.marketplace, 31);
@@ -34,7 +36,7 @@ export function buildChecks(d) {
     out.push({
       id: 'money', question: 'Tiền có đủ không?', status,
       headline: `Các quỹ đang có ${vnd(d.accounts.total_balance)}. Còn phải thu ${vnd(d.cash.customer_receivable + d.cash.marketplace_pending)}, còn nợ nhà cung cấp ${vnd(d.cash.supplier_payable)}.`,
-      facts: [{ label: 'Tiền trong các quỹ', value: vnd(d.accounts.total_balance) }, { label: 'Khách còn nợ', value: vnd(d.cash.customer_receivable) }, { label: 'Sàn chưa trả', value: vnd(d.cash.marketplace_pending) }, { label: 'Nợ nhà cung cấp', value: vnd(d.cash.supplier_payable) }],
+      facts: [{ label: 'Tiền trong các quỹ', value: vnd(d.accounts.total_balance) }, { label: 'Khách còn nợ', value: vnd(d.cash.customer_receivable) }, { label: 'Sàn chưa trả', value: vnd(d.cash.marketplace_pending) }, { label: 'Nợ nhà cung cấp', value: vnd(d.cash.supplier_payable) }, ...(refundOwed > 0 ? [{ label: 'Nợ phải trả khách (trả hàng)', value: vnd(refundOwed) }] : [])],
       todo: status === 'green' ? ['Không có gì cần làm gấp. Mỗi tuần vẫn nên đếm két và so với số dư ngân hàng.'] : todo,
       link: '/reports?tab=cash', linkLabel: 'Xem tiền & công nợ',
     });
