@@ -7,12 +7,12 @@ import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
 import ExportOrders from '../components/ExportOrders.jsx';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
-import { vnd, num, fmtDate, STATUS, PAY_STATUS, METHODS } from '../lib.js';
+import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
 
 export function OrderList() {
-  const { shopId, channels } = useSession();
+  const { shopId, allChannels: channels } = useSession();
   const [sp, setSp] = useSearchParams();
   const status = sp.get('status') || '';
   const [channel, setChannel] = useState('');
@@ -39,14 +39,14 @@ export function OrderList() {
       <Chips options={TABS} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
       <div className="row wrap">
         <SearchBox value={text} onChange={setText} placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" />
-        <select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 160 }} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 160 }} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}{c.archived_at ? ' (đã tắt)' : ''}</option>)}</select>
         <DateRange from={range.from} to={range.to} onChange={setRange} />
       </div>
       <Async state={state}>
         {(res) => {
           const rows = [...res.data, ...extra];
           const next = extra.length || cursor ? cursor : res.next_cursor;
-          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file Shopee</button><Link to="/pos" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
+          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/pos" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
           return (
             <Card flat>
               <div className="table-wrap"><table className="stackable">
@@ -80,7 +80,7 @@ const NEXT = { draft: [['confirmed', 'Xác nhận (trừ kho)']], confirmed: [['
 
 export function OrderDetail() {
   const { id } = useParams();
-  const { channels } = useSession();
+  const { allChannels: channels, methodLabels, methodList } = useSession();
   const state = useAsync(() => api.get(`/orders/${id}`), [id]);
   const act = useAction();
   const [modal, setModal] = useState(null);
@@ -151,7 +151,7 @@ export function OrderDetail() {
               <div className="grid cols-2 collapse">
                 <Card title="Thanh toán">
                   {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
-                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {METHODS[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
+                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
                   ))}
                 </Card>
                 <Card title="Lịch sử">
@@ -172,7 +172,7 @@ export function OrderDetail() {
               {modal === 'pay' && (
                 <Modal title="Thu tiền" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method }); setModal(null); state.reload(); })}>Ghi nhận</button>}>
                   <Field label="Số tiền"><input type="number" min="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
-                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}

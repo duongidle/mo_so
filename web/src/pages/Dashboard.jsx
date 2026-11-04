@@ -91,7 +91,10 @@ export default function Dashboard({ progress, reopenGuide }) {
                   <Card title="Tiền" actions={<Link to="/expenses" className="small">Đối soát</Link>}>
                     <div className="ledger-line"><span>Đã thu trong tháng</span><b className="num">{vnd(d.cashflow.cash_in)}</b></div>
                     <div className="ledger-line"><span>Khách còn nợ <span className="muted small">({d.cashflow.customer_receivable_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.customer_receivable)}</b></div>
-                    <div className="ledger-line"><span>Shopee đang treo <span className="muted small">({d.cashflow.marketplace_pending_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.marketplace_pending)}</b></div>
+                    <div className="ledger-line"><span>Tiền sàn đang treo <span className="muted small">({d.cashflow.marketplace_pending_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.marketplace_pending)}</b></div>
+                    {(d.cashflow.marketplace_by_channel || []).length > 1 && d.cashflow.marketplace_by_channel.map((c) => (
+                      <div key={c.channel_id} className="ledger-line small muted" style={{ paddingLeft: 12 }}><span>{c.channel_name} <span>({c.orders} đơn)</span></span><b className="num">{vnd(c.pending)}</b></div>
+                    ))}
                     <div className="ledger-line"><span>Nợ nhà cung cấp</span><b className="num">{vnd(d.cashflow.supplier_payable)}</b></div>
                   </Card>
                 </div>

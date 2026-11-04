@@ -4,7 +4,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 
-const TABS = [['shops', 'Shop & kho'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế (ước tính)'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng bán hàng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế (ước tính)'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
 export default function Settings() {
   const [tab, setTab] = useState('shops');
@@ -12,7 +12,7 @@ export default function Settings() {
     <div className="page stack">
       <div className="page-head"><h1>Cài đặt</h1></div>
       <Tabs options={TABS} value={tab} onChange={setTab} />
-      {tab === 'shops' && <Shops />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
+      {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
       {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>
   );
@@ -48,6 +48,58 @@ function Shops() {
             <Field label="Kho mặc định (trừ hàng khi bán)"><select value={f.default_warehouse_id || ''} onChange={(e) => setF({ ...f, default_warehouse_id: e.target.value })}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
             <Field label="Điện thoại in trên phiếu"><input value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
             <Field label="Dòng cuối phiếu bán hàng"><input value={f.receipt_footer || ''} onChange={(e) => setF({ ...f, receipt_footer: e.target.value })} /></Field></>}
+          <ErrorBox error={error} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+const FEATURE = { import: 'Nhập đơn từ file', reconciliation: 'Đối soát tiền sàn trả về' };
+
+/** Nền tảng bán hàng: bật = kênh hiện ở bộ chọn, có mẫu import và (với sàn) đối soát tiền về. Tắt chỉ ẩn kênh, không mất dữ liệu. */
+export function Platforms() {
+  const { platforms, allChannels, reload } = useSession();
+  const { busy, error, run } = useAction();
+  const [f, setF] = useState(null);
+  const toggle = (p) => run(async () => { await api.post(`/platforms/${p.id}/${p.enabled ? 'disable' : 'enable'}`); await reload(); });
+  const custom = allChannels.filter((c) => c.id.startsWith('ch_'));
+  const save = () => run(async () => {
+    if (f.id) await api.patch(`/channels/${f.id}`, { name: f.name, ...(f.locked ? {} : { is_marketplace: !!f.is_marketplace }) });
+    else await api.post('/channels', { name: f.name, is_marketplace: !!f.is_marketplace });
+    setF(null); await reload();
+  });
+  return (
+    <>
+      <p className="muted small" style={{ margin: 0 }}>Bật nền tảng bạn đang bán. Bán trực tiếp và “Khác” luôn có. Tắt một nền tảng chỉ ẩn kênh khỏi bộ chọn, đơn cũ và tiền đang treo vẫn giữ nguyên.</p>
+      <div className="grid cols-2">
+        {platforms.map((p) => (
+          <Card key={p.id} title={p.name} actions={<span className={`badge ${p.enabled ? 'h-green' : 'plain'}`}>{p.enabled ? 'Đang kết nối' : 'Chưa kết nối'}</span>}>
+            <div className="stack" style={{ gap: 8 }}>
+              <span className="small">{p.description}</span>
+              <span className="small muted">Chức năng: {p.features.map((x) => FEATURE[x] || x).join(' · ')}{p.order_count ? ` · đã có ${p.order_count} đơn` : ''}</span>
+              <div><button className={`btn ${p.enabled ? '' : 'primary'}`} disabled={busy} onClick={() => toggle(p)}>{p.enabled ? 'Ngắt kết nối' : 'Kết nối'}</button></div>
+            </div>
+          </Card>
+        ))}
+      </div>
+      <ErrorBox error={error} />
+      <Card title="Kênh tuỳ chỉnh" actions={<button className="btn sm" onClick={() => setF({ name: '', is_marketplace: false })}>+ Kênh</button>}>
+        {!custom.length && <span className="muted small">Chưa có kênh riêng. Thêm kênh cho nơi bán chưa có ở trên (cửa hàng đối tác, sàn khác…).</span>}
+        {custom.map((c) => (
+          <div key={c.id} className="pick" onClick={() => setF({ ...c, is_marketplace: !!c.is_marketplace, locked: false })}>
+            <span><b>{c.name}</b></span>
+            <span className="row"><span className="badge plain">{c.is_marketplace ? 'Sàn (sàn trừ phí rồi trả tiền)' : 'Kênh thường'}</span>{c.archived_at && <span className="badge plain">Đã tắt</span>}</span>
+          </div>
+        ))}
+      </Card>
+      {f && (
+        <Modal title={f.id ? 'Sửa kênh' : 'Thêm kênh'} onClose={() => setF(null)} footer={<>
+          {f.id && <button className="btn" disabled={busy} onClick={() => run(async () => { await api.patch(`/channels/${f.id}`, { archived: !f.archived_at }); setF(null); await reload(); })}>{f.archived_at ? 'Bật lại' : 'Tắt kênh'}</button>}
+          <button className="btn primary" disabled={busy || !f.name.trim()} onClick={save}>Lưu</button></>}>
+          <Field label="Tên kênh"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
+          <label className="check"><input type="checkbox" checked={!!f.is_marketplace} onChange={(e) => setF({ ...f, is_marketplace: e.target.checked })} />Là sàn: sàn thu tiền khách, trừ phí rồi mới trả cho shop</label>
+          <div className="small muted">Kênh sàn có đối soát tiền về (ghi nhận bằng chuyển khoản). Đã có đơn thì không đổi loại kênh được.</div>
           <ErrorBox error={error} />
         </Modal>
       )}

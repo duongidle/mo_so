@@ -1,6 +1,7 @@
 import { getDb } from '../../db/index.js';
 import { nowIso } from '../../lib/time.js';
 import { badRequest } from '../../lib/errors.js';
+import { DEFAULT_ENABLED_PLATFORMS } from '../../lib/platforms.js';
 
 /** Giá trị mặc định cho mọi cài đặt. Cài đặt lưu trong DB ghi đè lên đây. */
 export const DEFAULT_SETTINGS = {
@@ -9,6 +10,7 @@ export const DEFAULT_SETTINGS = {
   slow_moving_days: 60, // hàng không bán trong N ngày = bán chậm
   currency: 'VND',
   business_name: 'Mở Sổ',
+  enabled_platforms: DEFAULT_ENABLED_PLATFORMS, // nền tảng bán hàng đang kết nối; chỉ đổi qua /platforms/:id/enable|disable
   expense_allocation: 'revenue', // revenue | equal | fixed
   tax_enabled: false, // ước tính thuế: mặc định tắt. App không tự đặt mức thuế nào, người dùng tự nhập theo quy định hiện hành
   tax_rules: [], // [{ name, rate_pct, base: net_revenue | revenue_with_shipping | net_profit, exempt_threshold_year }]
@@ -36,6 +38,7 @@ export function getSetting(key) {
 export const TAX_BASES = ['net_revenue', 'revenue_with_shipping', 'net_profit'];
 
 function validate(patch) {
+  if ('enabled_platforms' in patch) throw badRequest('INVALID_SETTING', 'Bật/tắt nền tảng bán hàng qua POST /platforms/:id/enable hoặc /disable để kênh, mẫu import và quỹ được cập nhật cùng lúc');
   if ('tax_enabled' in patch && typeof patch.tax_enabled !== 'boolean') throw badRequest('INVALID_SETTING', 'tax_enabled phải là true/false');
   if ('tax_rules' in patch) {
     const t = patch.tax_rules;
@@ -64,4 +67,11 @@ export function updateSettings(patch) {
     stmt.run(k, JSON.stringify(v), nowIso());
   }
   return getSettings();
+}
+
+/** Ghi một cài đặt từ code nghiệp vụ (bỏ qua kiểm tra của PATCH /settings) */
+export function writeSetting(key, value) {
+  getDb()
+    .prepare('INSERT INTO settings (key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at')
+    .run(key, JSON.stringify(value), nowIso());
 }

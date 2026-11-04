@@ -105,7 +105,7 @@ export function GettingStarted({ progress, open, onClose }) {
   if (done && !step) {
     return (
       <Modal title="Sẵn sàng bán hàng" onClose={() => { setDone(false); onClose(true); }}>
-        <div className="row" style={{ gap: 14 }}><Seal size={56}>XONG</Seal><p style={{ margin: 0 }}>Shop <b>{shop.name}</b> đã có kho và sản phẩm đầu tiên. Bạn có thể bán hàng ngay, nhập thêm sản phẩm và hàng về, hoặc import đơn từ Shopee.</p></div>
+        <div className="row" style={{ gap: 14 }}><Seal size={56}>XONG</Seal><p style={{ margin: 0 }}>Shop <b>{shop.name}</b> đã có kho và sản phẩm đầu tiên. Bạn có thể bán hàng ngay, nhập thêm sản phẩm và hàng về, hoặc import đơn từ file của sàn.</p></div>
         <div className="row wrap"><a className="btn primary" href="/pos">Bán đơn đầu tiên</a><a className="btn" href="/products">Thêm sản phẩm</a><a className="btn" href="/orders?import=1">Import đơn</a></div>
       </Modal>
     );

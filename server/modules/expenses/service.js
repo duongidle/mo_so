@@ -5,6 +5,7 @@ import { notFound, badRequest } from '../../lib/errors.js';
 import { emit, audit } from '../../lib/events.js';
 import { recordPayment } from '../payments/service.js';
 import { addOrderPayment } from '../orders/service.js';
+import { payoutMethodOf } from '../../lib/platforms.js';
 
 const db = () => getDb();
 
@@ -91,7 +92,7 @@ export function voidExpense(id, actor) {
   return getExpense(id);
 }
 
-// ---------- Đối soát Shopee (đơn sàn đã hoàn thành nhưng chưa ghi nhận tiền về) ----------
+// ---------- Đối soát tiền sàn (đơn sàn đã hoàn thành nhưng chưa ghi nhận tiền về) ----------
 const PENDING_SQL = `
   SELECT o.id, o.code, o.external_id, o.shop_id, s.name AS shop_name, o.channel_id, o.customer_name, o.status,
          o.completed_at, o.business_date, o.net_amount, o.returned_amount, o.paid_amount,
@@ -117,7 +118,7 @@ export function pendingPayouts({ shopIds, channel, from, to } = {}) {
  * items: [{ order_id?, external_id?, amount? }] — bỏ amount = nhận đủ số còn treo.
  * Đơn không tìm thấy hoặc không còn treo được báo lại, không bỏ qua im lặng.
  */
-export function recordPayouts({ items, method = 'shopee_payout', paidAt, note, shopId }, actor) {
+export function recordPayouts({ items, method, channelId, paidAt, note, shopId }, actor) {
   const results = [];
   for (const it of items) {
     let o = null;
@@ -132,6 +133,10 @@ export function recordPayouts({ items, method = 'shopee_payout', paidAt, note, s
       continue;
     }
     const pending = db().prepare(`${PENDING_SQL} AND o.id = ?`).get(o.id);
+    if (pending && channelId && pending.channel_id !== channelId) {
+      results.push({ ...it, order_id: o.id, code: o.code, ok: false, error: 'Đơn thuộc kênh khác' });
+      continue;
+    }
     if (!pending) {
       results.push({ ...it, order_id: o.id, code: o.code, ok: false, error: 'Đơn không còn tiền treo' });
       continue;
@@ -141,7 +146,8 @@ export function recordPayouts({ items, method = 'shopee_payout', paidAt, note, s
       results.push({ ...it, order_id: o.id, code: o.code, ok: false, error: 'Số tiền phải > 0' });
       continue;
     }
-    addOrderPayment(o.id, { amount, method, paidAt, note: note ?? 'Đối soát payout' }, actor);
+    // Không chỉ định: dùng phương thức tiền về của nền tảng đang đối soát (shopee_payout, tiktok_payout…), kênh khác = chuyển khoản
+    addOrderPayment(o.id, { amount, method: method ?? payoutMethodOf(channelId ?? o.channel_id), paidAt, note: note ?? 'Đối soát payout' }, actor);
     results.push({ order_id: o.id, code: o.code, ok: true, amount, still_pending: Math.max(0, pending.pending_amount - amount) });
   }
   return { results, recorded: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };

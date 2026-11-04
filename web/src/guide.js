@@ -147,7 +147,7 @@ export const GLOSSARY = [
   { group: 'Tiền và công nợ', items: [
     { name: 'Số dư quỹ', what: 'Tiền thật đang có trong két, tài khoản ngân hàng, ví. App tự tính từ thu chi, bạn kiểm đếm để khớp.', how: 'Số dư đầu + thu − chi − chi phí ± chuyển quỹ/điều chỉnh', tip: 'Chênh với tiền thật: có khoản thu chi chưa ghi. Kiểm đếm hằng tuần.' },
     { name: 'Khách còn nợ', what: 'Đơn bán trực tiếp/Facebook đã giao mà khách chưa trả đủ.', how: 'Σ (khách phải trả − hàng trả − đã thu)', tip: 'Xem tuổi nợ: nợ càng lâu càng khó đòi.' },
-    { name: 'Sàn đang treo', what: 'Đơn Shopee đã hoàn thành nhưng chưa ghi nhận tiền sàn trả về.', how: 'Σ (tiền shop thực nhận − hàng trả − đã nhận)', tip: 'Đối chiếu với bảng kê ví Shopee, rồi ghi nhận ở Chi phí & đối soát. Treo quá lâu có thể sàn giữ tiền hoặc bạn quên ghi.' },
+    { name: 'Sàn đang treo', what: 'Đơn trên sàn (Shopee, TikTok Shop…) đã hoàn thành nhưng chưa ghi nhận tiền sàn trả về.', how: 'Σ (tiền shop thực nhận − hàng trả − đã nhận)', tip: 'Đối chiếu với bảng kê ví của từng sàn, rồi ghi nhận ở Chi phí & đối soát. Treo quá lâu có thể sàn giữ tiền hoặc bạn quên ghi.' },
     { name: 'Nợ nhà cung cấp', what: 'Hàng đã nhập nhưng chưa trả đủ tiền.', how: 'Σ (tổng phiếu nhập − đã trả)', tip: 'Ưu tiên trả các khoản quá hạn để giữ uy tín và giá tốt.' },
     { name: 'Tuổi nợ', what: 'Một khoản nợ đã tồn tại bao nhiêu ngày: 0–7, 8–30, 31–60, 61–90, trên 90.', how: 'Hôm nay − ngày đặt đơn (hoặc ngày nhận hàng)', tip: 'Tập trung vào nhóm trên 30 ngày.' },
   ] },

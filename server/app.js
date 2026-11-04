@@ -8,7 +8,8 @@ import { requireAuth } from './lib/auth.js';
 import authRoutes from './modules/auth/routes.js';
 import shopRoutes from './modules/shops/routes.js';
 import warehouseRoutes from './modules/warehouses/routes.js';
-import settingsRoutes, { channelRoutes, industryRoutes } from './modules/settings/routes.js';
+import settingsRoutes, { industryRoutes } from './modules/settings/routes.js';
+import platformRoutes, { channelRoutes } from './modules/platforms/routes.js';
 import catalogRoutes from './modules/catalog/routes.js';
 import inventoryRoutes from './modules/inventory/routes.js';
 import purchaseRoutes from './modules/purchases/routes.js';
@@ -37,6 +38,7 @@ export function createApp() {
   secured.route('/shops', shopRoutes);
   secured.route('/warehouses', warehouseRoutes);
   secured.route('/channels', channelRoutes);
+  secured.route('/platforms', platformRoutes);
   secured.route('/settings', settingsRoutes);
   secured.route('/industries', industryRoutes);
   secured.route('/', catalogRoutes); // /categories, /products, /variants, /listings

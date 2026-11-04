@@ -45,21 +45,22 @@ r.get('/payments', (c) => {
 
 // Đối soát tiền sàn
 r.get('/reconciliation/pending', (c) => {
-  const q = query(c, z.object({ shop_id: z.string().optional(), channel: z.string().optional(), from: date.optional(), to: date.optional() }));
-  return c.json(svc.pendingPayouts({ shopIds: ids(q.shop_id), channel: q.channel, from: q.from, to: q.to }));
+  const q = query(c, z.object({ shop_id: z.string().optional(), channel_id: z.string().optional(), channel: z.string().optional(), from: date.optional(), to: date.optional() }));
+  return c.json(svc.pendingPayouts({ shopIds: ids(q.shop_id), channel: q.channel_id ?? q.channel, from: q.from, to: q.to }));
 });
 r.post('/reconciliation/payouts', async (c) => {
   const input = await body(
     c,
     z.object({
       items: z.array(z.object({ order_id: z.string().optional(), external_id: z.string().optional(), amount: money.optional() }).refine((i) => i.order_id || i.external_id, 'Cần order_id hoặc external_id')).min(1).max(500),
-      method: z.enum(PAYMENT_METHODS).default('shopee_payout'),
+      channel_id: z.string().optional(), // sàn đang đối soát; quyết định phương thức mặc định (shopee_payout, tiktok_payout…)
+      method: z.enum(PAYMENT_METHODS).optional(),
       paid_at: z.string().nullish(),
       note: optionalText,
       shop_id: z.string().optional(),
     }),
   );
-  return c.json({ data: tx(() => svc.recordPayouts({ items: input.items, method: input.method, paidAt: input.paid_at, note: input.note, shopId: input.shop_id }, c.get('actor'))) });
+  return c.json({ data: tx(() => svc.recordPayouts({ items: input.items, method: input.method, channelId: input.channel_id, paidAt: input.paid_at, note: input.note, shopId: input.shop_id }, c.get('actor'))) });
 });
 
 export default r;

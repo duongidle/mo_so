@@ -193,7 +193,7 @@ function ExpenseReport({ e }) {
   );
 }
 
-const AGING_TITLES = { customer: ['Khách còn nợ', 'Tính từ ngày đặt đơn. Đơn bán trực tiếp/Facebook chưa thu đủ.'], marketplace: ['Tiền sàn chưa về', 'Tính từ ngày đặt đơn. Đơn Shopee đã hoàn thành nhưng chưa ghi nhận tiền về (xử lý ở Chi phí & đối soát).'], supplier: ['Nợ nhà cung cấp', 'Tính từ ngày nhận hàng.'] };
+const AGING_TITLES = { customer: ['Khách còn nợ', 'Tính từ ngày đặt đơn. Đơn bán trực tiếp/Facebook chưa thu đủ.'], marketplace: ['Tiền sàn chưa về', 'Tính từ ngày đặt đơn. Đơn trên sàn (Shopee, TikTok Shop…) đã hoàn thành nhưng chưa ghi nhận tiền về (xử lý ở Chi phí & đối soát).'], supplier: ['Nợ nhà cung cấp', 'Tính từ ngày nhận hàng.'] };
 
 function AgingCard({ kind, g }) {
   const [title, hint] = AGING_TITLES[kind];
