@@ -13,12 +13,13 @@
 | M4 | Khách hàng chung, thông tin riêng theo shop | ✅ | ✅ | ✅ | Gộp khách trùng. Danh sách khách theo shop, xoá khỏi một shop, nhãn theo shop, xuất danh sách khách (Excel/CSV) |
 | M5 | Đơn bán, trả hàng, phiếu | ✅ | ✅ | ✅ | POS, chi tiết đơn, thu tiền, trả hàng, in phiếu |
 | M6 | Import đơn | ✅ | ✅ | ✅ | Nút "Nhập từ file" ngay trang Đơn hàng (không còn trang riêng; `/import` chuyển hướng về đó). Đọc Excel/CSV trong trình duyệt (SheetJS). Có trình sửa mẫu map cột (gợi ý cột từ file, ánh xạ trạng thái) |
-| M7 | Chi phí, đối soát Shopee, quỹ tiền | ✅ | ✅ | ✅ | Chi phí huỷ mềm, có phương thức trả; đối soát theo lô; quỹ tiền (chuyển quỹ, kiểm đếm, sổ quỹ) |
+| M7 | Chi phí, đối soát sàn (Shopee, TikTok Shop…), quỹ tiền | ✅ | ✅ | ✅ | Chi phí huỷ mềm, có phương thức trả; đối soát theo lô; quỹ tiền (chuyển quỹ, kiểm đếm, sổ quỹ) |
 | M8 | Báo cáo, sức khoẻ | ✅ | ✅ | ✅ | `daily_stats` bằng trigger; báo cáo chi phí, tuổi nợ, thuế ước tính, xuất Excel, trang Cách đọc số liệu |
 | M9 | Loyalty & Campaign | ✅ | ✅ | ✅ | Một module `/loyalty`: hôm nay (nhắc mua lại, sinh nhật), gợi ý theo mệnh (shop phong thuỷ), hạng khách, mẫu tin nhắn (soạn + sao chép, không tự gửi). Tự động hoá: chưa làm |
 | M10 | Trường tuỳ chỉnh, công thức | ✅ | ✅ | ✅ | Ô nhập giá trị trong chi tiết đơn, form sản phẩm, phiếu nhập; trường khách theo shop ở trang Khách hàng |
 | M11 | API key, webhook | ✅ | ✅ | ✅ | Quản lý key, webhook ký HMAC, retry 1p/5p/30p/2h/12h, nhật ký, gửi lại, `/api/v1/docs` |
 | M12 | Sao lưu, xuất CSV | ✅ | ✅ | ✅ | Tự động mỗi ngày (14 ngày + 8 tuần), tải bản sao lưu, xuất CSV, `scripts/restore.js` |
+| M14 | Kế toán kép (8a + 8b) | ✅ | ✅ | ✅ | Sổ cái dẫn xuất bằng trigger; chứng từ tay, chi phí định kỳ (job), tài sản/khấu hao, khoá sổ |
 | M13 | Giao diện web | | ✅ | ✅ | Đủ màn hình, điện thoại + máy tính. Test: API 76, vitest 91, smoke e2e 10 |
 
 ✅ xong · 🟡 một phần · ⬜ chưa làm
@@ -26,6 +27,114 @@
 ---
 
 ## Nhật ký
+
+### 2026-11-04 — Đợt nâng cấp, đợt rà soát cuối (polish)
+- **Dòng đơn** (OrderForm): mỗi dòng là thẻ gọn (hàng 1: ảnh, tên đầy đủ, SKU · tồn, nút bỏ; hàng 2: số lượng, đơn giá, giảm, thành tiền); thứ tự Tab theo số lượng, giá, giảm, bỏ. POS vốn đã dạng thẻ nên giữ.
+- **Ô nhập tiền**: `components/MoneyInput.jsx` + `lib/money.js` (dấu chấm ngăn nghìn, số nguyên, căn phải, `inputMode=numeric`); thay vào đơn, POS, sản phẩm/combo, chứng từ, chi phí định kỳ, tài sản, nhập hàng, chi phí, quỹ tiền… Có vitest.
+- **Bỏ biến thể** phải xác nhận: `POST /products/:id/removal-preview` cho biết cái nào xoá hẳn, cái nào lưu trữ; hộp xác nhận trước khi PATCH.
+- **Trường bắt buộc** chỉ chặn khi xoá/để trống chính nó; hiện lại trường ẩn kiểm lại vai trò và khoá trùng. Cập nhật test.
+- **Lưu trữ kho**: 409 `WAREHOUSE_IN_USE` (kèm danh sách shop), `force` gỡ khỏi shop và ghi audit; kho duy nhất của shop: `WAREHOUSE_LAST`.
+- **Sổ kế toán**: 3 nhóm tab, `?tab=` vẫn dùng được; quỹ âm đỏ kèm gợi ý và liên kết Quỹ tiền.
+- **Ảnh mồ côi**: `server/jobs/uploads.js` chạy trong job sao lưu hằng ngày, dọn ảnh chưa gắn quá 7 ngày.
+- **Ma trận biến thể**: cột Biến thể cố định khi cuộn ngang, dưới 720px mỗi tổ hợp là một thẻ, ô ảnh là nút ảnh thu nhỏ mở danh sách chọn; bảng thành phần combo tự xuống dòng.
+- **Mật độ giao diện**: token trên `:root`, gọn từ 900px; điện thoại giữ ô ≥44px, chữ ô nhập 16px.
+- Không đổi số liệu báo cáo.
+
+**Việc chờ làm** (chủ shop hoãn ngày 2026-11-04): lợi nhuận ở Báo cáo → Lợi nhuận và `net_profit_estimate` của tổng quan báo cáo **chưa gồm** (1) điều chỉnh/hao hụt kho (`adjust_in`, `adjust_out`, `damage_out`, chênh lệch kiểm kê) và (2) thừa/thiếu khi kiểm đếm quỹ. Sổ kế toán có gồm, ở tài khoản 711 và 811. Nên với "Tất cả shop": lợi nhuận kế toán = lợi nhuận báo cáo + các khoản này; theo từng shop thì khớp hẳn vì các khoản này không thuộc shop nào. Đề xuất chờ chủ shop quyết: thêm dòng "Thu nhập/chi phí khác" vào báo cáo lãi lỗ cho hai bên khớp (hàng hỏng, mất là chi phí thật). Khi làm phải sửa cùng lúc: `tests/accounting_integrity.test.js` (đoạn so lãi lỗ đang cộng các khoản này vào), `tests/finance_integrity.test.js`, ghi chú `net_profit_estimate`, `acc_other`, `acc_depreciation` trong `web/src/metrics.js`, và trang Cách đọc số liệu (`guide`). Khấu hao là câu hỏi riêng: hiện chỉ có ở lãi lỗ kế toán.
+
+### 2026-11-04 — Làm lại phần tiền của phiếu trả hàng
+
+- Migration 027: cột mới trên `order_returns` (hoàn ship, phí trả hàng, ship chiều về) và `orders` (`returned_goods_amount`, `returned_shipping_amount`, `return_fee_amount`, `return_shipping_cost`, `refund_owed_amount`); `daily_stats` thêm `return_fee`, `return_shipping_cost`; tài khoản 5118. Dữ liệu cũ: phần hàng chép từ `returned_amount`, `refund_owed_amount` tính lại.
+- `createReturn`: làm tròn luỹ kế, các khoản mới, chặn tiền trả khách > cần trả khách, ship hoàn > ship còn lại, phí trả hàng > hàng + ship hoàn, kênh sàn. Hoàn tiền sau (thanh toán chiều chi) bị chặn ở số còn nợ khách.
+- Sổ cái: `returnEntry` ghi 5212/5113/131/5118/6412/3388; KQKD có dòng 5118. Báo cáo: lãi gộp có phí trả hàng và ship chiều về; ship = sau hoàn; `cashflow` có `customer_refund_owed`.
+- Giao diện: `ReturnModal` (khối tiền, cần trả khách, tiền trả ngay, giải thích kết quả, nút "Khách không nhận hàng (COD)"), nút "Hoàn tiền" ở đơn, hồ sơ khách và Tiền & công nợ hiện số còn nợ; từ điển chỉ số và trang Cách đọc số liệu cập nhật.
+- Test: `tests/returns.test.js` (10 kịch bản), `web/src/__tests__/return-form.test.js`. Các test cũ không phải sửa. Thêm `npm run check-returns`.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 8b: nghiệp vụ kế toán bổ sung (M14 xong)
+- Migration 025 (`vouchers`, `recurring_expenses`, cột `expenses.recurring_id/period_key`), 026 (`assets`, `journal_meta`, `period_lock_snapshots`, trigger tài sản).
+- Server: `accounting/{vouchers,assets,lock}.js`, `expenses/recurring.js`, `jobs/recurring.js`, `lib/{schedule,clock,period}.js`; `cash/balanceOf` cộng chứng từ tay và tài sản; KQKD tách khấu hao; khoá sổ `PERIOD_LOCKED` ở chi phí, thanh toán, quỹ, chứng từ, tài sản.
+- Giao diện: tab Chứng từ, Chi phí định kỳ, Tài sản & phân bổ, Khoá sổ; ánh xạ danh mục chi phí → tài khoản; từ điển chỉ số mới (`acc_depreciation`, `acc_other`, `acc_lock`).
+- Test: API 145 (thêm 4 kịch bản 8b trong `accounting_integrity` + `schedule.test.js`), giao diện 176 (thêm `voucher-lib`). `check-journal`, `check-stock`, `check-stats` sạch trên DB seed.
+- Hạn chế: thanh lý tài sản ghi giá trị còn lại vào 811 (tiền bán ghi bằng phiếu thu tay); tài sản mua chưa trả ghi 331 không gắn nhà cung cấp; chi phí định kỳ rơi vào kỳ khoá bị bỏ qua.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 8a: lõi sổ cái kế toán
+
+- Migration 024: `accounts` (seed 26 tài khoản), `journal_entries`, `journal_lines`, `journal_dirty`, `expense_categories.account_code`, `cash_accounts.account_code` (tài khoản con 111x/112x tự tạo bằng trigger), danh mục "Tiền phạt" (811) và "Vận hành" (6428). Trigger đánh dấu chứng từ bẩn; chứng từ đã có được đánh dấu để lần đọc đầu dựng toàn sổ.
+- `server/modules/accounting/`: `posting.js` (hàm thuần), `journal.js` (`flushJournal`, `verifyJournal`, `rebuildJournal`), `reports.js` (tài khoản, nhật ký, sổ cái, cân đối phát sinh, KQKD, cân đối kế toán, lưu chuyển tiền, tổng quan), `routes.js` (`/accounting`). `npm run check-journal [-- --fix]`.
+- Giao diện: nhóm menu "Kế toán" (Chi phí & quỹ, Sổ kế toán), `Accounting.jsx` 8 tab, xuất Excel, ⓘ (`metrics.js`, `reportTables.js`).
+- Test: `accounting_posting.test.js` (hàm thuần), `accounting_integrity.test.js` (kịch bản đủ loại thao tác: mọi bút toán cân, cân đối phát sinh, tài sản = nợ + vốn + lợi nhuận, KQKD = báo cáo cho tất cả shop và từng shop, 111x/112x = số dư quỹ, 156 ≈ tồn × giá vốn trong cận làm tròn, 131 + 1388 và 331 khớp báo cáo công nợ, sửa/huỷ cập nhật sổ, verify bắt được sổ bị sửa lén).
+- Chênh lệch có chủ đích với báo cáo: xem `CLAUDE.md` mục 5.16.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 7: báo cáo dễ hiểu
+
+- `web/src/metrics.js`: từ điển 62 chỉ số (nghĩa, cách tính, lấy từ đâu, phạm vi, nên làm gì, link dữ liệu gốc). `GLOSSARY` của trang Cách đọc số liệu dựng từ đây; `guide.js` chỉ re-export.
+- `MetricInfo` (nút ⓘ, khung giải thích đóng bằng Esc/bấm ngoài, điện thoại là bảng trượt từ đáy) và nhãn phạm vi. `Kpi` nhận `metric`. Áp dụng cho mọi KPI, dòng, tiêu đề cột ở Báo cáo và Tổng quan.
+- Báo cáo: dải "Đang xem: shop · khoảng ngày · kênh · so với kỳ trước" luôn hiện, mỗi tab có một câu nói tab trả lời câu hỏi gì, tab Tiền & công nợ có ghi chú nợ NCC/quỹ là toàn tài khoản khi lọc shop.
+- Server: `meta.scope` ở overview, cashflow, aging, health, inventory (chỉ thêm, số không đổi).
+- Trang Đơn hàng đọc `from`, `to`, `channel` trên URL để link "Xem dữ liệu gốc" mở đúng khoảng ngày.
+- Excel: thêm sheet "Giải thích" cho tab đang xuất.
+- Test: API 119, vitest 171.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 6: hoàn thiện trường tuỳ chỉnh
+
+- Server: `custom/variables.js` là danh mục biến duy nhất (nhãn tiếng Việt, kiểu, nhóm; không có id, thời điểm nội bộ, JSON, cột khách cũ). `GET /custom/variables`, `GET /custom/metric-variables`, `GET /custom/functions`, `POST /custom/formula/preview` (bản ghi mẫu gần nhất hoặc `entity_id`; `metric` tính trên tháng này). `parseFormula` và `createMetric` chỉ nhận biến trong danh mục, lỗi kèm `details.position`. Công thức đã lưu từ trước dùng cột ngoài danh mục vẫn đọc được (chỉ kiểm khi tạo/sửa).
+- Biến dẫn xuất của khách theo shop: `shop_order_count`, `shop_total_spent`, `shop_last_order_at` (tính trong `getValues`, cùng cách tính với `by_shop` của hồ sơ khách). `REPORT_VARIABLES` ở `reports/service.js`.
+- `formula.js`: thêm CONCAT, YEAR, MONTH, COALESCE; `FormulaError.position`; `FUNCTION_DOCS` cho giao diện.
+- Trường: `role` nhận khi tạo (kiểm đối tượng, kiểu, mỗi shop một trường mỗi vai trò), PATCH sửa được `options`, `required`, `role`; `required` (migration 023) có hiệu lực khi `PUT /custom/values` (chỉ khi lưu qua API này, đơn nhập từ file không đi qua). `GET /custom/fields?archived=1` liệt kê trường đã ẩn.
+- Giao diện: `FormulaEditor` (gợi ý biến khi gõ `{`, gợi ý hàm, bảng Biến/Hàm, mẫu, xem trước 400ms, tô vị trí lỗi), `FieldsManager` dùng chung cho Cài đặt → Trường tuỳ chỉnh (gồm Khách hàng) và Khách hàng → "Thông tin khách của shop" (sửa, thứ tự, ẩn/hiện lại, lựa chọn dạng thẻ). Chỉ số báo cáo dùng FormulaEditor.
+- Test: API 118, web 163. Không có e2e mới.
+- Chưa làm: thử trên iPhone thật; trường bắt buộc chưa chặn lúc tạo khách/đơn bằng API (chỉ khi lưu giá trị trường).
+
+### 2026-11-04 — Đợt nâng cấp, Phase 5: form tạo đơn mới + chọn khách có sẵn
+
+- `web/src/components/CustomerPicker.jsx` (dùng chung, có chế độ `compact` cho POS): tìm theo tên/SĐT/mã (khách của shop trước, "khách ở shop khác" sau), mỗi dòng có hạng, số đơn, đơn gần nhất; phím mũi tên/Enter/Esc; thẻ khách đã chọn (Đổi), hạng + % giảm gợi ý có nút áp dụng; "+ Khách mới" tạo qua `POST /customers` rồi chọn, SĐT trùng khách có sẵn thì chặn tạo và gợi ý chọn khách đó. Luôn trả khách có id.
+- `web/src/pages/OrderForm.jsx` ở `/orders/new` và `/orders/:id/edit` (đơn nháp; đơn khác chuyển về chi tiết): bố cục 7:5, một cột trên điện thoại, thanh Lưu nháp / Xác nhận đơn / Bán xong dính đáy (trên thanh tab). Chia kho tay theo từng dòng từ `allocation-preview`, chặn lưu khi tổng chia lệch số lượng. Phí sàn và ship shop chịu chỉ hiện với kênh sàn.
+- `web/src/lib/orderForm.js`: hàm thuần (tính tiền theo công thức server, kiểm phân bổ, payload, tiền thu theo hành động).
+- `Orders.jsx`: "Đơn mới" trỏ `/orders/new`; chi tiết đơn nháp có nút Sửa. `Pos.jsx`: bộ chọn khách gọn, ảnh sản phẩm trong giỏ, gửi `customer_id`.
+- Sửa lỗi: khoá `Idempotency-Key` bị lưu cả với phản hồi lỗi 4xx nên bấm lại sau khi sửa dữ liệu vẫn nhận lỗi cũ. POS và form mới đổi khoá sau mỗi lần thất bại.
+- Test: web 149 (thêm customer-picker, order-form, order-form-lib), API 111, e2e thêm 1 ca (tự bỏ qua khi thiếu Playwright). Không đổi server, không migration.
+- Chưa làm: kiểm tay trên iPhone thật, kiểm bằng mắt 4 theme (chỉ dùng biến CSS nên theo theme tự động).
+
+### 2026-11-04 — Đợt nâng cấp, Phase 4: một đơn lấy hàng từ nhiều kho
+
+- Migration `022_multi_warehouse.sql`: `shop_warehouses` (seed từ kho mặc định, ưu tiên 1), `order_line_allocations`, `order_lines.cogs_amount` và `planned_allocations`. Backfill đơn cũ: phân bổ từ `orders.warehouse_id` + `unit_cost`/`order_line_components`; đơn huỷ sau khi từng xác nhận có phân bổ đã hoàn hết; tổng giá vốn không đổi (có test).
+- Server: `orders/allocation.js` (`planAllocation`); `deductStock`/`putBackLine`/`restoreStock`/`createReturn` làm theo phân bổ (LIFO khi trả một phần, chọn được kho nhận); `POST /orders/allocation-preview`; `lines[].allocations` khi tạo/sửa đơn nháp; `GET/PUT /shops/:id/warehouses` (có audit); `/variants` thêm `on_hand_total`, `stock_by_warehouse`, tồn nhất quán khi không truyền `warehouse_id`.
+- Giá vốn đổi sang `SUM(cogs_amount)`: `refreshDerived` (đơn, nguồn của `daily_stats`), báo cáo sản phẩm, `inventoryMetrics` (theo kho: cộng từ phân bổ của kho đó).
+- Mới: `server/modules/inventory/verify.js` + `npm run check-stock` (tồn vs sổ kho, `cogs_amount` vs phân bổ, phân bổ vs sổ kho).
+- Giao diện: Cài đặt → Shop & kho có danh sách kho xếp thứ tự (thêm/bỏ/lên/xuống); chi tiết đơn hiện kho từng dòng lấy từ; POS tồn theo tổng kho của shop và báo khi có hàng lấy từ kho phụ. Trình soạn phân bổ tay đầy đủ để Phase 5.
+- Test: `tests/multi_warehouse.test.js` 8 test. `npm test` 111/111, `npm run test:web` 128/128, build qua.
+- Còn mở: phiếu trả không ghi hàng trả thuộc phân bổ nào nên LIFO là quy ước; cột "Giá vốn / cái" trong file xuất đơn là số làm tròn (tổng đúng nằm ở `Giá vốn` của đơn); chưa thử trên trình duyệt thật.
+
+### 2026-11-04 — Phase 3 bổ sung: chuyển sản phẩm đã tạo sang ma trận
+
+- Server: `updateProduct` nhận `option_renames`; `relabelVariants` đổi nhãn mọi biến thể (kể cả đã lưu trữ) giữ id; `settleOptions` bỏ khoá thuộc tính đã xoá và kiểm ánh xạ 1-1 (`OPTION_INCOMPLETE`, `OPTIONS_CONFLICT`) trong cùng transaction; tên tự đặt đi theo giá trị mới, tên đặt tay giữ nguyên; audit ghi `option_renames` và `options_before`.
+- Giao diện: sản phẩm một biến thể hoặc cũ nhiều biến thể tick "Có biến thể"; ô "Biến thể hiện có là…" cho từng biến thể đã có; thêm/xoá thuộc tính, đổi tên thuộc tính và giá trị (bấm vào thẻ); nút Lưu khoá khi hai biến thể trùng tổ hợp. Hàm thuần `reconcile`, `assignCombo`, `noteAttrRename`, `noteValueRename` trong `web/src/lib/matrix.js`.
+- Test: 5 test server mới trong `tests/catalog_matrix.test.js`, `matrix-convert.test.js` và 2 test form. `npm test` 103/103, `npm run test:web` 128/128, build qua.
+- Còn mở: sản phẩm đã có ma trận không quay lại "không biến thể" được; chuyển đổi chưa thử trên trình duyệt thật.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 3: sản phẩm (danh mục, ảnh, ma trận, combo, ngũ hành theo ngành)
+
+- Migration `020` (`product_images`, `variants.image_id`) và `021` (`products.options`, `variants.option_values`, chỉ mục khoá trường sản phẩm theo shop, tạo trường `ngu_hanh` cho shop phong thuỷ có sẵn và chép `products.elements` sang giá trị trường).
+- Server: `server/lib/categories.js` (con cháu dùng chung cho sản phẩm, `/variants`, `/stock`, báo cáo); `CATEGORY_CYCLE`, `CATEGORY_IN_USE`, `CATEGORY_HAS_CHILDREN`, `GET /categories?tree=1`; `createProduct`/`updateProduct` nhận `options`, `option_values`, `opening_*`, `active`, `remove`, `images`, `custom`; SKU trùng báo đúng dòng; `PUT /products/:id/images`; `POST /uploads/images`, `GET /files/images/:id`; backup chép ảnh; ngũ hành chuyển sang trường sản phẩm theo shop (báo cáo + gợi ý theo mệnh đọc theo shop), `productInput` bỏ `elements`.
+- Giao diện: `ProductForm` mới (`web/src/pages/products/`), `ComboForm`, tab Danh mục, lọc loại/danh mục, `ProductThumb` ở danh sách sản phẩm, POS, Kho, dòng đơn; Kho có lọc danh mục; `web/src/lib/{matrix,image,categories}.js`.
+- Test: `catalog_matrix`, `uploads`, `categories` (mới); sửa `finance_integrity`, `loyalty`, `reports`, `finance`, `business` cho ngũ hành mới; vitest `matrix.test.js`, `product-form.test.jsx`.
+- Còn mở: ảnh tải lên chưa gắn sản phẩm chưa có việc dọn; chưa thử thu nhỏ ảnh trên trình duyệt thật (canvas WebP chỉ chạy được trong trình duyệt, vitest không phủ `resizeImage`); thứ tự danh mục chỉ đổi bằng nút lên/xuống.
+
+### 2026-11-04 — Đợt nâng cấp, phase 1: sửa nhanh giao diện
+
+- Thanh bên không còn kẹt mở sau khi click chuột: `:focus-within` đổi thành `:has(:focus-visible)` (luật riêng), thêm blur khi click chuột ở menu, nút ghim, đăng xuất.
+- Nền theme phong thuỷ sáng hơn một tông (`#F6F0E4` / `#FCF9F3`), tương phản đã kiểm, ghi vào nhật ký quyết định.
+- Thêm smoke e2e cho thanh bên tự thu gọn. Kế hoạch cả đợt: `docs/plans/2026-11-dot-nang-cap.md`.
+
+### 2026-11-04 — Đợt nâng cấp, Phase 2: nền tảng bán hàng dạng plugin
+
+- Migration `019`: kênh `tiktok` (TikTok Shop, sàn) và `zalo` seed ở trạng thái tắt; mẫu `imp_tiktok` (mẫu khởi đầu, chưa kiểm với file thật); `tiktok_payout` vào quỹ ngân hàng; cài đặt `enabled_platforms` = Shopee + Facebook (tài khoản cũ giữ hành vi).
+- `server/lib/platforms.js`: danh mục nền tảng. `paymentMethods()` thay hằng cũ ở thanh toán, chi phí, quỹ. Import lấy phương thức tiền về theo kênh (`payoutMethodOf`).
+- Module `platforms`: `GET /platforms`, `POST /platforms/:id/enable|disable`; `POST/PATCH /channels` (kênh tuỳ chỉnh `ch_…`); `GET /channels?include_archived=1`. Tạo đơn ở kênh đã tắt bị chặn (`CHANNEL_DISABLED`).
+- Đối soát nhận `channel_id`; báo cáo dòng tiền thêm `marketplace_by_channel`.
+- Giao diện: Cài đặt → Nền tảng bán hàng; tab "Đối soát sàn" có bộ chọn sàn (ẩn khi không có sàn); Tổng quan tách tiền sàn treo theo sàn; Import mặc định theo nền tảng đầu tiên đang bật; session có `platforms`, `platformEnabled`, `marketplaces`, `allChannels`.
+- Test: `tests/platforms.test.js` (6 nhóm), `web/src/__tests__/platforms.test.jsx`. `npm test` 82/82, `npm run test:web` 96/96, build qua.
+- Còn mở: mẫu TikTok cần file xuất thật để kiểm tên cột và cột phí; chưa có `platformEnabled` test riêng ở SessionProvider.
 
 ### 2026-11-03 — Phiên 11: rà soát báo cáo và tài chính
 
@@ -206,3 +315,20 @@
 - Điền "chu kỳ dùng hết" cho từng sản phẩm thì mới có nhắc mua lại.
 - Chưa có ngành thứ năm: cần tên ngành và các trường khách muốn hỏi (thêm ở `server/lib/industries.js`).
 - `daily_stats` và tính hoàn trả theo ngày trả hàng: đã quyết định chưa làm (xem nhật ký quyết định trong `CLAUDE.md`).
+
+**Việc chờ làm (từ kế hoạch trả hàng 2026-11-04, ngoài phạm vi lần này)**
+- Dùng tiền khách gửi (store credit) để trừ vào đơn sau.
+- Đổi hàng trong một bước.
+- Trạng thái "chờ hàng về" cho phiếu trả của sàn.
+- Phí ship chiều về của đơn sàn đang ghi Có 3388 (phải trả khác); nếu sàn thực tế trừ thẳng vào payout thì nên ghi giảm 1388.
+- Phí trả hàng chưa tính vào "Tổng chi tiêu" và hạng của khách (chỉ tính hàng thuần). Để quyết khi làm lại module Loyalty (mục dưới).
+
+**Việc chờ làm: làm lại module Loyalty cho hoàn chỉnh** (chủ shop dặn ngày 2026-11-04)
+- Chủ shop sẽ tự lên yêu cầu sau vì module có nhiều cài đặt. Khi bắt đầu, **làm trọn một lần**: hạng, chi tiêu, cài đặt, tự động hoá, báo cáo. Không vá từng mảnh nhỏ, để sau không phải quay lại sửa lắt nhắt.
+- Hiện đã có bản cơ bản (M9, mục 5.10 `CLAUDE.md`): hạng theo tổng chi tiêu 12 tháng, ngưỡng Thành viên/Bạc/Vàng/Kim cương, % giảm gợi ý; tab Tự động hoá chưa chạy gì. Bản làm lại thay thế hoặc mở rộng bản này, không chạy song song hai cách tính.
+- Câu hỏi phải chốt khi làm:
+  - "Chi tiêu" của khách tính bằng gì: hàng thuần (hiện tại), có cộng phí trả hàng không, có cộng phí ship không.
+  - Đơn trả hàng có làm giảm chi tiêu và hạ hạng khách không; hạ ngay hay chỉ xét lại theo kỳ.
+  - Hạng tính theo toàn tài khoản (hiện tại) hay theo từng shop.
+  - Cửa sổ thời gian (12 tháng lăn, năm dương lịch, hay giữ hạng đến hết kỳ).
+  - Tích điểm (CLAUDE.md đang ghi không làm vì là khoản nợ với khách) và tiền khách gửi (mục trả hàng ở trên) có gộp vào module này không.

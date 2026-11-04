@@ -18,6 +18,8 @@ const lineInput = z
     qty,
     unit_price: money.optional(),
     discount_amount: money.default(0),
+    // Phân bổ kho tay (tuỳ chọn): [{ variant_id?, warehouse_id, qty }]. Bỏ trống = tự lấy theo thứ tự kho của shop.
+    allocations: z.array(z.object({ variant_id: z.string().optional(), warehouse_id: z.string(), qty })).optional(),
   })
   .refine((l) => l.variant_id || l.sku, 'Cần variant_id hoặc sku');
 
@@ -96,6 +98,12 @@ r.get('/export', (c) => {
   });
 });
 
+/** Xem trước phân bổ kho. Phải đặt trước /:id */
+r.post('/allocation-preview', async (c) => {
+  const input = await body(c, z.object({ shop_id: z.string(), warehouse_id: z.string().nullish(), lines: z.array(lineInput).min(1) }));
+  return c.json({ data: svc.previewAllocation(input) });
+});
+
 r.get('/:id', (c) => c.json({ data: svc.getOrder(c.req.param('id')) }));
 r.get('/:id/receipt', (c) => c.html(renderReceipt(svc.getOrder(c.req.param('id')), c.req.query('size') || 'a5')));
 
@@ -133,13 +141,16 @@ r.post('/:id/returns', async (c) => {
   const input = await body(
     c,
     z.object({
-      lines: z.array(z.object({ order_line_id: z.string(), qty, restock: z.boolean().default(true) })).min(1),
+      lines: z.array(z.object({ order_line_id: z.string(), qty, restock: z.boolean().default(true), warehouse_id: z.string().optional() })).min(1),
       reason: optionalText,
       refund: z.object({ amount: money, method: z.enum(PAYMENT_METHODS).default('cash') }).nullish(),
+      shipping_refund_amount: money.default(0),
+      return_fee_amount: money.default(0),
+      return_shipping_cost: money.default(0),
       returned_at: z.string().nullish(),
     }),
   );
-  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at }, c.get('actor'))) });
+  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at, shippingRefund: input.shipping_refund_amount, returnFee: input.return_fee_amount, returnShippingCost: input.return_shipping_cost }, c.get('actor'))) });
 });
 
 export default r;

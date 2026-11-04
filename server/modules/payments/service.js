@@ -3,11 +3,17 @@ import { newId } from '../../lib/id.js';
 import { nowIso, businessDate, toIso } from '../../lib/time.js';
 import { notFound } from '../../lib/errors.js';
 
-export const PAYMENT_METHODS = ['cash', 'bank', 'shopee_payout', 'cod', 'card', 'ewallet', 'other'];
+import { paymentMethods } from '../../lib/platforms.js';
+import { assertUnlocked } from '../../lib/period.js';
+
+/** Phương thức thanh toán hợp lệ: gốc + payout của các nền tảng (danh mục ở lib/platforms.js) */
+export { paymentMethods };
+export const PAYMENT_METHODS = paymentMethods();
 
 export function recordPayment({ direction, refType, refId, shopId, amount, method = 'cash', paidAt, note }, actor) {
   const id = newId('pay');
   const at = toIso(paidAt) || nowIso();
+  assertUnlocked(businessDate(at), 'Thanh toán');
   getDb()
     .prepare(
       `INSERT INTO payments (id, direction, ref_type, ref_id, shop_id, amount, method, paid_at, business_date, note, actor_id, created_at)
@@ -20,6 +26,7 @@ export function recordPayment({ direction, refType, refId, shopId, amount, metho
 export function voidPayment(id) {
   const p = getDb().prepare('SELECT * FROM payments WHERE id = ?').get(id);
   if (!p) throw notFound('Thanh toán');
+  assertUnlocked(p.business_date, 'Thanh toán');
   getDb().prepare('UPDATE payments SET voided_at = ? WHERE id = ?').run(nowIso(), id);
   return { ...p, voided_at: nowIso() };
 }

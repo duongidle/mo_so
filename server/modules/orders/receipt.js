@@ -47,7 +47,9 @@ export function renderReceipt(o, size = 'a5') {
     ${o.discount_amount ? `<div><span>Giảm giá</span><span>-${vnd(o.discount_amount)}</span></div>` : ''}
     ${o.shipping_fee ? `<div><span>Phí vận chuyển</span><span>${vnd(o.shipping_fee)}</span></div>` : ''}
     <div class="big"><span>Tổng cộng</span><span>${vnd(o.total_amount)} ₫</span></div>
-    ${o.returned_amount ? `<div><span>Hàng trả lại</span><span>-${vnd(o.returned_amount)}</span></div>` : ''}
+    ${o.returned_goods_amount ? `<div><span>Hàng trả lại</span><span>-${vnd(o.returned_goods_amount)}</span></div>` : ''}
+    ${o.returned_shipping_amount ? `<div><span>Hoàn phí vận chuyển</span><span>-${vnd(o.returned_shipping_amount)}</span></div>` : ''}
+    ${o.return_fee_amount ? `<div><span>Phí trả hàng</span><span>${vnd(o.return_fee_amount)}</span></div>` : ''}
     <div><span>Đã thanh toán</span><span>${vnd(o.paid_amount)}</span></div>
     ${o.amount_due ? `<div><span><b>Còn phải trả</b></span><span><b>${vnd(o.amount_due)}</b></span></div>` : ''}
   </div>

@@ -4,5 +4,5 @@ export const EVENT_TYPES = [
   'purchase.received', 'purchase.cancelled', 'stock.changed',
   'customer.created', 'customer.updated', 'customer.merged', 'customer.removed',
   'product.created', 'product.updated', 'listing.synced',
-  'expense.created', 'shop.created', 'shop.updated', 'warehouse.created',
+  'expense.created', 'voucher.created', 'voucher.updated', 'voucher.voided', 'asset.created', 'asset.disposed', 'shop.created', 'shop.updated', 'warehouse.created',
 ];

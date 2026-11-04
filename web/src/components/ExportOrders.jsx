@@ -28,7 +28,7 @@ function describe(filters, { shops, channels }) {
  * Xuất đơn hàng theo đúng bộ lọc đang xem. CSV tải thẳng từ server; Excel dựng ngay trên trình duyệt từ cùng dữ liệu.
  */
 export default function ExportOrders({ filters, onClose }) {
-  const { shops, channels } = useSession();
+  const { shops, allChannels: channels } = useSession();
   const [layout, setLayout] = useState('orders');
   const [format, setFormat] = useState('xlsx');
   const { busy, error, run } = useAction();

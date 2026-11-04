@@ -5,6 +5,9 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num, fmtDate, MOVE_TYPES } from '../lib.js';
 import StockCounts from './StockCounts.jsx';
+import ProductThumb from '../components/ProductThumb.jsx';
+import { flattenTree, indent } from '../lib/categories.js';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 export default function Stock() {
   const { shopId, isAll, warehouses } = useSession();
@@ -13,11 +16,13 @@ export default function Stock() {
   const [wh, setWh] = useState('');
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
+  const [cat, setCat] = useState('');
+  const cats = useAsync(() => api.get('/categories'), []);
   const [tab, setTab] = useState('stock');
   const [adj, setAdj] = useState(null);
   const [hist, setHist] = useState(null);
   const [transfer, setTransfer] = useState(false);
-  const state = useAsync(() => api.get('/stock', { shop_id: isAll ? undefined : shopId, warehouse_id: wh || undefined, q: dq || undefined, filter: filter || undefined }), [shopId, wh, dq, filter]);
+  const state = useAsync(() => api.get('/stock', { shop_id: isAll ? undefined : shopId, warehouse_id: wh || undefined, q: dq || undefined, category_id: cat || undefined, filter: filter || undefined }), [shopId, wh, dq, filter, cat]);
   const moves = useAsync(() => (tab === 'moves' ? api.get('/stock-movements', { warehouse_id: wh || undefined, limit: 100 }) : null), [tab, wh]);
 
   return (
@@ -27,6 +32,7 @@ export default function Stock() {
       {tab === 'counts' ? <StockCounts /> : <>
       <div className="row wrap">
         <select value={wh} onChange={(e) => setWh(e.target.value)} style={{ width: 200 }} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+        {tab === 'stock' && <select value={cat} onChange={(e) => setCat(e.target.value)} style={{ width: 200 }} aria-label="Danh mục"><option value="">Mọi danh mục</option>{flattenTree(cats.data?.data || []).map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}</select>}
         {tab === 'stock' && <input placeholder="Tìm SKU, tên…" value={q} onChange={(e) => setQ(e.target.value)} className="grow" aria-label="Tìm" />}
       </div>
       {tab === 'stock' ? (
@@ -41,7 +47,7 @@ export default function Stock() {
                     <thead><tr><th>Sản phẩm</th><th className="num">Tồn</th><th className="num">Giá vốn BQ</th><th className="num">Giá trị</th><th className="num">Còn đủ</th></tr></thead>
                     <tbody>{r.data.map((i) => (
                       <tr key={i.variant_id} className="click" onClick={() => setHist(i)}>
-                        <td>{i.product_name}{i.variant_name ? ` — ${i.variant_name}` : ''}{i.is_bundle && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<div className="small muted">{i.sku}{i.is_bundle && ' · bán được theo thành phần'}</div></td>
+                        <td><div className="row" style={{ gap: 10 }}><ProductThumb src={i.image_url} name={i.product_name} size={36} /><div>{i.product_name}{i.variant_name ? ` — ${i.variant_name}` : ''}{i.is_bundle && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<div className="small muted">{i.sku}{i.is_bundle && ' · bán được theo thành phần'}</div></div></div></td>
                         <td className="num"><b className={i.is_negative ? 'h-red' : i.is_low ? 'h-yellow' : ''}>{num(i.on_hand)}</b>{i.is_low && <div className="small h-yellow">sắp hết</div>}{i.is_slow && <div className="small muted">bán chậm</div>}</td>
                         <td className="num">{i.is_bundle ? '—' : vnd(i.avg_cost)}</td><td className="num">{i.is_bundle ? '—' : vnd(i.stock_value)}</td>
                         <td className="num small">{i.days_left === null ? '—' : `${i.days_left} ngày`}</td>
@@ -108,7 +114,7 @@ function Adjust({ onClose, onSaved }) {
         <div key={l.id} className="row">
           <div className="grow"><div>{l.name}</div><div className="small muted">{l.sku} · hiện {l.on_hand}</div></div>
           {kind === 'count' ? <input type="number" min="0" value={l.counted} onChange={(e) => upd(l.id, { counted: e.target.value })} style={{ width: 90 }} aria-label="Số đếm được" /> : <input type="number" value={l.change} onChange={(e) => upd(l.id, { change: e.target.value })} style={{ width: 90 }} aria-label="Số thay đổi" />}
-          {(kind === 'opening' || kind === 'adjust' || kind === 'count') && <input type="number" min="0" placeholder="Giá vốn" value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 100 }} aria-label="Giá vốn" />}
+          {(kind === 'opening' || kind === 'adjust' || kind === 'count') && <MoneyInput placeholder="Giá vốn" value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 100 }} aria-label="Giá vốn" />}
         </div>
       ))}
       <Field label="Lý do"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>

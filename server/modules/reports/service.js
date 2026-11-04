@@ -4,6 +4,7 @@ import { allocate } from '../../lib/money.js';
 import { getSettings } from '../settings/service.js';
 import { listStock } from '../inventory/service.js';
 import { COUNTED, readStats } from './stats.js';
+import { categoryClause as categoryClauseOf } from '../../lib/categories.js';
 
 const db = () => getDb();
 
@@ -31,23 +32,45 @@ const LINE_RETURNED = `COALESCE((SELECT SUM(json_extract(j.value, '$.value')) FR
   WHERE rr.order_id = l.order_id AND json_extract(j.value, '$.order_line_id') = l.id), 0)`;
 const LINE_NET = `(l.line_total - l.allocated_order_discount - ${LINE_RETURNED})`;
 
-/** Danh mục và mọi danh mục con của nó */
-function categoryTree(categoryId) {
-  return db()
-    .prepare(`WITH RECURSIVE t(id) AS (SELECT id FROM categories WHERE id = ? UNION SELECT c.id FROM categories c JOIN t ON c.parent_id = t.id) SELECT id FROM t`)
-    .all(categoryId)
-    .map((r) => r.id);
-}
 function categoryClause(f) {
-  if (!f.categoryId) return { sql: '', params: [] };
-  const ids = categoryTree(f.categoryId);
-  return { sql: ` AND p.category_id IN (${ids.map(() => '?').join(',')})`, params: ids };
+  return categoryClauseOf(f.categoryId);
 }
+
+/**
+ * Biến dùng được trong chỉ số báo cáo tuỳ chỉnh (công thức chạy trên `overview().current`).
+ * Một nguồn duy nhất: createMetric kiểm tra theo đây và giao diện gợi ý cũng lấy từ đây.
+ */
+export const REPORT_VARIABLES = [
+  { key: 'order_count', label: 'Số đơn (đã xác nhận trở đi)', type: 'number', group: 'Đơn' },
+  { key: 'cancelled_count', label: 'Số đơn huỷ', type: 'number', group: 'Đơn' },
+  { key: 'returned_count', label: 'Số đơn có trả hàng', type: 'number', group: 'Đơn' },
+  { key: 'aov', label: 'Giá trị đơn trung bình', type: 'money', group: 'Đơn' },
+  { key: 'cancel_rate_pct', label: 'Tỷ lệ huỷ (%)', type: 'number', group: 'Đơn' },
+  { key: 'return_rate_pct', label: 'Tỷ lệ hoàn trả (%)', type: 'number', group: 'Đơn' },
+  { key: 'subtotal', label: 'Tổng tiền hàng (trước giảm giá)', type: 'money', group: 'Doanh thu' },
+  { key: 'gross_revenue', label: 'Doanh thu gộp', type: 'money', group: 'Doanh thu' },
+  { key: 'discount_amount', label: 'Giảm giá', type: 'money', group: 'Doanh thu' },
+  { key: 'goods_revenue', label: 'Tiền hàng sau giảm giá', type: 'money', group: 'Doanh thu' },
+  { key: 'returned_amount', label: 'Tiền hàng đã trả', type: 'money', group: 'Doanh thu' },
+  { key: 'net_revenue', label: 'Doanh thu thuần', type: 'money', group: 'Doanh thu' },
+  { key: 'shipping_fee', label: 'Phí ship khách trả (đã trừ ship hoàn)', type: 'money', group: 'Doanh thu' },
+  { key: 'return_fee', label: 'Phí trả hàng thu được', type: 'money', group: 'Doanh thu' },
+  { key: 'return_shipping_cost', label: 'Phí ship chiều về (trả hàng)', type: 'money', group: 'Chi phí' },
+  { key: 'platform_fee', label: 'Phí sàn', type: 'money', group: 'Chi phí' },
+  { key: 'seller_shipping', label: 'Phí ship shop chịu', type: 'money', group: 'Chi phí' },
+  { key: 'cogs', label: 'Giá vốn hàng bán', type: 'money', group: 'Chi phí' },
+  { key: 'expenses_amount', label: 'Chi phí (đã gồm phần chung chia về)', type: 'money', group: 'Chi phí' },
+  { key: 'gross_profit', label: 'Lợi nhuận gộp', type: 'money', group: 'Lợi nhuận' },
+  { key: 'gross_margin_pct', label: 'Biên lợi nhuận gộp (%)', type: 'number', group: 'Lợi nhuận' },
+  { key: 'net_profit_estimate', label: 'Lợi nhuận ròng ước tính', type: 'money', group: 'Lợi nhuận' },
+  { key: 'tax_estimate_amount', label: 'Thuế ước tính (chỉ có khi bật thuế, xem cả hộ)', type: 'money', group: 'Lợi nhuận' },
+  { key: 'profit_after_tax_estimate', label: 'Lợi nhuận sau thuế ước tính (như trên)', type: 'money', group: 'Lợi nhuận' },
+];
 
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
 
 const finish = (r) => {
-  const gross_profit = r.net_revenue + r.shipping_fee - r.platform_fee - r.seller_shipping - r.cogs;
+  const gross_profit = r.net_revenue + r.shipping_fee + r.return_fee - r.platform_fee - r.seller_shipping - r.return_shipping_cost - r.cogs;
   return {
     ...r,
     gross_revenue: r.subtotal,
@@ -163,7 +186,7 @@ function withProfit(s, expenses) {
   return { ...s, expenses_amount: expenses, net_profit_estimate: s.gross_profit - expenses };
 }
 
-const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
+const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả + phí trả hàng thu được', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
 
 /** Cơ sở tính thuế cộng dồn từ `from` đến `to` (toàn bộ shop, mọi kênh) */
 function taxBase(base, from, to) {
@@ -171,7 +194,7 @@ function taxBase(base, from, to) {
   const all = { from, to, shopIds: null, channel: null };
   const s = sumOrders(all);
   if (base === 'net_revenue') return s.net_revenue;
-  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee;
+  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee + s.return_fee;
   return s.gross_profit - expensesFor(all).total;
 }
 
@@ -256,7 +279,7 @@ export function byShop(filter) {
 }
 
 function sumOrdersEmpty() {
-  return { order_count: 0, cancelled_count: 0, returned_count: 0, subtotal: 0, discount_amount: 0, goods_revenue: 0, returned_amount: 0, net_revenue: 0, shipping_fee: 0, platform_fee: 0, seller_shipping: 0, cogs: 0, gross_revenue: 0, gross_profit: 0, gross_margin_pct: null, aov: 0, cancel_rate_pct: null, return_rate_pct: null };
+  return { order_count: 0, cancelled_count: 0, returned_count: 0, subtotal: 0, discount_amount: 0, goods_revenue: 0, returned_amount: 0, net_revenue: 0, shipping_fee: 0, platform_fee: 0, seller_shipping: 0, cogs: 0, return_fee: 0, return_shipping_cost: 0, gross_revenue: 0, gross_profit: 0, gross_margin_pct: null, aov: 0, cancel_rate_pct: null, return_rate_pct: null };
 }
 
 export function byChannel(filter) {
@@ -280,7 +303,7 @@ export function byProduct(filter, { limit = 50 } = {}) {
       `SELECT v.id AS variant_id, v.sku, v.kind, p.name AS product_name, v.name AS variant_name,
               SUM(l.qty - l.returned_qty) AS qty_sold,
               SUM(${LINE_NET}) AS revenue,
-              SUM((l.qty - l.restocked_qty) * l.unit_cost) AS cogs
+              SUM(l.cogs_amount) AS cogs
        FROM order_lines l JOIN orders o ON o.id = l.order_id
        JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
        WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql}
@@ -320,7 +343,9 @@ export function byProduct(filter, { limit = 50 } = {}) {
 }
 
 /**
- * Doanh thu theo ngũ hành của sản phẩm. Sản phẩm hợp nhiều hành thì chia đều doanh thu cho các hành đó
+ * Doanh thu theo ngũ hành của sản phẩm. Ngũ hành là trường sản phẩm (vai trò `element`) của từng shop phong thuỷ,
+ * nên mỗi dòng đơn đọc ngũ hành theo đúng shop của đơn; shop không có trường này (ngành khác) hoặc sản phẩm chưa gán → "chưa gán".
+ * Sản phẩm hợp nhiều hành thì chia đều doanh thu cho các hành đó
  * (để tổng 5 hành + "chưa gán" luôn bằng doanh thu thuần của dòng hàng, không đếm trùng).
  */
 export function byElement(filter) {
@@ -329,9 +354,11 @@ export function byElement(filter) {
   const cat = categoryClause(f);
   const rows = db()
     .prepare(
-      `SELECT p.elements, SUM(l.qty - l.returned_qty) AS qty, SUM(${LINE_NET}) AS revenue
+      `SELECT cv.value_text AS elements, SUM(l.qty - l.returned_qty) AS qty, SUM(${LINE_NET}) AS revenue
        FROM order_lines l JOIN orders o ON o.id = l.order_id JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
-       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql} GROUP BY p.id`,
+       LEFT JOIN custom_fields cf ON cf.entity_type = 'product' AND cf.role = 'element' AND cf.shop_id = o.shop_id AND cf.archived_at IS NULL
+       LEFT JOIN custom_values cv ON cv.entity_type = 'product' AND cv.entity_id = p.id AND cv.field_id = cf.id
+       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql} GROUP BY p.id, o.shop_id`,
     )
     .all(...params, ...cat.params);
   const acc = new Map(['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ', null].map((e) => [e, { element: e, revenue: 0, qty: 0 }]));
@@ -384,10 +411,14 @@ export function inventoryMetrics({ shopId, warehouseId } = {}) {
   const where = ['o.business_date > ?', `o.status IN ${COUNTED}`];
   const params = [addDays(today, -30)];
   if (shopId) (where.push('o.shop_id = ?'), params.push(shopId));
-  if (warehouseId) (where.push('o.warehouse_id = ?'), params.push(warehouseId));
-  const cogs30 = db()
-    .prepare(`SELECT COALESCE(SUM((l.qty - l.restocked_qty) * l.unit_cost),0) AS v FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE ${where.join(' AND ')}`)
-    .get(...params).v;
+  // Theo kho: giá vốn của đúng những phần đã xuất từ kho đó (một đơn có thể lấy từ nhiều kho); không lọc kho: cogs_amount của dòng
+  const cogs30 = warehouseId
+    ? db()
+        .prepare(`SELECT COALESCE(SUM((a.qty - a.restocked_qty) * a.unit_cost),0) AS v FROM order_line_allocations a JOIN order_lines l ON l.id = a.order_line_id JOIN orders o ON o.id = l.order_id WHERE a.warehouse_id = ? AND ${where.join(' AND ')}`)
+        .get(warehouseId, ...params).v
+    : db()
+        .prepare(`SELECT COALESCE(SUM(l.cogs_amount),0) AS v FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE ${where.join(' AND ')}`)
+        .get(...params).v;
   const daily = cogs30 / 30;
   return {
     stock_value: stockValue,
@@ -443,6 +474,22 @@ export function cashflow(filter) {
        WHERE ch.is_marketplace = 1 AND o.status = 'completed' AND o.net_amount - o.returned_amount - o.paid_amount > 0 ${shopFilter}`,
     )
     .get(...(f.shopIds || []));
+  // Tiền sàn treo tách theo từng sàn (Shopee, TikTok Shop…); cộng lại bằng marketplace_pending
+  const hangingByChannel = db()
+    .prepare(
+      `SELECT o.channel_id, ch.name AS channel_name, COALESCE(SUM(o.net_amount - o.returned_amount - o.paid_amount),0) AS pending, COUNT(*) AS orders
+       FROM orders o JOIN channels ch ON ch.id = o.channel_id
+       WHERE ch.is_marketplace = 1 AND o.status = 'completed' AND o.net_amount - o.returned_amount - o.paid_amount > 0 ${shopFilter}
+       GROUP BY o.channel_id ORDER BY pending DESC`,
+    )
+    .all(...(f.shopIds || []));
+  // Shop nợ khách (trả hàng mà chưa hoàn đủ tiền): đã thu nhiều hơn số phải thu sau trả hàng. Đơn sàn không tính (sàn hoàn tiền cho người mua).
+  const owedToCustomers = db()
+    .prepare(
+      `SELECT COALESCE(SUM(o.refund_owed_amount),0) AS v, COUNT(*) AS n FROM orders o JOIN channels ch ON ch.id = o.channel_id
+       WHERE ch.is_marketplace = 0 AND o.status IN ('confirmed','shipping','completed','returned') AND o.refund_owed_amount > 0 ${shopFilter}`,
+    )
+    .get(...(f.shopIds || []));
   const payable = db()
     .prepare(`SELECT COALESCE(SUM(total_amount - paid_amount),0) AS v, COUNT(*) AS n FROM purchases WHERE status = 'received' AND total_amount - paid_amount > 0`)
     .get();
@@ -457,8 +504,11 @@ export function cashflow(filter) {
     by_method: [...byMethod.values()],
     customer_receivable: receivable.v,
     customer_receivable_orders: receivable.n,
+    customer_refund_owed: owedToCustomers.v,
+    customer_refund_owed_orders: owedToCustomers.n,
     marketplace_pending: hanging.v,
     marketplace_pending_orders: hanging.n,
+    marketplace_by_channel: hangingByChannel,
     supplier_payable: payable.v,
     supplier_payable_purchases: payable.n,
   };

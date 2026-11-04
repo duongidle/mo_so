@@ -5,6 +5,8 @@ import { notFound, badRequest } from '../../lib/errors.js';
 import { emit, audit } from '../../lib/events.js';
 import { recordPayment } from '../payments/service.js';
 import { addOrderPayment } from '../orders/service.js';
+import { payoutMethodOf } from '../../lib/platforms.js';
+import { assertUnlocked } from '../../lib/period.js';
 
 const db = () => getDb();
 
@@ -59,12 +61,14 @@ export function createExpense(input, actor) {
   if (input.shop_id && !db().prepare('SELECT 1 FROM shops WHERE id = ?').get(input.shop_id)) throw notFound('Shop');
   const id = newId('exp');
   const at = nowIso();
+  const date = input.expense_date || businessDate(at);
+  assertUnlocked(date, 'Chi phí');
   db()
     .prepare(
-      `INSERT INTO expenses (id, category_id, shop_id, channel_id, amount, expense_date, payee, method, note, actor_id, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO expenses (id, category_id, shop_id, channel_id, amount, expense_date, payee, method, note, actor_id, created_at, updated_at, recurring_id, period_key)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.category_id, input.shop_id ?? null, input.channel_id ?? null, input.amount, input.expense_date || businessDate(at), input.payee ?? null, input.method ?? 'cash', input.note ?? null, actor?.id ?? null, at, at);
+    .run(id, input.category_id, input.shop_id ?? null, input.channel_id ?? null, input.amount, date, input.payee ?? null, input.method ?? 'cash', input.note ?? null, actor?.id ?? null, at, at, input.recurring_id ?? null, input.period_key ?? null);
   const e = getExpense(id);
   emit('expense.created', { entityType: 'expense', entityId: id, shopId: e.shop_id, data: e });
   audit(actor, 'expense.created', 'expense', id, null, e);
@@ -75,6 +79,7 @@ export function updateExpense(id, input, actor) {
   const before = getExpense(id);
   if (before.voided_at) throw badRequest('EXPENSE_VOIDED', 'Chi phí đã bị huỷ, không sửa được');
   const m = { ...before, ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) };
+  assertUnlocked([before.expense_date, m.expense_date], 'Chi phí');
   db()
     .prepare('UPDATE expenses SET category_id=?, shop_id=?, channel_id=?, amount=?, expense_date=?, payee=?, method=?, note=?, updated_at=? WHERE id=?')
     .run(m.category_id, m.shop_id ?? null, m.channel_id ?? null, m.amount, m.expense_date, m.payee ?? null, m.method, m.note ?? null, nowIso(), id);
@@ -86,12 +91,13 @@ export function updateExpense(id, input, actor) {
 /** Không xoá cứng: đánh dấu huỷ */
 export function voidExpense(id, actor) {
   const before = getExpense(id);
+  assertUnlocked(before.expense_date, 'Chi phí');
   db().prepare('UPDATE expenses SET voided_at = ?, updated_at = ? WHERE id = ?').run(nowIso(), nowIso(), id);
   audit(actor, 'expense.voided', 'expense', id, before, null);
   return getExpense(id);
 }
 
-// ---------- Đối soát Shopee (đơn sàn đã hoàn thành nhưng chưa ghi nhận tiền về) ----------
+// ---------- Đối soát tiền sàn (đơn sàn đã hoàn thành nhưng chưa ghi nhận tiền về) ----------
 const PENDING_SQL = `
   SELECT o.id, o.code, o.external_id, o.shop_id, s.name AS shop_name, o.channel_id, o.customer_name, o.status,
          o.completed_at, o.business_date, o.net_amount, o.returned_amount, o.paid_amount,
@@ -117,7 +123,7 @@ export function pendingPayouts({ shopIds, channel, from, to } = {}) {
  * items: [{ order_id?, external_id?, amount? }] — bỏ amount = nhận đủ số còn treo.
  * Đơn không tìm thấy hoặc không còn treo được báo lại, không bỏ qua im lặng.
  */
-export function recordPayouts({ items, method = 'shopee_payout', paidAt, note, shopId }, actor) {
+export function recordPayouts({ items, method, channelId, paidAt, note, shopId }, actor) {
   const results = [];
   for (const it of items) {
     let o = null;
@@ -132,6 +138,10 @@ export function recordPayouts({ items, method = 'shopee_payout', paidAt, note, s
       continue;
     }
     const pending = db().prepare(`${PENDING_SQL} AND o.id = ?`).get(o.id);
+    if (pending && channelId && pending.channel_id !== channelId) {
+      results.push({ ...it, order_id: o.id, code: o.code, ok: false, error: 'Đơn thuộc kênh khác' });
+      continue;
+    }
     if (!pending) {
       results.push({ ...it, order_id: o.id, code: o.code, ok: false, error: 'Đơn không còn tiền treo' });
       continue;
@@ -141,7 +151,8 @@ export function recordPayouts({ items, method = 'shopee_payout', paidAt, note, s
       results.push({ ...it, order_id: o.id, code: o.code, ok: false, error: 'Số tiền phải > 0' });
       continue;
     }
-    addOrderPayment(o.id, { amount, method, paidAt, note: note ?? 'Đối soát payout' }, actor);
+    // Không chỉ định: dùng phương thức tiền về của nền tảng đang đối soát (shopee_payout, tiktok_payout…), kênh khác = chuyển khoản
+    addOrderPayment(o.id, { amount, method: method ?? payoutMethodOf(channelId ?? o.channel_id), paidAt, note: note ?? 'Đối soát payout' }, actor);
     results.push({ order_id: o.id, code: o.code, ok: true, amount, still_pending: Math.max(0, pending.pending_amount - amount) });
   }
   return { results, recorded: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };

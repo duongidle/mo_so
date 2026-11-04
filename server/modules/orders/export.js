@@ -1,7 +1,7 @@
 import { getDb } from '../../db/index.js';
 import { config } from '../../lib/config.js';
 import { badRequest } from '../../lib/errors.js';
-import { orderFilter } from './service.js';
+import { orderFilter, orderGrossProfit } from './service.js';
 
 const MAX_ROWS = 50000;
 
@@ -37,11 +37,14 @@ const ORDER_COLUMNS = [
   ['Phí sàn', (o) => o.platform_fee_amount],
   ['Ship shop chịu', (o) => o.seller_shipping_amount],
   ['Shop thực nhận', (o) => o.net_amount],
-  ['Hàng trả', (o) => o.returned_amount],
+  ['Hàng trả', (o) => o.returned_goods_amount],
+  ['Hoàn phí ship', (o) => o.returned_shipping_amount],
+  ['Phí trả hàng thu được', (o) => o.return_fee_amount],
+  ['Ship chiều về', (o) => o.return_shipping_cost],
   ['Doanh thu thuần', (o) => o.net_revenue],
   ['Giá vốn', (o) => o.cogs_amount],
   // Giống chi tiết đơn: đơn nháp/huỷ không có lợi nhuận
-  ['Lợi nhuận gộp', (o) => (o.status === 'cancelled' || o.status === 'draft' ? 0 : o.net_amount - o.returned_amount - o.cogs_amount)],
+  ['Lợi nhuận gộp', (o) => (o.status === 'cancelled' || o.status === 'draft' ? 0 : orderGrossProfit(o))],
   ['Đã thu', (o) => o.paid_amount],
   ['Mã vận đơn', (o) => o.tracking_code ?? ''],
   ['Đơn vị vận chuyển', (o) => o.carrier ?? ''],

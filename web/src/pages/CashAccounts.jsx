@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { Async, Card, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate, today, METHODS } from '../lib.js';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const KINDS = { cash: 'Tiền mặt', bank: 'Ngân hàng', ewallet: 'Ví điện tử', other: 'Khác' };
 const SOURCE = { payment: 'Thu/chi', expense: 'Chi phí', transfer: 'Chuyển quỹ', adjust: 'Điều chỉnh kiểm đếm' };
@@ -63,7 +64,7 @@ function AccountForm({ init, onClose, onSaved }) {
         <span className="small muted">Phương thức đã thuộc quỹ khác sẽ bị từ chối: bỏ khỏi quỹ kia trước.</span>
       </div>
       <div className="grid cols-2">
-        <Field label="Số dư đầu (₫)" hint="Số tiền thật đang có tại đầu ngày mở sổ"><input type="number" value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>
+        <Field label="Số dư đầu (₫)" hint="Số tiền thật đang có tại đầu ngày mở sổ"><MoneyInput allowNegative value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>
         <Field label="Ngày mở sổ" hint="Để trống = tính từ toàn bộ lịch sử. Thu chi trước ngày này bị bỏ qua"><input type="date" value={f.opening_date} onChange={(e) => setF({ ...f, opening_date: e.target.value })} /></Field>
       </div>
       <ErrorBox error={error} />
@@ -109,7 +110,7 @@ function CountForm({ account, onClose, onDone }) {
       ) : (
         <>
           <p style={{ margin: 0 }}>Hệ thống đang tính quỹ có <b>{vnd(account.balance)}</b>. Đếm tiền thật (hoặc xem số dư ngân hàng) rồi nhập vào đây.</p>
-          <Field label="Số tiền thực tế (₫)"><input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
+          <Field label="Số tiền thực tế (₫)"><MoneyInput allowNegative value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
           {diff !== null && <div className={`small ${diff === 0 ? 'h-green' : 'h-yellow'}`}>{diff === 0 ? 'Khớp với hệ thống.' : `Chênh ${diff > 0 ? 'dư' : 'thiếu'} ${vnd(Math.abs(diff))}. Hãy nhớ lại có khoản thu chi nào chưa ghi sổ không trước khi chốt.`}</div>}
         </>
       )}
@@ -128,7 +129,7 @@ function TransferForm({ accounts, onClose, onDone }) {
         <Field label="Sang quỹ"><select value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
       </div>
       <div className="grid cols-2">
-        <Field label="Số tiền (₫)"><input type="number" inputMode="numeric" min="1" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
+        <Field label="Số tiền (₫)"><MoneyInput value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
         <Field label="Ngày"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
       </div>
       <Field label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="VD: Rút tiền ngân hàng về két" /></Field>

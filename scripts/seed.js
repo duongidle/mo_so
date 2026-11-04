@@ -33,8 +33,8 @@ runInTenant(storeFor(account), () => tx(() => {
     ],
     shop_ids: [nh.id],
   }, actor);
-  const tyHuu = createProduct({ name: 'Tỳ hưu thạch anh vàng', elements: ['Thổ', 'Kim'], unit: 'con', variants: [{ sku: 'PT-TYHUU-VANG', default_price: 520000, min_stock: 2 }], shop_ids: [pt.id] }, actor);
-  const vong = createProduct({ name: 'Vòng tay gỗ trầm', elements: ['Mộc'], unit: 'chiếc', variants: [{ sku: 'PT-VONG-TRAM', default_price: 350000, min_stock: 3 }], shop_ids: [pt.id] }, actor);
+  const tyHuu = createProduct({ name: 'Tỳ hưu thạch anh vàng', custom: { ngu_hanh: ['Thổ', 'Kim'] }, custom_shop_id: pt.id, unit: 'con', variants: [{ sku: 'PT-TYHUU-VANG', default_price: 520000, min_stock: 2 }], shop_ids: [pt.id] }, actor);
+  const vong = createProduct({ name: 'Vòng tay gỗ trầm', custom: { ngu_hanh: ['Mộc'] }, custom_shop_id: pt.id, unit: 'chiếc', variants: [{ sku: 'PT-VONG-TRAM', default_price: 350000, min_stock: 3 }], shop_ids: [pt.id] }, actor);
 
   const sup = createSupplier({ name: 'Xưởng tinh dầu Bình Dương', phone: '0909000111' }, actor);
   createPurchase({

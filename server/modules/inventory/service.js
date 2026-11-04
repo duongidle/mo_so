@@ -6,6 +6,7 @@ import { emit, audit } from '../../lib/events.js';
 import { runningCode } from '../../lib/codes.js';
 import { getSetting } from '../settings/service.js';
 import { availableBundles } from '../catalog/bundles.js';
+import { categoryClause } from '../../lib/categories.js';
 
 const db = () => getDb();
 
@@ -127,7 +128,7 @@ export function applyMovement(m) {
 }
 
 // ---------- Truy vấn ----------
-export function listStock({ warehouseId, shopId, q, filter, limit = 200 }) {
+export function listStock({ warehouseId, shopId, q, categoryId, filter, limit = 200 }) {
   const params = [];
   const where = ['v.archived_at IS NULL', 'p.archived_at IS NULL'];
   let join = '';
@@ -144,9 +145,12 @@ export function listStock({ warehouseId, shopId, q, filter, limit = 200 }) {
     where.push('(v.sku LIKE ? OR v.name LIKE ? OR p.name LIKE ?)');
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
+  const cat = categoryClause(categoryId);
+  if (cat.sql) where.push(cat.sql.slice(5));
   const rows = db()
     .prepare(
       `SELECT v.id AS variant_id, v.sku, v.kind, v.name AS variant_name, v.min_stock, p.id AS product_id, p.name AS product_name, p.unit,
+              COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url,
               COALESCE(SUM(s.on_hand),0) AS on_hand,
               CASE WHEN SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand END) > 0
                    THEN ROUND(SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand * s.avg_cost END) * 1.0 / SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand END))
@@ -156,7 +160,7 @@ export function listStock({ warehouseId, shopId, q, filter, limit = 200 }) {
        WHERE ${where.join(' AND ')}
        GROUP BY v.id ORDER BY p.name, v.sku LIMIT ?`,
     )
-    .all(...params, limit);
+    .all(...params, ...cat.params, limit);
   // Tốc độ bán 30 ngày gần nhất để tính số ngày còn đủ hàng
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
   const sales = db()

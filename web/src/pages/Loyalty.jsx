@@ -5,6 +5,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Empty, ErrorBox, Field, Modal, Tabs, useAction, useAsync } from '../components/ui.jsx';
 import { Element } from '../components/Motif.jsx';
 import { fmtDate, vnd } from '../lib.js';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const KIND = { reorder: 'Nhắc mua lại', birthday: 'Sinh nhật', general: 'Chung' };
 
@@ -120,7 +121,7 @@ function TierEditor({ init }) {
         {t.map((x, i) => (
           <div key={i} className="grid cols-3">
             <Field label="Tên hạng"><input value={x.name} onChange={(e) => set(i, 'name', e.target.value)} /></Field>
-            <Field label="Chi tiêu từ (₫)"><input type="number" min="0" value={x.min_spent} onChange={(e) => set(i, 'min_spent', Number(e.target.value))} /></Field>
+            <Field label="Chi tiêu từ (₫)"><MoneyInput value={x.min_spent} onChange={(e) => set(i, 'min_spent', Number(e.target.value))} /></Field>
             <Field label="Giảm giá gợi ý (%)"><input type="number" min="0" max="100" value={x.discount_pct} onChange={(e) => set(i, 'discount_pct', Number(e.target.value))} /></Field>
           </div>
         ))}

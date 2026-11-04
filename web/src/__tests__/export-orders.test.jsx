@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('../api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), del: vi.fn() } }));
 vi.mock('../session.jsx', () => ({
-  useSession: () => ({ shops: [{ id: 'nh', name: 'Nước hoa ô tô' }], channels: [{ id: 'shopee', name: 'Shopee' }] }),
+  useSession: () => ({ shops: [{ id: 'nh', name: 'Nước hoa ô tô' }], allChannels: [{ id: 'shopee', name: 'Shopee' }] }),
 }));
 const xlsx = vi.hoisted(() => ({ written: null, aoa: null }));
 vi.mock('xlsx', () => ({

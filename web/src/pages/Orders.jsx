@@ -1,3 +1,4 @@
+import ProductThumb from '../components/ProductThumb.jsx';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
@@ -7,18 +8,20 @@ import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
 import ExportOrders from '../components/ExportOrders.jsx';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
-import { vnd, num, fmtDate, STATUS, PAY_STATUS, METHODS } from '../lib.js';
+import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
+import MoneyInput from '../components/MoneyInput.jsx';
+import ReturnModal, { emptyReturnForm } from './ReturnModal.jsx';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
 
 export function OrderList() {
-  const { shopId, channels } = useSession();
+  const { shopId, allChannels: channels } = useSession();
   const [sp, setSp] = useSearchParams();
   const status = sp.get('status') || '';
-  const [channel, setChannel] = useState('');
+  const [channel, setChannel] = useState(sp.get('channel') || '');
   const [text, setText] = useState('');
   const dq = useDebounced(text);
-  const [range, setRange] = useState({ from: '', to: '' });
+  const [range, setRange] = useState({ from: sp.get('from') || '', to: sp.get('to') || '' }); // từ link "Xem dữ liệu gốc" của báo cáo
   const [extra, setExtra] = useState([]);
   const [cursor, setCursor] = useState(null);
   const nav = useNavigate();
@@ -35,18 +38,18 @@ export function OrderList() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/pos" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
+      <div className="page-head"><h1>Đơn hàng</h1><div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><button className="btn" onClick={() => setShowExport(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button><Link to="/orders/new" className="btn primary"><Icon name="plus" />Đơn mới</Link></div></div>
       <Chips options={TABS} value={status} onChange={(v) => { const n = new URLSearchParams(sp); v ? n.set('status', v) : n.delete('status'); setSp(n); }} />
       <div className="row wrap">
         <SearchBox value={text} onChange={setText} placeholder="Tìm mã đơn, tên, SĐT, mã vận đơn…" />
-        <select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 160 }} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ width: 160 }} aria-label="Kênh"><option value="">Mọi kênh</option>{channels.map((c) => <option key={c.id} value={c.id}>{c.name}{c.archived_at ? ' (đã tắt)' : ''}</option>)}</select>
         <DateRange from={range.from} to={range.to} onChange={setRange} />
       </div>
       <Async state={state}>
         {(res) => {
           const rows = [...res.data, ...extra];
           const next = extra.length || cursor ? cursor : res.next_cursor;
-          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file Shopee</button><Link to="/pos" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
+          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/orders/new" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
           return (
             <Card flat>
               <div className="table-wrap"><table className="stackable">
@@ -80,7 +83,7 @@ const NEXT = { draft: [['confirmed', 'Xác nhận (trừ kho)']], confirmed: [['
 
 export function OrderDetail() {
   const { id } = useParams();
-  const { channels } = useSession();
+  const { allChannels: channels, methodLabels, methodList } = useSession();
   const state = useAsync(() => api.get(`/orders/${id}`), [id]);
   const act = useAction();
   const [modal, setModal] = useState(null);
@@ -107,12 +110,14 @@ export function OrderDetail() {
               </div>
               <ErrorBox error={act.error} />
               {o.stock_warning ? <div className="alert warn">Đơn này làm tồn kho âm. Kiểm tra kho thực tế và điều chỉnh nếu cần.</div> : null}
-              {o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
+              {o.refund_owed_amount > 0 ? <div className="alert warn">Còn phải trả khách {vnd(o.refund_owed_amount)} (đã thu {vnd(o.paid_amount)}, số phải thu sau trả hàng thấp hơn). Hoàn bằng nút “Hoàn tiền”.</div> : o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
               <div className="row wrap no-print">
                 {(NEXT[o.status] || []).map(([st, label]) => <button key={st} className={`btn ${st === NEXT[o.status][0][0] ? 'primary' : ''}`} disabled={act.busy} onClick={() => doStatusForce(st)}>{label}</button>)}
+                {o.status === 'draft' && <Link className="btn" to={`/orders/${o.id}/edit`}>Sửa</Link>}
                 {['draft', 'confirmed', 'shipping'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
                 {o.amount_due > 0 && !['cancelled', 'draft'].includes(o.status) && <button className="btn" onClick={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}>Thu tiền ({vnd(o.amount_due)})</button>}
-                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm({ lines: {}, reason: '', refund: 0, method: 'cash' }); setModal('return'); }}>Trả hàng</button>}
+                {o.refund_owed_amount > 0 && <button className="btn primary" onClick={() => { setForm({ amount: o.refund_owed_amount, method: 'cash' }); setModal('refund'); }}>Hoàn tiền ({vnd(o.refund_owed_amount)})</button>}
+                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm(emptyReturnForm()); setModal('return'); }}>Trả hàng</button>}
                 <a className="btn" href={`/api/v1/orders/${o.id}/receipt`} target="_blank" rel="noreferrer">In phiếu</a>
               </div>
 
@@ -131,10 +136,14 @@ export function OrderDetail() {
                     <Row l="Khách phải trả" v={o.total_amount} bold />
                     {o.platform_fee_amount > 0 && <Row l="Phí sàn" v={-o.platform_fee_amount} />}
                     {o.seller_shipping_amount > 0 && <Row l="Ship shop chịu" v={-o.seller_shipping_amount} />}
-                    {o.returned_amount > 0 && <Row l="Hàng trả" v={-o.returned_amount} />}
+                    {o.returned_goods_amount > 0 && <Row l="Hàng trả" v={-o.returned_goods_amount} />}
+                    {o.returned_shipping_amount > 0 && <Row l="Hoàn phí ship khách" v={-o.returned_shipping_amount} />}
+                    {o.return_fee_amount > 0 && <Row l="Phí trả hàng thu được" v={o.return_fee_amount} />}
+                    {o.return_shipping_cost > 0 && <Row l="Ship chiều về" v={-o.return_shipping_cost} />}
                     <Row l="Giá vốn" v={-o.cogs_amount} />
                     <Row l="Lợi nhuận gộp" v={o.gross_profit} bold />
                     <Row l="Đã thu" v={o.paid_amount} />
+                    {o.refund_owed_amount > 0 && <Row l="Còn phải trả khách" v={o.refund_owed_amount} bold />}
                   </div>
                 </Card>
               </div>
@@ -143,7 +152,7 @@ export function OrderDetail() {
                 <div className="table-wrap"><table>
                   <thead><tr><th>Sản phẩm</th><th className="num">SL</th><th className="num">Đơn giá</th><th className="num">Giá vốn</th><th className="num">Thành tiền</th></tr></thead>
                   <tbody>{o.lines.map((l) => (
-                    <tr key={l.id}><td>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
+                    <tr key={l.id}><td><div className="row" style={{ gap: 10 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div>{l.allocations?.length > 0 && <div className="small muted">Lấy từ: {l.allocations.map((a) => `${a.warehouse_name}${l.allocations.some((x) => x.sku !== l.sku) ? ` (${a.sku})` : ''} × ${a.qty}`).join(', ')}</div>}{!l.allocations?.length && l.planned_allocations?.length > 0 && <div className="small muted">Dự kiến lấy từ kho đã chọn tay</div>}</div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
                   ))}</tbody>
                 </table></div>
               </Card>
@@ -151,12 +160,12 @@ export function OrderDetail() {
               <div className="grid cols-2 collapse">
                 <Card title="Thanh toán">
                   {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
-                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {METHODS[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
+                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
                   ))}
                 </Card>
                 <Card title="Lịch sử">
                   {o.history.map((h) => <div key={h.id} className="small"><span className="muted">{fmtDate(h.created_at)}</span> · {h.from_status ? `${STATUS[h.from_status]} → ` : ''}{STATUS[h.to_status]}{h.note && ` (${h.note})`}</div>)}
-                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.reason && ` — ${r.reason}`}</div>)}
+                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.reason && ` — ${r.reason}`}</div>)}
                 </Card>
               </div>
 
@@ -171,37 +180,19 @@ export function OrderDetail() {
               )}
               {modal === 'pay' && (
                 <Modal title="Thu tiền" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method }); setModal(null); state.reload(); })}>Ghi nhận</button>}>
-                  <Field label="Số tiền"><input type="number" min="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
-                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                  <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}
-              {modal === 'return' && (
-                <Modal title="Trả hàng" onClose={() => setModal(null)} footer={
-                  <button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => {
-                    const lines = Object.entries(form.lines).filter(([, v]) => v.qty > 0).map(([order_line_id, v]) => ({ order_line_id, qty: v.qty, restock: v.restock !== false }));
-                    if (!lines.length) throw new Error('Chọn ít nhất 1 sản phẩm trả');
-                    await api.post(`/orders/${o.id}/returns`, { lines, reason: form.reason || null, refund: Number(form.refund) > 0 ? { amount: Number(form.refund), method: form.method } : null });
-                    setModal(null); state.reload();
-                  })}>Ghi nhận trả hàng</button>}>
-                  {o.lines.map((l) => {
-                    const left = l.qty - l.returned_qty;
-                    const cur = form.lines?.[l.id] || { qty: 0, restock: true };
-                    return left > 0 && (
-                      <div key={l.id} className="stack" style={{ gap: 4 }}>
-                        <div className="row between"><span>{l.name}</span><span className="muted small">còn {left}</span></div>
-                        <div className="row">
-                          <input type="number" min="0" max={left} value={cur.qty} onChange={(e) => setForm({ ...form, lines: { ...form.lines, [l.id]: { ...cur, qty: Math.min(left, Math.max(0, Number(e.target.value) || 0)) } } })} style={{ width: 90 }} aria-label="Số lượng trả" />
-                          <label className="check small"><input type="checkbox" checked={cur.restock} onChange={(e) => setForm({ ...form, lines: { ...form.lines, [l.id]: { ...cur, restock: e.target.checked } } })} />Nhập lại kho (bỏ chọn nếu hàng hỏng)</label>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <Field label="Lý do"><input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
-                  <Field label="Tiền hoàn cho khách (0 nếu chưa hoàn)"><input type="number" min="0" value={form.refund} onChange={(e) => setForm({ ...form, refund: e.target.value })} /></Field>
+              {modal === 'refund' && (
+                <Modal title="Hoàn tiền cho khách" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method, direction: 'out' }); setModal(null); state.reload(); })}>Ghi nhận hoàn tiền</button>}>
+                  <Field label={`Số tiền (tối đa ${vnd(o.refund_owed_amount)})`}><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}
+              {modal === 'return' && <ReturnModal order={o} form={form} setForm={setForm} act={act} methodList={methodList} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
             </>
           );
         }}

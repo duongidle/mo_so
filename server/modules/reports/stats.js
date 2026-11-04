@@ -6,22 +6,27 @@ const db = () => getDb();
 // Đơn tính vào doanh thu: đã xác nhận trở đi (kể cả đã trả toàn phần, khi đó net_revenue = 0 nhưng vẫn là một đơn đã bán)
 export const COUNTED = `('confirmed','shipping','completed','returned')`;
 
-const COLS = ['order_count', 'cancelled_count', 'returned_count', 'subtotal', 'discount_amount', 'goods_revenue', 'returned_amount', 'net_revenue', 'shipping_fee', 'platform_fee', 'seller_shipping', 'cogs'];
+const COLS = ['order_count', 'cancelled_count', 'returned_count', 'subtotal', 'discount_amount', 'goods_revenue', 'returned_amount', 'net_revenue', 'shipping_fee', 'platform_fee', 'seller_shipping', 'cogs', 'return_fee', 'return_shipping_cost'];
 
-/** Tổng hợp từ bảng đơn (nguồn sự thật). Dùng để dựng bảng đệm và để kiểm tra bảng đệm. Phải có bí danh `o` cho orders. */
+/**
+ * Tổng hợp từ bảng đơn (nguồn sự thật). Quy ước cột trả hàng: returned_amount = tiền HÀNG đã trả; shipping_fee = phí ship khách trả SAU khi trừ ship hoàn;
+ * return_fee (phí trả hàng thu được, = 5118) và return_shipping_cost (ship chiều về, phần của 6412) là hai cột riêng.
+ * Dùng để dựng bảng đệm và để kiểm tra bảng đệm. Phải có bí danh `o` cho orders. */
 export const AGG_SQL = `
   COUNT(CASE WHEN o.status IN ${COUNTED} THEN 1 END) AS order_count,
   COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) AS cancelled_count,
-  COUNT(CASE WHEN o.status IN ${COUNTED} AND o.returned_amount > 0 THEN 1 END) AS returned_count,
+  COUNT(CASE WHEN o.status IN ${COUNTED} AND o.returned_goods_amount > 0 THEN 1 END) AS returned_count,
   COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.subtotal END),0) AS subtotal,
   COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.line_discount_amount + o.discount_amount END),0) AS discount_amount,
   COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.goods_revenue END),0) AS goods_revenue,
-  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.returned_amount END),0) AS returned_amount,
+  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.returned_goods_amount END),0) AS returned_amount,
   COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.net_revenue END),0) AS net_revenue,
-  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.shipping_fee END),0) AS shipping_fee,
+  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.shipping_fee - o.returned_shipping_amount END),0) AS shipping_fee,
   COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.platform_fee_amount END),0) AS platform_fee,
   COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.seller_shipping_amount END),0) AS seller_shipping,
-  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.cogs_amount END),0) AS cogs`;
+  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.cogs_amount END),0) AS cogs,
+  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.return_fee_amount END),0) AS return_fee,
+  COALESCE(SUM(CASE WHEN o.status IN ${COUNTED} THEN o.return_shipping_cost END),0) AS return_shipping_cost`;
 
 /** Tính lại các ô "bẩn" (đã có thay đổi đơn từ lần tính trước). Rẻ khi không có gì bẩn. */
 export function flushStats() {

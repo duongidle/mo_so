@@ -8,7 +8,8 @@ import { requireAuth } from './lib/auth.js';
 import authRoutes from './modules/auth/routes.js';
 import shopRoutes from './modules/shops/routes.js';
 import warehouseRoutes from './modules/warehouses/routes.js';
-import settingsRoutes, { channelRoutes, industryRoutes } from './modules/settings/routes.js';
+import settingsRoutes, { industryRoutes } from './modules/settings/routes.js';
+import platformRoutes, { channelRoutes } from './modules/platforms/routes.js';
 import catalogRoutes from './modules/catalog/routes.js';
 import inventoryRoutes from './modules/inventory/routes.js';
 import purchaseRoutes from './modules/purchases/routes.js';
@@ -18,8 +19,10 @@ import importRoutes from './modules/imports/routes.js';
 import expenseRoutes from './modules/expenses/routes.js';
 import reportRoutes from './modules/reports/routes.js';
 import cashRoutes from './modules/cash/routes.js';
+import accountingRoutes from './modules/accounting/routes.js';
 import loyaltyRoutes from './modules/loyalty/routes.js';
 import customRoutes from './modules/custom/routes.js';
+import { uploadRoutes, fileRoutes } from './modules/uploads/routes.js';
 import systemRoutes from './modules/system/routes.js';
 import { docsRoutes } from './modules/system/docs.js';
 
@@ -37,6 +40,7 @@ export function createApp() {
   secured.route('/shops', shopRoutes);
   secured.route('/warehouses', warehouseRoutes);
   secured.route('/channels', channelRoutes);
+  secured.route('/platforms', platformRoutes);
   secured.route('/settings', settingsRoutes);
   secured.route('/industries', industryRoutes);
   secured.route('/', catalogRoutes); // /categories, /products, /variants, /listings
@@ -48,8 +52,11 @@ export function createApp() {
   secured.route('/', expenseRoutes); // /expenses, /expense-categories, /payments, /reconciliation
   secured.route('/reports', reportRoutes);
   secured.route('/cash', cashRoutes);
+  secured.route('/accounting', accountingRoutes);
   secured.route('/loyalty', loyaltyRoutes);
   secured.route('/custom', customRoutes);
+  secured.route('/uploads', uploadRoutes); // POST /uploads/images
+  secured.route('/files', fileRoutes); // GET /files/images/:id (cần đăng nhập)
   secured.route('/system', systemRoutes); // /system/api-keys, /webhooks, /backups, /export, /events
   api.route('/', secured);
 
