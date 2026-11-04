@@ -52,7 +52,7 @@ describe('ProductForm', () => {
     expect(screen.getByLabelText('SKU Chanh')).toHaveProperty('value', 'TINHDAU-CHANH');
     fireEvent.change(screen.getByLabelText('Giá bán cho tất cả'), { target: { value: '99000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Áp dụng' }));
-    expect(screen.getByLabelText('Giá bán TINHDAU-CAM')).toHaveProperty('value', '99000');
+    expect(screen.getByLabelText('Giá bán TINHDAU-CAM')).toHaveProperty('value', '99.000');
     fireEvent.change(screen.getByLabelText('SKU Cam'), { target: { value: 'my-cam' } });
     fireEvent.click(screen.getByLabelText('Đang bán TINHDAU-CHANH'));
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
@@ -151,5 +151,37 @@ describe('chuyển sản phẩm một biến thể sang ma trận', () => {
     fireEvent.click(screen.getByLabelText(/Có biến thể/));
     fireEvent.click(screen.getByLabelText(/Có biến thể/));
     expect(screen.getByLabelText('SKU')).toHaveProperty('value', 'TD-1');
+  });
+});
+
+describe('bỏ biến thể cần xác nhận', () => {
+  const product = {
+    id: 'prd_1', name: 'Tinh dầu', unit: 'chai', images: [], options: [{ name: 'Mùi', values: ['Cam', 'Chanh'] }],
+    variants: [
+      { id: 'var_1', sku: 'A-CAM', default_price: 1000, min_stock: 0, option_values: { Mùi: 'Cam' }, listings: [] },
+      { id: 'var_2', sku: 'A-CHANH', default_price: 1000, min_stock: 0, option_values: { Mùi: 'Chanh' }, listings: [] },
+    ],
+  };
+  it('bỏ tick đang bán: hỏi trước, liệt kê biến thể xoá hẳn hay lưu trữ, chưa gọi PATCH cho tới khi xác nhận', async () => {
+    api.post.mockImplementation(async (path) => (path.endsWith('/removal-preview')
+      ? { data: [{ id: 'var_2', sku: 'A-CHANH', name: null, option_values: { Mùi: 'Chanh' }, outcome: 'deleted' }] }
+      : { data: {} }));
+    const onSaved = vi.fn();
+    render(<ProductForm init={initialForm(product, 'shp_1', false)} onClose={() => {}} onSaved={onSaved} />);
+    fireEvent.click(await screen.findByLabelText('Đang bán A-CHANH'));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    expect(await screen.findByText(/xoá hẳn vì chưa có lịch sử/)).toBeTruthy();
+    expect(api.post).toHaveBeenCalledWith('/products/prd_1/removal-preview', { variant_ids: ['var_2'] });
+    expect(api.patch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Vẫn lưu' }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+  it('không có gì ngừng bán thì lưu thẳng, không hỏi', async () => {
+    render(<ProductForm init={initialForm(product, 'shp_1', false)} onClose={() => {}} onSaved={() => {}} />);
+    await screen.findByLabelText('Đang bán A-CAM');
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1));
+    expect(api.post).not.toHaveBeenCalled();
   });
 });

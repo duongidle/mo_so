@@ -254,3 +254,13 @@ test('Sản phẩm cũ nhiều biến thể không thuộc tính: gán từng bi
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.deepEqual(r.body.data.variants.map((v) => v.name), ['Bản đặc biệt', 'B'], 'tên đặt tay giữ nguyên, tên trống thành tên tự đặt');
 });
+
+test('Xem trước bỏ biến thể: có lịch sử thì lưu trữ, chưa dùng thì xoá hẳn; không ghi gì', async () => {
+  const { api, nh, wh } = await setup();
+  const p = (await api.post('/products', { name: 'Xem trước', variants: [{ sku: 'XT-1', default_price: 1000, opening_qty: 5, opening_cost: 100 }, { sku: 'XT-2', default_price: 1000 }], shop_ids: [nh.id], opening_warehouse_id: wh.id })).body.data;
+  const [a, b] = p.variants;
+  const r = await api.post(`/products/${p.id}/removal-preview`, { variant_ids: [a.id, b.id, 'var_khong_co'] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.data.map((x) => [x.sku, x.outcome]), [['XT-1', 'archived'], ['XT-2', 'deleted']]);
+  assert.equal(getDb().prepare('SELECT COUNT(*) AS n FROM variants WHERE product_id = ?').get(p.id).n, 2, 'chưa xoá gì');
+});

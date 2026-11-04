@@ -5,6 +5,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate, monthStart, today } from '../lib.js';
 import CashAccounts from './CashAccounts.jsx';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 export default function Expenses() {
   const [params] = useSearchParams();
@@ -55,7 +56,7 @@ function ExpenseList() {
       {form && (
         <Modal title="Thêm chi phí" onClose={() => setForm(null)} footer={<button className="btn primary" disabled={busy || !form.amount} onClick={save}>Lưu</button>}>
           <Field label="Danh mục"><select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>{cats.data?.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-          <Field label="Số tiền"><input type="number" inputMode="numeric" min="1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} autoFocus /></Field>
+          <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} autoFocus /></Field>
           <div className="grid cols-2">
             <Field label="Ngày"><input type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} /></Field>
             <Field label="Thuộc shop" hint="“Chung” sẽ được chia về các shop khi xem báo cáo"><select value={form.shop_id} onChange={(e) => setForm({ ...form, shop_id: e.target.value })}><option value="">Chung (phân bổ)</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>

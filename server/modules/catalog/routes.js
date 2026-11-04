@@ -92,6 +92,11 @@ r.get('/products', (c) => {
   );
 });
 r.get('/products/:id', (c) => c.json({ data: svc.getProduct(c.req.param('id')) }));
+// Xem trước bỏ biến thể: cái nào sẽ bị xoá hẳn (chưa có lịch sử), cái nào chỉ lưu trữ. Không ghi gì.
+r.post('/products/:id/removal-preview', async (c) => {
+  const input = await body(c, z.object({ variant_ids: z.array(z.string()).max(500) }));
+  return c.json({ data: svc.previewVariantRemoval(c.req.param('id'), input.variant_ids) });
+});
 r.post('/products', async (c) => {
   const input = await body(c, productInput);
   return c.json({ data: tx(() => svc.createProduct(input, c.get('actor'))) }, 201);

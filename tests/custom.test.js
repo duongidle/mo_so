@@ -235,13 +235,34 @@ test('Sửa trường: lựa chọn, thứ tự, bắt buộc (có hiệu lực 
   assert.equal(f.body.error.code, 'REQUIRED_FORMULA');
 
   const cus = (await api.post('/customers', { name: 'Khách R', phone: '0911555002', shop_id: nh.id })).body.data;
+  // Bản ghi cũ chưa có giá trị bắt buộc: sửa ô khác vẫn được, chỉ chặn khi yêu cầu để trống chính ô đó
   const miss = await api.put(`/custom/values/customer/${cus.id}?shop_id=${nh.id}`, { ghi: 'abc' });
-  assert.equal(miss.status, 400);
-  assert.equal(miss.body.error.code, 'REQUIRED_FIELD');
-  assert.deepEqual(miss.body.error.details.fields, ['dip']);
+  assert.equal(miss.status, 200, 'sửa ô khác của bản ghi cũ không bị chặn');
+  const blank = await api.put(`/custom/values/customer/${cus.id}?shop_id=${nh.id}`, { dip: '' });
+  assert.equal(blank.status, 400);
+  assert.equal(blank.body.error.code, 'REQUIRED_FIELD');
+  assert.deepEqual(blank.body.error.details.fields, ['dip']);
   assert.equal((await api.put(`/custom/values/customer/${cus.id}?shop_id=${nh.id}`, { dip: 'C' })).status, 200);
   const clear = await api.put(`/custom/values/customer/${cus.id}?shop_id=${nh.id}`, { dip: null });
   assert.equal(clear.body.error.code, 'REQUIRED_FIELD', 'xoá giá trị trường bắt buộc không được');
   await api.patch(`/custom/fields/${sel.id}`, { required: false });
   assert.equal((await api.put(`/custom/values/customer/${cus.id}?shop_id=${nh.id}`, { dip: null })).status, 200);
+});
+
+test('Hiện lại trường đã ẩn: kiểm tra lại vai trò và khoá bị trùng', async () => {
+  const { api, nh } = await setup();
+  const a = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'sinh', label: 'Ngày sinh', type: 'date', role: 'birth_date' })).body.data;
+  assert.equal((await api.patch(`/custom/fields/${a.id}`, { archived: true })).status, 200);
+  const b = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'sinh2', label: 'Sinh nhật', type: 'date', role: 'birth_date' })).body.data;
+  const role = await api.patch(`/custom/fields/${a.id}`, { archived: false });
+  assert.equal(role.status, 409);
+  assert.equal(role.body.error.code, 'DUPLICATE_ROLE');
+  await api.patch(`/custom/fields/${b.id}`, { archived: true });
+  assert.equal((await api.patch(`/custom/fields/${a.id}`, { archived: false })).status, 200, 'hết trùng thì hiện lại được');
+  const t = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'ghi_chu', label: 'Ghi 1', type: 'text' })).body.data;
+  await api.patch(`/custom/fields/${t.id}`, { archived: true });
+  await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'ghi_chu', label: 'Ghi 2', type: 'text' });
+  const key = await api.patch(`/custom/fields/${t.id}`, { archived: false });
+  assert.equal(key.status, 409);
+  assert.equal(key.body.error.code, 'DUPLICATE_KEY');
 });

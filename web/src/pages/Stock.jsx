@@ -7,6 +7,7 @@ import { vnd, num, fmtDate, MOVE_TYPES } from '../lib.js';
 import StockCounts from './StockCounts.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
 import { flattenTree, indent } from '../lib/categories.js';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 export default function Stock() {
   const { shopId, isAll, warehouses } = useSession();
@@ -113,7 +114,7 @@ function Adjust({ onClose, onSaved }) {
         <div key={l.id} className="row">
           <div className="grow"><div>{l.name}</div><div className="small muted">{l.sku} · hiện {l.on_hand}</div></div>
           {kind === 'count' ? <input type="number" min="0" value={l.counted} onChange={(e) => upd(l.id, { counted: e.target.value })} style={{ width: 90 }} aria-label="Số đếm được" /> : <input type="number" value={l.change} onChange={(e) => upd(l.id, { change: e.target.value })} style={{ width: 90 }} aria-label="Số thay đổi" />}
-          {(kind === 'opening' || kind === 'adjust' || kind === 'count') && <input type="number" min="0" placeholder="Giá vốn" value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 100 }} aria-label="Giá vốn" />}
+          {(kind === 'opening' || kind === 'adjust' || kind === 'count') && <MoneyInput placeholder="Giá vốn" value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 100 }} aria-label="Giá vốn" />}
         </div>
       ))}
       <Field label="Lý do"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>

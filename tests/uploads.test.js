@@ -6,6 +6,7 @@ import path from 'node:path';
 import { setup, makeClient } from './helpers.js';
 import { config } from '../server/lib/config.js';
 import { runBackup } from '../server/jobs/backup.js';
+import { cleanupUnusedImages } from '../server/jobs/uploads.js';
 import { runInTenant } from '../server/db/index.js';
 import { getAccountDb } from '../server/db/tenancy.js';
 
@@ -134,6 +135,33 @@ test('Sao lưu chép ảnh sang thư mục backups/<tài khoản>/uploads, chỉ
     assert.equal(r2.uploads, 0, 'lần sau không chép lại');
     await raw(app, api.cookie(), 'POST', '/uploads/images', JPG);
     assert.equal((await runInTenant(store, () => runBackup(new Date(), { dir }))).uploads, 1);
+  } finally {
+    restore();
+  }
+});
+
+test('Dọn ảnh không dùng: chỉ ảnh chưa gắn, quá 7 ngày; ảnh đang dùng không bị đụng', async () => {
+  const restore = useTmpData();
+  try {
+    const { app, api, accountId } = await setup();
+    const up = async () => (await (await raw(app, api.cookie(), 'POST', '/uploads/images', PNG)).json()).data.id;
+    const [old, fresh, used, viaVariant] = [await up(), await up(), await up(), await up()];
+    const p = (await api.post('/products', { name: 'Có ảnh', variants: [{ sku: 'CL-1' }], images: [{ id: used }] })).body.data;
+    assert.equal(p.images.length, 1);
+    const store = { db: getAccountDb(accountId), accountId, backupSub: accountId };
+    const file = (id) => path.join(config.dataDir, 'uploads', accountId, `${id}.png`);
+    const dayAgo = (n) => new Date(Date.now() - n * 86400_000).toISOString();
+    const db = store.db;
+    db.prepare('UPDATE product_images SET created_at = ? WHERE id IN (?,?,?)').run(dayAgo(10), old, used, viaVariant);
+    db.prepare('UPDATE product_images SET created_at = ? WHERE id = ?').run(dayAgo(2), fresh);
+    db.prepare('UPDATE variants SET image_id = ? WHERE id = ?').run(viaVariant, p.variants[0].id);
+    const r = await runInTenant(store, () => cleanupUnusedImages());
+    assert.deepEqual(r, { archived: 1, files_removed: 1 });
+    assert.ok(!fs.existsSync(file(old)), 'file ảnh mồ côi đã xoá');
+    for (const keep of [fresh, used, viaVariant]) assert.ok(fs.existsSync(file(keep)), 'ảnh còn dùng/mới giữ nguyên');
+    assert.ok(db.prepare('SELECT archived_at FROM product_images WHERE id = ?').get(old).archived_at, 'đánh dấu lưu trữ trong DB');
+    assert.equal(db.prepare('SELECT archived_at FROM product_images WHERE id = ?').get(used).archived_at, null);
+    assert.deepEqual(await runInTenant(store, () => cleanupUnusedImages()), { archived: 0, files_removed: 0 }, 'chạy lại không đổi gì');
   } finally {
     restore();
   }

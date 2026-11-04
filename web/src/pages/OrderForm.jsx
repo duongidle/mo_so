@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Empty, ErrorBox, Field, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import MoneyInput from '../components/MoneyInput.jsx';
 import Icon from '../components/Icon.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
 import CustomerPicker from '../components/CustomerPicker.jsx';
@@ -217,7 +218,6 @@ function Form({ order }) {
                 <div className="of-empty muted">Gõ tên hoặc SKU ở ô trên rồi chọn sản phẩm để thêm vào đơn.</div>
               ) : (
                 <div className="of-lines">
-                  <div className="of-line head small muted"><span /><span>Sản phẩm</span><span>SL</span><span className="num">Đơn giá</span><span className="num">Giảm</span><span className="num">Thành tiền</span><span /></div>
                   {lines.map((l) => (
                     <div key={l.uid} className="of-line">
                       <ProductThumb src={l.image_url} name={l.name} size={44} />
@@ -226,14 +226,20 @@ function Form({ order }) {
                         <div className="small muted">{l.sku}{l.on_hand_total !== null && l.on_hand_total !== undefined ? ` · tồn ${num(l.on_hand_total)}` : ''}</div>
                         {lineWarn(l) && <div className="small h-yellow">{lineWarn(l)}</div>}
                       </div>
-                      <span className="qty">
-                        <button type="button" onClick={() => upd(l.uid, { qty: l.qty - 1 })} aria-label={`Giảm ${l.sku}`}>−</button>
-                        <span>{l.qty}</span>
-                        <button type="button" onClick={() => upd(l.uid, { qty: l.qty + 1 })} aria-label={`Tăng ${l.sku}`}>+</button>
-                      </span>
-                      <input className="num of-money" type="number" inputMode="numeric" min="0" value={l.price} onChange={(e) => upd(l.uid, { price: toMoney(e.target.value) })} aria-label={`Đơn giá ${l.sku}`} />
-                      <input className="num of-money" type="number" inputMode="numeric" min="0" value={l.discount} onChange={(e) => upd(l.uid, { discount: toMoney(e.target.value) })} aria-label={`Giảm giá ${l.sku}`} />
-                      <b className="num of-total">{vnd(lineTotal(l))}</b>
+                      <div className="of-edit">
+                        <span className="qty">
+                          <button type="button" onClick={() => upd(l.uid, { qty: l.qty - 1 })} aria-label={`Giảm ${l.sku}`}>−</button>
+                          <span>{l.qty}</span>
+                          <button type="button" onClick={() => upd(l.uid, { qty: l.qty + 1 })} aria-label={`Tăng ${l.sku}`}>+</button>
+                        </span>
+                        <label className="of-fld"><span className="small muted">Đơn giá</span>
+                          <MoneyInput className="of-money" value={l.price} onChange={(e) => upd(l.uid, { price: toMoney(e.target.value) })} aria-label={`Đơn giá ${l.sku}`} />
+                        </label>
+                        <label className="of-fld"><span className="small muted">Giảm</span>
+                          <MoneyInput className="of-money" value={l.discount} onChange={(e) => upd(l.uid, { discount: toMoney(e.target.value) })} aria-label={`Giảm giá ${l.sku}`} />
+                        </label>
+                        <b className="num of-total">{vnd(lineTotal(l))}</b>
+                      </div>
                       <button type="button" className="btn sm of-remove" onClick={() => upd(l.uid, { qty: 0 })} aria-label={`Bỏ ${l.sku}`}>✕</button>
                     </div>
                   ))}
@@ -271,10 +277,10 @@ function Form({ order }) {
           <Card title="Tiền">
             <div className="stack">
               <div className="grid cols-2 collapse">
-                <Field label="Giảm giá đơn"><input type="number" inputMode="numeric" min="0" value={discount} onChange={(e) => setDiscount(toMoney(e.target.value))} aria-label="Giảm giá đơn" /></Field>
-                <Field label="Phí ship khách trả"><input type="number" inputMode="numeric" min="0" value={shipping} onChange={(e) => setShipping(toMoney(e.target.value))} aria-label="Phí ship khách trả" /></Field>
-                {marketplace && <Field label="Phí sàn"><input type="number" inputMode="numeric" min="0" value={platformFee} onChange={(e) => setPlatformFee(toMoney(e.target.value))} aria-label="Phí sàn" /></Field>}
-                {marketplace && <Field label="Ship shop chịu"><input type="number" inputMode="numeric" min="0" value={sellerShipping} onChange={(e) => setSellerShipping(toMoney(e.target.value))} aria-label="Ship shop chịu" /></Field>}
+                <Field label="Giảm giá đơn"><MoneyInput value={discount} onChange={(e) => setDiscount(toMoney(e.target.value))} aria-label="Giảm giá đơn" /></Field>
+                <Field label="Phí ship khách trả"><MoneyInput value={shipping} onChange={(e) => setShipping(toMoney(e.target.value))} aria-label="Phí ship khách trả" /></Field>
+                {marketplace && <Field label="Phí sàn"><MoneyInput value={platformFee} onChange={(e) => setPlatformFee(toMoney(e.target.value))} aria-label="Phí sàn" /></Field>}
+                {marketplace && <Field label="Ship shop chịu"><MoneyInput value={sellerShipping} onChange={(e) => setSellerShipping(toMoney(e.target.value))} aria-label="Ship shop chịu" /></Field>}
               </div>
               <div>
                 <div className="ledger-line"><span>Tạm tính</span><span className="num">{vnd(totals.subtotal)}</span></div>
@@ -299,7 +305,7 @@ function Form({ order }) {
           <Card title="Thanh toán">
             <div className="grid cols-2 collapse">
               <Field label="Số tiền thu" hint="Để trống: Bán xong thu đủ, Xác nhận không thu">
-                <input type="number" inputMode="numeric" min="0" value={paid} placeholder={String(totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
+                <MoneyInput value={paid} placeholder={String(totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
               </Field>
               <Field label="Phương thức">
                 <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Phương thức thanh toán">{methodList(method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>

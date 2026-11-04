@@ -28,6 +28,20 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, đợt rà soát cuối (polish)
+- **Dòng đơn** (OrderForm): mỗi dòng là thẻ gọn (hàng 1: ảnh, tên đầy đủ, SKU · tồn, nút bỏ; hàng 2: số lượng, đơn giá, giảm, thành tiền); thứ tự Tab theo số lượng, giá, giảm, bỏ. POS vốn đã dạng thẻ nên giữ.
+- **Ô nhập tiền**: `components/MoneyInput.jsx` + `lib/money.js` (dấu chấm ngăn nghìn, số nguyên, căn phải, `inputMode=numeric`); thay vào đơn, POS, sản phẩm/combo, chứng từ, chi phí định kỳ, tài sản, nhập hàng, chi phí, quỹ tiền… Có vitest.
+- **Bỏ biến thể** phải xác nhận: `POST /products/:id/removal-preview` cho biết cái nào xoá hẳn, cái nào lưu trữ; hộp xác nhận trước khi PATCH.
+- **Trường bắt buộc** chỉ chặn khi xoá/để trống chính nó; hiện lại trường ẩn kiểm lại vai trò và khoá trùng. Cập nhật test.
+- **Lưu trữ kho**: 409 `WAREHOUSE_IN_USE` (kèm danh sách shop), `force` gỡ khỏi shop và ghi audit; kho duy nhất của shop: `WAREHOUSE_LAST`.
+- **Sổ kế toán**: 3 nhóm tab, `?tab=` vẫn dùng được; quỹ âm đỏ kèm gợi ý và liên kết Quỹ tiền.
+- **Ảnh mồ côi**: `server/jobs/uploads.js` chạy trong job sao lưu hằng ngày, dọn ảnh chưa gắn quá 7 ngày.
+- **Ma trận biến thể**: cột Biến thể cố định khi cuộn ngang, dưới 720px mỗi tổ hợp là một thẻ, ô ảnh là nút ảnh thu nhỏ mở danh sách chọn; bảng thành phần combo tự xuống dòng.
+- **Mật độ giao diện**: token trên `:root`, gọn từ 900px; điện thoại giữ ô ≥44px, chữ ô nhập 16px.
+- Không đổi số liệu báo cáo.
+
+**Việc chờ làm** (chủ shop hoãn ngày 2026-11-04): lợi nhuận ở Báo cáo → Lợi nhuận và `net_profit_estimate` của tổng quan báo cáo **chưa gồm** (1) điều chỉnh/hao hụt kho (`adjust_in`, `adjust_out`, `damage_out`, chênh lệch kiểm kê) và (2) thừa/thiếu khi kiểm đếm quỹ. Sổ kế toán có gồm, ở tài khoản 711 và 811. Nên với "Tất cả shop": lợi nhuận kế toán = lợi nhuận báo cáo + các khoản này; theo từng shop thì khớp hẳn vì các khoản này không thuộc shop nào. Đề xuất chờ chủ shop quyết: thêm dòng "Thu nhập/chi phí khác" vào báo cáo lãi lỗ cho hai bên khớp (hàng hỏng, mất là chi phí thật). Khi làm phải sửa cùng lúc: `tests/accounting_integrity.test.js` (đoạn so lãi lỗ đang cộng các khoản này vào), `tests/finance_integrity.test.js`, ghi chú `net_profit_estimate`, `acc_other`, `acc_depreciation` trong `web/src/metrics.js`, và trang Cách đọc số liệu (`guide`). Khấu hao là câu hỏi riêng: hiện chỉ có ở lãi lỗ kế toán.
+
 ### 2026-11-04 — Đợt nâng cấp, Phase 8b: nghiệp vụ kế toán bổ sung (M14 xong)
 - Migration 025 (`vouchers`, `recurring_expenses`, cột `expenses.recurring_id/period_key`), 026 (`assets`, `journal_meta`, `period_lock_snapshots`, trigger tài sản).
 - Server: `accounting/{vouchers,assets,lock}.js`, `expenses/recurring.js`, `jobs/recurring.js`, `lib/{schedule,clock,period}.js`; `cash/balanceOf` cộng chứng từ tay và tài sản; KQKD tách khấu hao; khoá sổ `PERIOD_LOCKED` ở chi phí, thanh toán, quỹ, chứng từ, tài sản.

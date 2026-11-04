@@ -74,9 +74,9 @@ export const Field = ({ label, children, hint }) => (
 export const StatusBadge = ({ status }) => <span className={`badge st-${status}`}>{STATUS[status] || status}</span>;
 
 /** Tab gạch chân cho các mục lớn của một trang */
-export function Tabs({ options, value, onChange }) {
+export function Tabs({ options, value, onChange, wrap }) {
   return (
-    <div className="tabs" role="tablist">
+    <div className={`tabs${wrap ? ' wrap' : ''}`} role="tablist">
       {options.map(([v, label]) => (
         <button key={v} className="tab" role="tab" aria-selected={value === v} onClick={() => onChange(v)}>{label}</button>
       ))}
