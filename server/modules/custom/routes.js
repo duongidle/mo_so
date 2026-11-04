@@ -35,6 +35,11 @@ r.patch('/fields/:id', async (c) => {
   return c.json({ data: tx(() => svc.updateField(c.req.param('id'), patch)) });
 });
 
+// Dữ liệu và công thức đang dùng một trường (để hỏi xác nhận trước khi xoá)
+r.get('/fields/:id/usage', (c) => {
+  const { field, ...usage } = svc.fieldUsage(c.req.param('id'));
+  return c.json({ data: { id: field.id, label: field.label, ...usage } });
+});
 // Xoá hẳn một trường. Có dữ liệu thì cần confirm (body hoặc ?confirm=1); xem svc.deleteField
 r.delete('/fields/:id', async (c) => {
   const input = await body(c, z.object({ confirm: z.boolean().optional() }));

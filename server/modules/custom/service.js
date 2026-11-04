@@ -216,6 +216,21 @@ export function updateField(id, patch) {
   return shape(db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id));
 }
 
+/** Trường này đang có dữ liệu ở bao nhiêu bản ghi, và công thức nào (chưa ẩn) đang dùng nó. Giao diện dùng để nói rõ trước khi xoá. */
+export function fieldUsage(id) {
+  const f = db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
+  if (!f) throw notFound('Trường tuỳ chỉnh');
+  const referencedBy = db()
+    .prepare("SELECT id, key, label, formula FROM custom_fields WHERE entity_type = ? AND type = 'formula' AND archived_at IS NULL AND id != ? AND (shop_id IS ? OR shop_id IS NULL OR ? IS NULL)")
+    .all(f.entity_type, f.id, f.shop_id, f.shop_id)
+    .filter((x) => {
+      try { return refsOf(parse(x.formula)).has(`custom.${f.key}`); } catch { return false; }
+    })
+    .map(({ id: fid, key, label }) => ({ id: fid, key, label }));
+  const valuesCount = db().prepare('SELECT COUNT(*) AS n FROM custom_values WHERE field_id = ?').get(f.id).n;
+  return { field: f, values_count: valuesCount, referenced_by: referencedBy };
+}
+
 /**
  * Xoá hẳn một trường tuỳ chỉnh. Khác "Ẩn" (giữ dữ liệu, hiện lại được), xoá bỏ cả định nghĩa lẫn giá trị:
  *  - đang bị công thức khác dùng → 409 FIELD_REFERENCED;
@@ -224,15 +239,7 @@ export function updateField(id, patch) {
  * Khoá được giải phóng. Bản ghi audit cũng là cách applyIndustry biết trường mẫu đã bị xoá có chủ đích.
  */
 export function deleteField(id, { confirm = false } = {}, actor = null) {
-  const f = db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
-  if (!f) throw notFound('Trường tuỳ chỉnh');
-  const users = db()
-    .prepare("SELECT id, key, label, formula FROM custom_fields WHERE entity_type = ? AND type = 'formula' AND archived_at IS NULL AND id != ? AND (shop_id IS ? OR shop_id IS NULL OR ? IS NULL)")
-    .all(f.entity_type, f.id, f.shop_id, f.shop_id)
-    .filter((x) => {
-      try { return refsOf(parse(x.formula)).has(`custom.${f.key}`); } catch { return false; }
-    })
-    .map(({ id: fid, key, label }) => ({ id: fid, key, label }));
+  const { field: f, referenced_by: users } = fieldUsage(id);
   if (users.length) {
     throw conflict('FIELD_REFERENCED', `Không xoá được: trường này đang được công thức của ${users.map((x) => `“${x.label}”`).join(', ')} dùng. Sửa hoặc xoá các công thức đó trước (hoặc chọn Ẩn).`, { fields: users });
   }

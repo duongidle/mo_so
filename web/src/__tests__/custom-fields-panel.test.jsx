@@ -12,13 +12,14 @@ const FIELDS = [
   { id: 'f3', key: 'ln', label: 'LN sau đóng gói', type: 'formula', formula: '{total_amount} - {custom.phi_dong_goi}' },
 ];
 let values;
+let reasons = {};
 const setup = (fields = FIELDS) => {
-  api.get.mockImplementation(async (path) => (path === '/custom/fields' ? { data: fields } : { data: values }));
+  api.get.mockImplementation(async (path) => (path === '/custom/fields' ? { data: fields } : { data: { values, reasons } }));
   return render(<MemoryRouter><CustomFieldsPanel entity="order" id="ord_1" shopId="shp_1" /></MemoryRouter>);
 };
 
 describe('CustomFieldsPanel', () => {
-  beforeEach(() => { values = { phi_dong_goi: 12000, ln: 288000 }; api.put.mockResolvedValue({ data: {} }); });
+  beforeEach(() => { values = { phi_dong_goi: 12000, ln: 288000 }; reasons = {}; api.put.mockResolvedValue({ data: {} }); });
 
   it('hiện giá trị theo kiểu, công thức ghi rõ là tự tính; gọi API với đúng shop', async () => {
     setup();
@@ -26,7 +27,20 @@ describe('CustomFieldsPanel', () => {
     expect(screen.getByText('288.000')).toBeTruthy(); // công thức hiện số có dấu phân cách nghìn
     expect(screen.getByText(/LN sau đóng gói/).textContent).toContain('tự tính');
     expect(api.get).toHaveBeenCalledWith('/custom/fields', { entity_type: 'order', shop_id: 'shp_1' });
-    expect(api.get).toHaveBeenCalledWith('/custom/values/order/ord_1');
+    expect(api.get).toHaveBeenCalledWith('/custom/values/order/ord_1', { meta: 1 });
+  });
+
+  it('công thức trống thì nói rõ vì sao; mặc định chỉ điền sẵn trên form, không tự ghi', async () => {
+    values = { ln: null };
+    reasons = { ln: 'Đơn chưa có Phí đóng gói' };
+    setup([{ ...FIELDS[0], default_value: 5000 }, FIELDS[1], FIELDS[2]]);
+    expect(await screen.findByText(/Đơn chưa có Phí đóng gói/)).toBeTruthy();
+    expect(api.put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sửa' }));
+    expect(screen.getByRole('spinbutton').value).toBe('5000'); // điền sẵn trên form
+    expect(api.put).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith('/custom/values/order/ord_1', { phi_dong_goi: 5000 }));
   });
 
   it('sửa: chỉ gửi những trường đã đổi, không gửi trường công thức', async () => {

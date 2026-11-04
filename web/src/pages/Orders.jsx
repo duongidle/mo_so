@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, PageHeader, SearchBox, StatusBadge, Toolbar, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Chips, DateRange, Empty, ErrorBox, Field, LoadMore, Modal, PageHeader, SearchBox, Section, StatusBadge, Toolbar, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
 import ExportOrders from '../components/ExportOrders.jsx';
@@ -115,10 +115,11 @@ export function OrderDetail() {
           });
           return (
             <>
-              <div className="page-head">
-                <div><h1>{o.code}</h1><div className="muted small">{o.shop_name} · {ch?.name} {o.external_id && `· ${o.external_id}`} · {fmtDate(o.ordered_at)}</div></div>
-                <div className="row wrap">{o.status === 'completed' && o.payment_status === 'paid' && <span className="seal">ĐÃ CHỐT</span>}<StatusBadge status={o.status} /><span className="badge plain">{PAY_STATUS[o.payment_status]}</span></div>
-              </div>
+              <PageHeader
+                title={o.code}
+                sub={`${o.shop_name} · ${ch?.name || ''}${o.external_id ? ` · ${o.external_id}` : ''} · ${fmtDate(o.ordered_at)}`}
+                actions={<>{o.status === 'completed' && o.payment_status === 'paid' && <span className="seal">ĐÃ CHỐT</span>}<StatusBadge status={o.status} /><span className="badge plain">{PAY_STATUS[o.payment_status]}</span></>}
+              />
               <ErrorBox error={act.error} />
               {o.stock_warning ? <div className="alert warn">Đơn này làm tồn kho âm. Kiểm tra kho thực tế và điều chỉnh nếu cần.</div> : null}
               {o.refund_owed_amount > 0 ? <div className="alert warn">Còn phải trả khách {vnd(o.refund_owed_amount)} (đã thu {vnd(o.paid_amount)}, số phải thu sau trả hàng thấp hơn). Hoàn bằng nút “Hoàn tiền”.</div> : o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
@@ -133,13 +134,13 @@ export function OrderDetail() {
               </div>
 
               <div className="grid cols-2 collapse">
-                <Card title="Khách">
+                <Section title="Khách">
                   {o.customer_id ? <Link to={`/customers/${o.customer_id}`}>{o.customer_name}</Link> : <span>{o.customer_name || 'Khách lẻ'}</span>}
                   <div className="small muted">{o.customer_phone}</div><div className="small">{o.shipping_address}</div>
                   {o.tracking_code && <div className="small">Vận đơn: {o.carrier} {o.tracking_code}</div>}
                   {o.note && <div className="small" style={{ marginTop: 6 }}>Ghi chú: {o.note}</div>}
-                </Card>
-                <Card title="Tiền">
+                </Section>
+                <Section title="Tiền">
                   <div className="stack small">
                     <Row l="Tiền hàng" v={o.subtotal} />
                     {(o.line_discount_amount + o.discount_amount) > 0 && <Row l="Giảm giá" v={-(o.line_discount_amount + o.discount_amount)} />}
@@ -156,28 +157,28 @@ export function OrderDetail() {
                     <Row l="Đã thu" v={o.paid_amount} />
                     {o.refund_owed_amount > 0 && <Row l="Còn phải trả khách" v={o.refund_owed_amount} bold />}
                   </div>
-                </Card>
+                </Section>
               </div>
 
-              <Card title="Sản phẩm" flat>
+              <Section title="Sản phẩm" flush>
                 <div className="table-wrap"><table>
                   <thead><tr><th>Sản phẩm</th><th className="num">SL</th><th className="num">Đơn giá</th><th className="num">Giá vốn</th><th className="num">Thành tiền</th></tr></thead>
                   <tbody>{o.lines.map((l) => (
                     <tr key={l.id}><td><div className="row" style={{ gap: 10 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div>{l.allocations?.length > 0 && <div className="small muted">Lấy từ: {l.allocations.map((a) => `${a.warehouse_name}${l.allocations.some((x) => x.sku !== l.sku) ? ` (${a.sku})` : ''} × ${a.qty}`).join(', ')}</div>}{!l.allocations?.length && l.planned_allocations?.length > 0 && <div className="small muted">Dự kiến lấy từ kho đã chọn tay</div>}</div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
                   ))}</tbody>
                 </table></div>
-              </Card>
+              </Section>
 
               <div className="grid cols-2 collapse">
-                <Card title="Thanh toán">
+                <Section title="Thanh toán">
                   {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
                     <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
                   ))}
-                </Card>
-                <Card title="Lịch sử">
+                </Section>
+                <Section title="Lịch sử">
                   {o.history.map((h) => <div key={h.id} className="small"><span className="muted">{fmtDate(h.created_at)}</span> · {h.from_status ? `${STATUS[h.from_status]} → ` : ''}{STATUS[h.to_status]}{h.note && ` (${h.note})`}</div>)}
                   {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.reason && ` — ${r.reason}`}</div>)}
-                </Card>
+                </Section>
               </div>
 
               <CustomFieldsPanel entity="order" id={o.id} shopId={o.shop_id} />

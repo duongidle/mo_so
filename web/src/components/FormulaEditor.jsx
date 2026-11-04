@@ -4,7 +4,7 @@ import { useAsync, useDebounced } from './ui.jsx';
 
 const TYPE_LABEL = { text: 'chữ', number: 'số', money: 'tiền', date: 'ngày', boolean: 'có/không', percent: '%' };
 
-/** Mẫu công thức hay dùng. Chỉ hiện mẫu mà mọi biến của nó đang tồn tại (vd. tuổi khách cần trường {custom.nam_sinh}). */
+/** Mẫu công thức hay dùng. Chỉ hiện mẫu mà mọi biến của nó đang tồn tại. */
 export const TEMPLATES = {
   order: [
     ['Lãi của đơn', '{net_amount} - {cogs_amount}'],
@@ -17,9 +17,9 @@ export const TEMPLATES = {
   ],
   product: [['Chu kỳ dùng hết (tháng)', 'ROUND({consumption_days} / 30, 1)']],
   customer: [
-    ['Tuổi khách', 'YEAR(TODAY()) - {custom.nam_sinh}'],
+    ['Tuổi', 'AGE({birth_date})'],
     ['Khách thân thiết', 'IF({shop_order_count} >= 3, "Thân thiết", "Mới")'],
-    ['Số ngày từ lần mua cuối', 'DAYS_BETWEEN({shop_last_order_at}, TODAY())'],
+    ['Số ngày từ đơn gần nhất', 'DAYS_BETWEEN({shop_last_order_at}, TODAY())'],
     ['Chi tiêu trung bình mỗi đơn', 'ROUND({shop_total_spent} / {shop_order_count})'],
   ],
   metric: [
@@ -236,7 +236,7 @@ export default function FormulaEditor({ value, onChange, entity, shopId = null, 
         {!err && preview && !stale && value.trim() && (
           preview.sample === null
             ? <span className="muted">{preview.note || 'Công thức hợp lệ.'}</span>
-            : <span>Kết quả thử: <b data-testid="formula-result">{fmt(preview.value) ?? 'trống (thiếu dữ liệu)'}</b> <span className="muted">· trên {preview.sample.label}</span></span>
+            : <span>Kết quả thử: <b data-testid="formula-result">{fmt(preview.value) ?? 'trống'}</b>{preview.value === null || preview.value === undefined ? <span className="muted" data-testid="formula-reason"> ({preview.reason || 'thiếu dữ liệu'})</span> : null} <span className="muted">· trên {preview.sample.label}</span></span>
         )}
       </div>
     </div>

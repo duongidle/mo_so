@@ -24,6 +24,8 @@ test('Xoá trường: chưa có dữ liệu xoá hẳn; có dữ liệu cần co
   const c2 = (await api.post('/customers', { name: 'B', phone: '0911000002', shop_id: nh.id })).body.data;
   await putVals(api, c1.id, nh.id, { xe: 'Mazda' });
   await putVals(api, c2.id, nh.id, { xe: 'Kia' });
+  const usage = (await api.get(`/custom/fields/${f.id}/usage`)).body.data;
+  assert.deepEqual([usage.values_count, usage.referenced_by.length], [2, 0]);
   const noConfirm = await api.delete(`/custom/fields/${f.id}`);
   assert.equal(noConfirm.status, 409);
   assert.equal(noConfirm.body.error.code, 'CONFIRM_REQUIRED');

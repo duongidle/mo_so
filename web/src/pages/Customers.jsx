@@ -2,13 +2,17 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Empty, ErrorBox, Field, Modal, StatusBadge, SearchBox, useAction, useAsync, useDebounced, PageHeader, Toolbar } from '../components/ui.jsx';
+import { Async, Card, Empty, ErrorBox, Field, Modal, StatusBadge, SearchBox, useAction, useAsync, useDebounced, PageHeader, Toolbar, Section } from '../components/ui.jsx';
 import FieldInput, { fieldText } from '../components/FieldInput.jsx';
+import BirthFields from '../components/BirthFields.jsx';
 import { vnd, fmtDate } from '../lib.js';
 import { Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 import ExportCustomers from '../components/ExportCustomers.jsx';
 import Icon from '../components/Icon.jsx';
 import FieldsManager from '../components/FieldsManager.jsx';
+
+/** Mệnh không do người dùng nhập mà do app tính: ghi chú nhỏ cạnh giá trị */
+const SOURCE_NOTE = { computed: '(tự tính)', approximate: '(ước tính theo năm)' };
 
 /** So sánh hai hồ sơ và xác nhận gộp: `target` được giữ, `source` bị gộp vào (không hoàn tác được). */
 function MergeDialog({ targetId, sourceId, onClose, onDone }) {
@@ -126,7 +130,7 @@ export function CustomerList() {
                 <td><b>{c.name}</b><div className="small muted">{c.code} · {c.phone || c.facebook_url || ''}</div></td>
                 {shopId && <td className="hide-sm">{(c.shop_tags || []).map((t) => <span key={t} className="badge plain" style={{ marginRight: 4 }}>{t}</span>)}</td>}
                 {showMenh && <td className="hide-sm"><Element name={c.feng_shui?.element} />{c.feng_shui?.approximate && <span className="small muted"> (ước)</span>}</td>}
-                {(cols || []).map((f) => <td key={f.id} className="hide-sm small">{fieldText(f, c.shop_values?.[f.key])}</td>)}
+                {(cols || []).map((f) => <td key={f.id} className="hide-sm small">{fieldText(f, c.shop_values?.[f.key])}{c.shop_derived?.[f.key] && <span className="muted"> {SOURCE_NOTE[c.shop_derived[f.key]]}</span>}</td>)}
                 <td className="num hide-sm">{c.order_count}</td><td className="num">{vnd(c.total_spent)}</td><td className="small hide-sm">{fmtDate(c.last_order_at)}</td>
               </tr>))}</tbody>
           </table></div></Card>
@@ -146,7 +150,7 @@ function CustomerForm({ init, shop, onClose, onSaved }) {
   const { busy, error, run } = useAction();
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = () => run(async () => {
-    const payload = { name: f.name, phone: f.phone || null, facebook_url: f.facebook_url || null, address: f.address || null, note: f.note || null };
+    const payload = { name: f.name, phone: f.phone || null, facebook_url: f.facebook_url || null, address: f.address || null, note: f.note || null, birth_date: f.birth_date || null, birth_year: f.birth_date ? null : f.birth_year || null };
     try {
       const r = f.id ? await api.patch(`/customers/${f.id}`, payload) : await api.post('/customers', { ...payload, ...(shop ? { shop_id: shop.id } : {}) });
       onSaved(r.data);
@@ -159,13 +163,14 @@ function CustomerForm({ init, shop, onClose, onSaved }) {
   const addExisting = () => run(async () => { await api.post(`/customers/${dup.id}/shops`, { shop_id: shop.id }); onSaved({ id: dup.id }); });
   return (
     <Modal title={f.id ? 'Sửa khách' : 'Thêm khách'} onClose={onClose} footer={<button className="btn primary" disabled={busy} onClick={save}>Lưu</button>}>
-      <p className="small muted" style={{ margin: 0 }}>{!f.id && shop ? `Khách sẽ được thêm vào danh sách của ${shop.name}. ` : ''}Đây là thông tin chung, mọi shop đều thấy. Thông tin riêng của từng shop (mệnh, mùi yêu thích…) nhập ở hồ sơ khách sau khi lưu.</p>
+      <p className="small muted" style={{ margin: 0 }}>{!f.id && shop ? `Khách sẽ được thêm vào danh sách của ${shop.name}. ` : ''}Đây là thông tin chung (gồm ngày sinh), mọi shop đều thấy. Thông tin riêng của từng shop (mùi yêu thích, dòng xe…) nhập ở hồ sơ khách sau khi lưu.</p>
       <Field label="Tên"><input value={f.name} onChange={set('name')} autoFocus /></Field>
       <div className="grid cols-2">
         <Field label="Số điện thoại"><input inputMode="tel" value={f.phone || ''} onChange={set('phone')} /></Field>
         <Field label="Link Facebook"><input value={f.facebook_url || ''} onChange={set('facebook_url')} /></Field>
       </div>
       <Field label="Địa chỉ"><input value={f.address || ''} onChange={set('address')} /></Field>
+      <BirthFields f={f} set={(p) => setF({ ...f, ...p })} />
       {dup && (
         <div className="alert warn small stack" style={{ gap: 6 }}>
           <span>{dup.message}. Khách này chưa có trong danh sách của {shop.name}.</span>
@@ -184,28 +189,45 @@ function ShopProfile({ customerId, shop, profile, onSaved }) {
   const { busy, error, run } = useAction();
   const fields = profile.fields.filter((f) => f.type !== 'formula');
   const editing = draft !== null;
+  const el = profile.element; // mệnh hiệu lực { key, value, source } khi shop có tính năng phong thuỷ
+  // Giá trị mặc định chỉ điền sẵn trên form cho ô chưa có giá trị; bấm Lưu mới ghi vào khách
+  const defaults = Object.fromEntries(fields.filter((f) => f.default_value != null && profile.values[f.key] == null).map((f) => [f.key, f.default_value]));
   const save = () => run(async () => {
     const changed = Object.fromEntries(Object.entries(draft).filter(([k, v]) => JSON.stringify(v ?? null) !== JSON.stringify(profile.values[k] ?? null)));
     if (Object.keys(changed).length) await api.put(`/custom/values/customer/${customerId}?shop_id=${shop.id}`, changed);
     setDraft(null); onSaved();
   });
+  const shown = (f) => {
+    if (f.role === 'element' && f.type !== 'formula' && el && el.key === f.key) {
+      return <>{el.value}{el.source !== 'override' && <span className="small muted" style={{ fontWeight: 400 }}> {SOURCE_NOTE[el.source]}</span>}</>;
+    }
+    const v = profile.values[f.key];
+    if (f.type === 'formula' && (v === null || v === undefined) && profile.reasons?.[f.key]) {
+      return <span className="muted" style={{ fontWeight: 400 }}>— ({profile.reasons[f.key]})</span>;
+    }
+    return fieldText(f, v);
+  };
   return (
-    <Card title={`Thông tin riêng · ${shop.name}`} actions={<>
+    <Section title={`Thông tin riêng · ${shop.name}`} actions={<>
       <button className="btn sm" onClick={() => setFieldsOpen(true)}>Chỉnh các trường</button>
-      {!editing && fields.length > 0 && <button className="btn sm primary" onClick={() => setDraft({ ...profile.values })}>Sửa</button>}
+      {!editing && fields.length > 0 && <button className="btn sm primary" onClick={() => setDraft({ ...defaults, ...profile.values })}>Sửa</button>}
     </>}>
-      <p className="small muted" style={{ marginTop: 0 }}>Chỉ shop này thấy. Cùng khách này ở shop khác có thông tin riêng của shop đó.</p>
+      <p className="small muted" style={{ marginTop: 0 }}>Chỉ shop này thấy. Cùng khách này ở shop khác có thông tin riêng của shop đó. Ngày sinh nằm ở Thông tin chung.</p>
       {profile.fields.length === 0 ? <span className="muted">Shop này chưa có trường nào. Bấm “Chỉnh các trường” để thêm.</span> : editing ? (
         <div className="stack">
-          {fields.map((f) => <Field key={f.id} label={f.type === 'boolean' ? '' : `${f.label}${f.required ? ' *' : ''}`}><FieldInput field={f} value={draft[f.key]} onChange={(v) => setDraft({ ...draft, [f.key]: v })} /></Field>)}
+          {fields.map((f) => (
+            <Field key={f.id} label={f.type === 'boolean' ? '' : `${f.label}${f.required ? ' *' : ''}`} hint={f.role === 'element' && el && el.source !== 'override' ? `Để trống thì dùng mệnh tự tính: ${el.value}` : undefined}>
+              <FieldInput field={f} value={draft[f.key]} emptyLabel={f.role === 'element' && el && el.source !== 'override' ? `${el.value} (tự tính)` : undefined} onChange={(v) => setDraft({ ...draft, [f.key]: v })} />
+            </Field>
+          ))}
           <ErrorBox error={error} />
           <div className="row"><button className="btn primary" disabled={busy} onClick={save}>Lưu</button><button className="btn" onClick={() => setDraft(null)}>Huỷ</button></div>
         </div>
       ) : (
-        profile.fields.map((f) => <div key={f.id} className="ledger-line"><span className="muted">{f.label}</span><b style={{ textAlign: 'right' }}>{fieldText(f, profile.values[f.key])}</b></div>)
+        profile.fields.map((f) => <div key={f.id} className="ledger-line"><span className="muted">{f.label}{f.type === 'formula' && <span className="small"> (tự tính)</span>}</span><b style={{ textAlign: 'right' }}>{shown(f)}</b></div>)
       )}
       {fieldsOpen && <ShopFieldsManager shop={shop} onClose={() => { setFieldsOpen(false); onSaved(); }} />}
-    </Card>
+    </Section>
   );
 }
 
@@ -222,7 +244,7 @@ function ShopTags({ customerId, shop, tags, onSaved }) {
   };
   const suggestions = (known.data?.data || []).map((t) => t.tag).filter((t) => !tags.some((x) => x.toLowerCase() === t.toLowerCase())).slice(0, 8);
   return (
-    <Card title={`Nhãn · ${shop.name}`}>
+    <Section title={`Nhãn · ${shop.name}`}>
       <p className="small muted" style={{ marginTop: 0 }}>Nhãn chỉ có ở {shop.name}. Cùng khách này ở shop khác có nhãn riêng.</p>
       <div className="row wrap" style={{ marginBottom: 8 }}>
         {tags.length === 0 && <span className="muted small">Chưa có nhãn.</span>}
@@ -235,7 +257,7 @@ function ShopTags({ customerId, shop, tags, onSaved }) {
       </div>
       {suggestions.length > 0 && <div className="row wrap" style={{ marginTop: 8 }}><span className="small muted">Đang dùng:</span>{suggestions.map((t) => <button key={t} className="chip" disabled={busy} onClick={() => save([...tags, t])}>{t}</button>)}</div>}
       <ErrorBox error={error} />
-    </Card>
+    </Section>
   );
 }
 
@@ -285,13 +307,30 @@ export function CustomerDetail() {
       <Async state={state}>
         {({ data: c }) => (
           <>
-            <div className="page-head"><div><h1>{c.name}</h1><div className="muted small sub">{c.code} · {c.phone} {c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">Facebook</a>}</div></div><div className="row wrap"><button className="btn" onClick={() => setMergeOpen(true)}>Gộp khách trùng</button><button className="btn" onClick={() => setEdit(c)}>Sửa thông tin chung</button>{c.shop_profile && shop && c.is_member && <button className="btn danger" onClick={() => setRemoveOpen(true)}>Xoá khỏi {shop.name}</button>}</div></div>
+            <PageHeader
+              title={c.name}
+              sub={<>{c.code}{c.phone && ` · ${c.phone}`}{c.age != null && ` · ${c.age} tuổi`}</>}
+              actions={<><button className="btn" onClick={() => setMergeOpen(true)}>Gộp khách trùng</button><button className="btn" onClick={() => setEdit(c)}>Sửa thông tin chung</button>{c.shop_profile && shop && c.is_member && <button className="btn danger" onClick={() => setRemoveOpen(true)}>Xoá khỏi {shop.name}</button>}</>}
+            />
+            <Section title="Thông tin chung" actions={<button className="btn sm" onClick={() => setEdit(c)}>Sửa</button>}>
+              <p className="small muted" style={{ marginTop: 0 }}>Mọi shop đều thấy phần này.</p>
+              {[
+                ['Số điện thoại', c.phone],
+                ['Số điện thoại phụ', c.phone2],
+                ['Email', c.email],
+                ['Facebook', c.facebook_url && <a href={c.facebook_url} target="_blank" rel="noreferrer">{c.facebook_url}</a>],
+                ['Địa chỉ', c.address],
+                ['Ngày sinh', c.birth_date ? fmtDate(c.birth_date) : c.birth_year ? `Năm ${c.birth_year} (chưa rõ ngày)` : null],
+                ['Tuổi', c.age != null ? `${c.age}${!c.birth_date ? ' (tính theo năm sinh)' : ''}` : null],
+                ['Ghi chú chung', c.note],
+              ].map(([label, v]) => <div key={label} className="ledger-line"><span className="muted">{label}</span><b style={{ textAlign: 'right' }}>{v || '—'}</b></div>)}
+            </Section>
             <div className="grid cols-3">
               {has('feng_shui') && c.shop_profile?.shop_id === shop?.id && (
-                <Card title="Mệnh">{c.feng_shui ? <><Element name={c.feng_shui.element} size="xl" />{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Ước tính từ năm sinh (chưa biết ngày)' : 'Tính từ ngày sinh theo âm lịch'}</div><div className="row wrap small" style={{ marginTop: 6 }}>Hợp: {c.feng_shui.compatible_elements.map((e) => <Element key={e} name={e} size="sm" />)}</div></> : <span className="muted small">Chưa có ngày/năm sinh trong thông tin riêng của shop.</span>}</Card>
+                <Section title="Mệnh">{c.feng_shui ? <><Element name={c.feng_shui.element} size="xl" />{c.feng_shui.nap_am && <div className="small">{c.feng_shui.can_chi} · {c.feng_shui.nap_am}</div>}<div className="small muted">{c.feng_shui.source === 'manual' ? 'Ghi đè tay' : c.feng_shui.approximate ? 'Tự tính, ước tính từ năm sinh (chưa biết ngày)' : 'Tự tính từ ngày sinh theo âm lịch'}</div><div className="row wrap small" style={{ marginTop: 6 }}>Hợp: {c.feng_shui.compatible_elements.map((e) => <Element key={e} name={e} size="sm" />)}</div></> : <span className="muted small">Chưa có ngày hoặc năm sinh. Nhập ở Thông tin chung, hoặc ghi đè mệnh ở thông tin riêng.</span>}</Section>
               )}
-              <Card title="Hạng"><Async state={loy}>{({ data: l }) => <><b style={{ fontSize: 20 }}>{l.tier.name}</b><div className="small">Chi tiêu 12 tháng: {vnd(l.spent_12m)}</div>{l.next_tier && <div className="small muted">Còn {vnd(l.to_next)} lên {l.next_tier.name}</div>}</>}</Async></Card>
-              <Card title="Tổng"><b style={{ fontSize: 20 }}>{vnd(c.total_spent)}</b><div className="small">{c.order_count} đơn</div><div className="small muted">Đầu: {fmtDate(c.first_order_at)} · Gần nhất: {fmtDate(c.last_order_at)}</div>{c.refund_owed_amount > 0 && <div className="small h-yellow">Còn phải trả khách (trả hàng): {vnd(c.refund_owed_amount)}</div>}</Card>
+              <Section title="Hạng"><Async state={loy}>{({ data: l }) => <><b style={{ fontSize: 20 }}>{l.tier.name}</b><div className="small">Chi tiêu 12 tháng: {vnd(l.spent_12m)}</div>{l.next_tier && <div className="small muted">Còn {vnd(l.to_next)} lên {l.next_tier.name}</div>}</>}</Async></Section>
+              <Section title="Tổng"><b style={{ fontSize: 20 }}>{vnd(c.total_spent)}</b><div className="small">{c.order_count} đơn</div><div className="small muted">Đầu: {fmtDate(c.first_order_at)} · Gần nhất: {fmtDate(c.last_order_at)}</div>{c.refund_owed_amount > 0 && <div className="small h-yellow">Còn phải trả khách (trả hàng): {vnd(c.refund_owed_amount)}</div>}</Section>
             </div>
             {c.shop_profile && shop && c.shop_profile.shop_id === shop.id && !c.is_member && (
               <div className="alert warn row between wrap">
@@ -303,16 +342,16 @@ export function CustomerDetail() {
             {c.shop_profile && shop && c.shop_profile.shop_id === shop.id ? <ShopProfile customerId={c.id} shop={shop} profile={c.shop_profile} onSaved={reloadAll} /> : (
               <div className="alert warn">Đang xem tất cả shop. Chọn một shop ở góc trên để xem và sửa thông tin riêng của khách trong shop đó.</div>
             )}
-            {c.by_shop.length > 0 && <Card title="Theo shop">{c.by_shop.map((s) => <div key={s.shop_id} className="row between small"><span>{s.shop_name}</span><span>{s.order_count} đơn · {vnd(s.spent)}</span></div>)}</Card>}
+            {c.by_shop.length > 0 && <Section title="Theo shop">{c.by_shop.map((s) => <div key={s.shop_id} className="row between small"><span>{s.shop_name}</span><span>{s.order_count} đơn · {vnd(s.spent)}</span></div>)}</Section>}
             <Async state={sug}>{(r) => r.data?.length > 0 && (
-              <Card title={`Gợi ý theo mệnh ${r.element}`}>{r.data.map((p) => <div key={p.product_id} className="row between small"><span>{p.name} {p.elements.map((e) => <Element key={e} name={e} label={false} />)}</span><span className="muted">{vnd(p.price)}</span></div>)}{r.approximate && <div className="small muted" style={{ marginTop: 6 }}>Mệnh đang là ước tính.</div>}</Card>
+              <Section title={`Gợi ý theo mệnh ${r.element}`}>{r.data.map((p) => <div key={p.product_id} className="row between small"><span>{p.name} {p.elements.map((e) => <Element key={e} name={e} label={false} />)}</span><span className="muted">{vnd(p.price)}</span></div>)}{r.approximate && <div className="small muted" style={{ marginTop: 6 }}>Mệnh đang là ước tính.</div>}</Section>
             )}</Async>
-            <Card title="Đơn gần đây" flat><Async state={orders}>{(r) => !r.data.length ? <Empty>Chưa có đơn.</Empty> : <div className="table-wrap"><table><tbody>{r.data.map((o) => <tr key={o.id}><td><Link to={`/orders/${o.id}`}>{o.code}</Link><div className="small muted">{o.shop_name}</div></td><td>{fmtDate(o.business_date)}</td><td><StatusBadge status={o.status} /></td><td className="num">{vnd(o.total_amount)}</td></tr>)}</tbody></table></div>}</Async></Card>
-            <Card title="Ghi chú">
+            <Section title="Đơn gần đây" flush><Async state={orders}>{(r) => !r.data.length ? <Empty>Chưa có đơn.</Empty> : <div className="table-wrap"><table><tbody>{r.data.map((o) => <tr key={o.id}><td><Link to={`/orders/${o.id}`}>{o.code}</Link><div className="small muted">{o.shop_name}</div></td><td>{fmtDate(o.business_date)}</td><td><StatusBadge status={o.status} /></td><td className="num">{vnd(o.total_amount)}</td></tr>)}</tbody></table></div>}</Async></Section>
+            <Section title="Ghi chú">
               {c.notes.map((n) => <div key={n.id} className="small" style={{ marginBottom: 6 }}><span className="muted">{fmtDate(n.created_at)}{n.shop_name && ` · ${n.shop_name}`}</span><br />{n.content}</div>)}
               <div className="row"><input className="grow" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Thêm ghi chú…" aria-label="Ghi chú" /><button className="btn" disabled={busy || !note} onClick={() => run(async () => { await api.post(`/customers/${c.id}/notes`, { content: note, shop_id: shopId }); setNote(''); state.reload(); })}>Lưu</button></div>
               <ErrorBox error={error} />
-            </Card>
+            </Section>
             {removeOpen && <RemoveFromShop customer={c} shop={shop} onClose={() => setRemoveOpen(false)} onDone={() => nav('/customers')} />}
             {mergeOpen && <MergeInto targetId={c.id} onClose={() => setMergeOpen(false)} onDone={() => { setMergeOpen(false); reloadAll(); orders.reload(); }} />}
             {edit && <CustomerForm init={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reloadAll(); }} />}

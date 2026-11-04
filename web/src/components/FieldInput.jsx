@@ -1,7 +1,7 @@
 import { vnd } from '../lib.js';
 
 /** Ô nhập cho một trường tuỳ chỉnh theo kiểu của nó. value/onChange theo kiểu thô (chuỗi, số, mảng, boolean). */
-export default function FieldInput({ field, value, onChange }) {
+export default function FieldInput({ field, value, onChange, emptyLabel }) {
   const v = value ?? '';
   switch (field.type) {
     case 'number':
@@ -14,7 +14,7 @@ export default function FieldInput({ field, value, onChange }) {
     case 'select':
       return (
         <select value={v} onChange={(e) => onChange(e.target.value || null)}>
-          <option value="">—</option>
+          <option value="">{emptyLabel || '—'}</option>
           {field.options.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
       );

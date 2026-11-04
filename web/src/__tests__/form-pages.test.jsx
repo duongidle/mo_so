@@ -51,7 +51,6 @@ describe('form sản phẩm dạng trang', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     mount([{ path: '/products/new', element: <ProductPage /> }, { path: '/products', element: <div>DANH SÁCH SP</div> }], '/products/new');
     const name = await screen.findByLabelText(/Tên sản phẩm/);
-    await new Promise((r) => setTimeout(r, 250)); // mốc "chưa sửa" chốt sau khi form dựng xong
     fireEvent.change(name, { target: { value: 'Dở dang' } });
     fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
     await waitFor(() => expect(confirm).toHaveBeenCalled());
@@ -59,6 +58,26 @@ describe('form sản phẩm dạng trang', () => {
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
     await screen.findByText('DANH SÁCH SP');
+    confirm.mockRestore();
+  });
+});
+
+describe('cảnh báo chưa lưu không dựa vào đồng hồ', () => {
+  it('mở form rồi rời đi ngay (kể cả khi form tự điền) thì không hỏi', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mount([{ path: '/products/:id', element: <ProductPage /> }, { path: '/products', element: <div>DANH SÁCH SP</div> }], '/products/prd_1');
+    await screen.findByDisplayValue('Tinh dầu');
+    fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
+    await screen.findByText('DANH SÁCH SP');
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+  it('sửa ngay khi form vừa hiện (không chờ) vẫn tính là đã sửa', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    mount([{ path: '/products/new', element: <ProductPage /> }, { path: '/products', element: <div>DANH SÁCH SP</div> }], '/products/new');
+    fireEvent.change(await screen.findByLabelText(/Tên sản phẩm/), { target: { value: 'Vừa gõ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
     confirm.mockRestore();
   });
 });

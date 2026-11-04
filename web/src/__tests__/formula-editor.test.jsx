@@ -107,6 +107,14 @@ describe('FormulaEditor', () => {
     expect(alert.textContent).toContain('ký tự thứ 7');
   });
 
+  it('kết quả trống thì nói rõ lý do ngay cạnh', async () => {
+    api.post.mockResolvedValue({ data: { value: null, reason: 'Khách chưa có Ngày sinh', sample: { id: 'c1', label: 'Anh Tài' } } });
+    render(<Host />);
+    type(screen.getByRole('combobox'), 'AGE({birth_date})');
+    expect((await screen.findByTestId('formula-reason', {}, { timeout: 2000 })).textContent).toContain('Khách chưa có Ngày sinh');
+    expect(screen.getByTestId('formula-result').textContent).toBe('trống');
+  });
+
   it('khách chưa chọn shop: nhắc chọn shop, không gọi API biến', async () => {
     api.get.mockClear();
     render(<FormulaEditor entity="customer" value="" onChange={() => {}} />);

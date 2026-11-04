@@ -8,7 +8,7 @@ import { createProduct } from '../server/modules/catalog/service.js';
 import { createPurchase, createSupplier } from '../server/modules/purchases/service.js';
 import { createOrder } from '../server/modules/orders/service.js';
 import { setValues } from '../server/modules/custom/service.js';
-import { findByPhone } from '../server/modules/customers/service.js';
+import { findByPhone, updateCustomer } from '../server/modules/customers/service.js';
 
 bootstrapTenancy();
 if (accountCount() > 0) {
@@ -51,7 +51,8 @@ runInTenant(storeFor(account), () => tx(() => {
   createOrder({ shop_id: nh.id, channel_id: 'shopee', external_id: '2611030001SPX', customer: { name: 'Chị Lan', phone: '0987654321' }, lines: [{ sku: 'NH-CAM-10', qty: 1, unit_price: 135000 }], platform_fee_amount: 18000, status: 'completed', payments: [{ amount: 117000, method: 'shopee_payout' }] }, actor);
   // Thông tin riêng của khách theo từng shop: cùng một khách, hai shop ghi hai bộ thông tin khác nhau
   const tai = findByPhone('0912345678');
-  setValues('customer', tai.id, { ngay_sinh: '1988-03-12', gioi_tinh: 'Nam' }, { shopId: pt.id });
+  updateCustomer(tai.id, { birth_date: '1988-03-12' }, actor); // ngày sinh là thông tin chung
+  setValues('customer', tai.id, { gioi_tinh: 'Nam' }, { shopId: pt.id });
   setValues('customer', tai.id, { nhom_huong: ['Gỗ', 'Biển'], dong_xe: 'Toyota Camry', dip_dung: 'Xe cá nhân' }, { shopId: nh.id });
 }));
 console.log('Đã tạo dữ liệu mẫu. Đăng nhập: admin / matkhau123');

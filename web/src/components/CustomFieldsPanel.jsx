@@ -14,16 +14,16 @@ export default function CustomFieldsPanel({ entity, id, shopId, title = 'Thông 
   const state = useAsync(async () => {
     const [f, v] = await Promise.all([
       api.get('/custom/fields', { entity_type: entity, shop_id: shopId || undefined }),
-      api.get(`/custom/values/${entity}/${id}`),
+      api.get(`/custom/values/${entity}/${id}`, { meta: 1 }),
     ]);
-    return { fields: f.data, values: v.data };
+    return { fields: f.data, values: v.data.values, reasons: v.data.reasons || {} };
   }, [entity, id, shopId]);
   const [draft, setDraft] = useState(null);
   const { busy, error, run } = useAction();
 
   return (
     <Async state={state}>
-      {({ fields, values }) => {
+      {({ fields, values, reasons }) => {
         if (!fields.length) {
           if (hideWhenEmpty) return null;
           return <Wrap bare={bare} title={title}><span className="muted small">Chưa có trường nào. Thêm trong <Link to="/settings">Cài đặt → Trường tuỳ chỉnh</Link>.</span></Wrap>;
@@ -37,20 +37,23 @@ export default function CustomFieldsPanel({ entity, id, shopId, title = 'Thông 
         });
         const editing = draft !== null;
         return (
-          <Wrap bare={bare} title={title} actions={!editing && editable.length > 0 && <button className="btn sm" onClick={() => setDraft({ ...values })}>Sửa</button>}>
+          <Wrap bare={bare} title={title} actions={!editing && editable.length > 0 && <button className="btn sm" onClick={() => setDraft({ ...defaultsFor(editable), ...values })}>Sửa</button>}>
             {editing ? (
               <div className="stack">
                 {editable.map((f) => <Field key={f.id} label={f.type === 'boolean' ? '' : `${f.label}${f.required ? ' *' : ''}`}><FieldInput field={f} value={draft[f.key]} onChange={(v) => setDraft({ ...draft, [f.key]: v })} /></Field>)}
                 <ErrorBox error={error} />
                 <div className="row"><button className="btn primary" disabled={busy} onClick={save}>Lưu</button><button className="btn" onClick={() => setDraft(null)}>Huỷ</button></div>
               </div>
-            ) : fields.map((f) => <div key={f.id} className="ledger-line"><span className="muted">{f.label}{f.type === 'formula' && <span className="small"> (tự tính)</span>}</span><b style={{ textAlign: 'right' }}>{fieldText(f, values[f.key])}</b></div>)}
+            ) : fields.map((f) => <div key={f.id} className="ledger-line"><span className="muted">{f.label}{f.type === 'formula' && <span className="small"> (tự tính)</span>}</span><b style={{ textAlign: 'right' }}>{fieldText(f, values[f.key])}{f.type === 'formula' && reasons[f.key] && (values[f.key] === null || values[f.key] === undefined) && <span className="small muted" style={{ fontWeight: 400 }}> ({reasons[f.key]})</span>}</b></div>)}
           </Wrap>
         );
       }}
     </Async>
   );
 }
+
+/** Giá trị mặc định chỉ điền sẵn trên form (bản ghi chưa có giá trị ở trường đó); bấm Lưu mới ghi, không tự ghi vào bản ghi cũ */
+const defaultsFor = (fields) => Object.fromEntries(fields.filter((f) => f.default_value != null).map((f) => [f.key, f.default_value]));
 
 function Wrap({ bare, title, actions, children }) {
   if (bare) return <div className="stack" style={{ gap: 8 }}><div className="row between"><h3>{title}</h3>{actions}</div>{children}</div>;

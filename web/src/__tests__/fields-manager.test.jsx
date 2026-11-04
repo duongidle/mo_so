@@ -70,6 +70,30 @@ describe('FieldsManager', () => {
   });
 });
 
+describe('FieldsManager: xoá trường', () => {
+  it('trường có dữ liệu: hộp xác nhận nói số bản ghi và gợi ý Ẩn; xác nhận mới gọi DELETE kèm confirm', async () => {
+    api.get.mockImplementation(async (p) => (p === '/custom/fields' ? { data: FIELDS } : p === '/custom/fields/f1/usage' ? { data: { id: 'f1', label: 'Dịp mua', values_count: 7, referenced_by: [] } } : { data: [] }));
+    api.del.mockResolvedValue({ data: { deleted: true } });
+    render(<FieldsManager entities={['customer']} shop={SHOP} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xoá Dịp mua' }));
+    expect(await screen.findByText(/7/)).toBeTruthy();
+    expect(screen.getByText(/bấm “Ẩn”/)).toBeTruthy();
+    expect(api.del).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Xoá hẳn' }));
+    await waitFor(() => expect(api.del).toHaveBeenCalledWith('/custom/fields/f1', { confirm: true }));
+  });
+
+  it('trường đang được công thức khác dùng: nút Xoá tắt kèm lý do', async () => {
+    const list = [FIELDS[0], { id: 'f3', entity_type: 'customer', key: 'ct', label: 'Gộp', type: 'formula', formula: 'CONCAT({custom.dip}, "!")', sort_order: 2, show_in_list: false, required: false }];
+    api.get.mockImplementation(async (p) => (p === '/custom/fields' ? { data: list } : { data: [] }));
+    render(<FieldsManager entities={['customer']} shop={SHOP} />);
+    const btn = await screen.findByRole('button', { name: 'Xoá Dịp mua' });
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toContain('Gộp');
+    expect(screen.getByRole('button', { name: 'Xoá Gộp' }).disabled).toBe(false);
+  });
+});
+
 describe('OptionsEditor', () => {
   it('dấu phẩy thêm nhiều lựa chọn, bỏ trùng', () => {
     const onChange = vi.fn();

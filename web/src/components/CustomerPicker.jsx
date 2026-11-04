@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { api } from '../api.js';
+import BirthFields from './BirthFields.jsx';
 import { Field, ErrorBox, useAction, useDebounced } from './ui.jsx';
 import Icon from './Icon.jsx';
 import { vnd, fmtDate } from '../lib.js';
@@ -161,7 +162,7 @@ export default function CustomerPicker({ shopId, value, onChange, compact = fals
 /** Form tạo nhanh. Gõ SĐT trùng khách có sẵn thì gợi ý chọn khách đó, không cho tạo trùng. */
 function NewCustomer({ shopId, compact, seed, onCancel, onPick }) {
   const seedDigits = digits(seed);
-  const [f, setF] = useState({ name: seedDigits.length >= 9 ? '' : seed, phone: seedDigits.length >= 9 ? seed : '', address: '', facebook_url: '' });
+  const [f, setF] = useState({ name: seedDigits.length >= 9 ? '' : seed, phone: seedDigits.length >= 9 ? seed : '', address: '', facebook_url: '', birth_date: null, birth_year: null });
   const [dup, setDup] = useState(null);
   const { busy, error, run } = useAction();
   const dphone = useDebounced(f.phone);
@@ -174,7 +175,7 @@ function NewCustomer({ shopId, compact, seed, onCancel, onPick }) {
   }, [dphone]);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = () => run(async () => {
-    const r = await api.post('/customers', { name: f.name.trim(), phone: f.phone.trim() || null, address: f.address.trim() || null, facebook_url: f.facebook_url.trim() || null, shop_id: shopId || null });
+    const r = await api.post('/customers', { name: f.name.trim(), phone: f.phone.trim() || null, address: f.address.trim() || null, facebook_url: f.facebook_url.trim() || null, birth_date: f.birth_date || null, birth_year: f.birth_date ? null : f.birth_year || null, shop_id: shopId || null });
     onPick(r.data);
   });
   return (
@@ -195,6 +196,7 @@ function NewCustomer({ shopId, compact, seed, onCancel, onPick }) {
           <Field label="Facebook"><input value={f.facebook_url} onChange={set('facebook_url')} placeholder="Link hoặc tên" /></Field>
         </div>
       )}
+      {!compact && <BirthFields f={f} set={(p) => setF({ ...f, ...p })} />}
       <ErrorBox error={error} />
       <button type="button" className="btn primary" disabled={busy || !f.name.trim() || !!dup} onClick={save}>{busy ? 'Đang lưu…' : 'Tạo khách và chọn'}</button>
     </div>
