@@ -52,6 +52,8 @@ const productInput = z.object({
   brand: optionalText,
   consumption_days: z.coerce.number().int().positive().nullish(),
   options: optionsInput.nullish(),
+  // Đổi nhãn thuộc tính/giá trị (giữ id biến thể): [{ from, to, values: { cũ: mới } }]
+  option_renames: z.array(z.object({ from: z.string().min(1), to: z.string().trim().min(1).max(40), values: z.record(z.string(), z.string().trim().min(1)).optional() })).max(3).optional(),
   tags: z.array(z.string()).default([]),
   variants: z.array(variantInput).min(1),
   shop_ids: z.array(z.string()).default([]),

@@ -212,6 +212,43 @@ function assertSkusFree(list, productId) {
   });
 }
 
+/** Đổi nhãn thuộc tính/giá trị cho MỌI biến thể của sản phẩm (kể cả đã lưu trữ), giữ nguyên id. Tên tự đặt đi theo nhãn mới. */
+function relabelVariants(productId, renames, at) {
+  const byFrom = new Map(renames.map((r) => [r.from, r]));
+  for (const v of db().prepare('SELECT id, name, option_values FROM variants WHERE product_id = ? AND option_values IS NOT NULL').all(productId)) {
+    const old = JSON.parse(v.option_values);
+    const now = {};
+    for (const [k, val] of Object.entries(old)) {
+      const r = byFrom.get(k);
+      now[r ? r.to : k] = r?.values?.[val] ?? val;
+    }
+    if (JSON.stringify(now) === v.option_values) continue;
+    const name = v.name === null || v.name === autoName(old) ? autoName(now) : v.name;
+    db().prepare('UPDATE variants SET option_values = ?, name = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(now), name, at, v.id);
+  }
+}
+
+/** Sau khi sửa thuộc tính: bỏ khoá của thuộc tính đã xoá khỏi mọi biến thể, rồi kiểm ánh xạ biến thể → tổ hợp phải 1-1 */
+function settleOptions(productId, options) {
+  if (!options.length) return;
+  const names = new Set(options.map((o) => o.name));
+  const rows = db().prepare('SELECT id, sku, option_values, archived_at FROM variants WHERE product_id = ?').all(productId);
+  const seen = new Map();
+  for (const v of rows) {
+    let ov = v.option_values ? JSON.parse(v.option_values) : null;
+    if (ov && Object.keys(ov).some((k) => !names.has(k))) {
+      ov = Object.fromEntries(Object.entries(ov).filter(([k]) => names.has(k)));
+      db().prepare('UPDATE variants SET option_values = ? WHERE id = ?').run(Object.keys(ov).length ? JSON.stringify(ov) : null, v.id);
+    }
+    if (v.archived_at) continue;
+    const bad = options.find((o) => !ov || !o.values.includes(ov[o.name]));
+    if (bad) throw badRequest('OPTION_INCOMPLETE', `Biến thể ${v.sku} chưa có giá trị hợp lệ cho thuộc tính "${bad.name}"`, { sku: v.sku, option: bad.name });
+    const key = options.map((o) => ov[o.name]).join('\u0001');
+    if (seen.has(key)) throw conflict('OPTIONS_CONFLICT', `Hai biến thể ${seen.get(key)} và ${v.sku} có cùng giá trị thuộc tính (${options.map((o) => ov[o.name]).join(' / ')})`, { skus: [seen.get(key), v.sku] });
+    seen.set(key, v.sku);
+  }
+}
+
 const autoName = (ov) => (ov && Object.keys(ov).length ? Object.values(ov).join(' / ') : null);
 
 function insertVariant(productId, v, at) {
@@ -375,6 +412,8 @@ export function updateProduct(id, input, actor) {
   if (input.options !== undefined) next.options = normalizeOptions(input.options);
   if (input.category_id && !db().prepare('SELECT 1 FROM categories WHERE id = ? AND archived_at IS NULL').get(input.category_id)) throw notFound('Danh mục');
   const optionsNow = next.options ?? [];
+  const optionsTouched = input.options !== undefined || !!input.option_renames?.length;
+  if (input.option_renames?.length) relabelVariants(id, input.option_renames, at);
   // SKU: mọi biến thể sẽ còn lại sau lần sửa này phải khác nhau
   const skuView = (input.variants ?? []).filter((v) => !v.remove && (v.sku !== undefined));
   assertSkusFree(skuView, id);
@@ -407,6 +446,8 @@ export function updateProduct(id, input, actor) {
       }
       const archivedAt = v.active === undefined ? (v.archived_at === undefined ? cur.archived_at : v.archived_at) : v.active ? null : cur.archived_at ?? at;
       const ov = v.option_values === undefined ? cur.option_values : v.option_values ? JSON.stringify(v.option_values) : null;
+      // Biến thể được gán giá trị thuộc tính: tên tự đặt theo giá trị mới (tên người dùng đặt tay giữ nguyên)
+      if (v.option_values !== undefined && v.name === undefined && (cur.name === null || cur.name === autoName(cur.option_values ? JSON.parse(cur.option_values) : null))) n.name = autoName(v.option_values);
       db()
         .prepare('UPDATE variants SET sku=?, name=?, barcode=?, default_price=?, min_stock=?, weight_gram=?, option_values=?, archived_at=?, updated_at=? WHERE id=?')
         .run(n.sku, n.name, n.barcode, n.default_price, n.min_stock, n.weight_gram, ov, archivedAt ?? null, at, v.id);
@@ -419,11 +460,12 @@ export function updateProduct(id, input, actor) {
       recordOpening(vid, v, { ...input, shop_ids: input.shop_ids ?? shopsOfProduct }, actor, i);
     }
   }
+  if (optionsTouched || input.variants?.length) settleOptions(id, optionsNow);
   if (input.images) setProductImages(id, input.images);
   setVariantImages(id, variantImages);
   if (input.custom && Object.keys(input.custom).length) setValues('product', id, input.custom, { shopId: input.custom_shop_id ?? null });
   const after = getProduct(id);
-  audit(actor, 'product.updated', 'product', id, before, { ...after, removed_variants: removed });
+  audit(actor, 'product.updated', 'product', id, before, { ...after, removed_variants: removed, option_renames: input.option_renames ?? [], options_before: before.options });
   emit('product.updated', { entityType: 'product', entityId: id, data: after });
   return after;
 }

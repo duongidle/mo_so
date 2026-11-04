@@ -152,3 +152,105 @@ test('Migration 021: shop phong thuỷ có sẵn được tạo trường Ngũ h
   conn.close();
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test('Chuyển sản phẩm một biến thể sang ma trận: biến thể cũ giữ id, SKU, tồn, lịch sử, giá; chỉ thêm option_values và tên tự đặt', async () => {
+  const { api, nh } = await setup();
+  const p = (await api.post('/products', { name: 'Tinh dầu', variants: [{ sku: 'TD-1', default_price: 99000, opening_qty: 8, opening_cost: 30000 }], shop_ids: [nh.id] })).body.data;
+  const old = p.variants[0];
+  assert.equal((await api.post('/orders', { shop_id: nh.id, lines: [{ sku: 'TD-1', qty: 2 }], status: 'completed' })).status, 201);
+  const opts = [{ name: 'Mùi', values: ['Cam', 'Chanh'] }];
+  const r = await api.patch(`/products/${p.id}`, {
+    options: opts,
+    variants: [
+      { id: old.id, option_values: { Mùi: 'Chanh' } },
+      { sku: 'TD-CAM', option_values: { Mùi: 'Cam' }, default_price: 99000, opening_qty: 4, opening_cost: 30000 },
+    ],
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const v = r.body.data.variants;
+  const kept = v.find((x) => x.id === old.id);
+  assert.equal(kept.sku, 'TD-1');
+  assert.deepEqual(kept.option_values, { Mùi: 'Chanh' });
+  assert.equal(kept.name, 'Chanh');
+  assert.equal(kept.default_price, 99000);
+  assert.equal(kept.on_hand_total, 6, 'tồn sau khi bán 2 giữ nguyên');
+  assert.equal(getDb().prepare('SELECT COUNT(*) AS n FROM stock_movements WHERE variant_id = ?').get(old.id).n, 2, 'lịch sử kho còn nguyên');
+  assert.equal(v.find((x) => x.sku === 'TD-CAM').on_hand_total, 4);
+  // Hai biến thể cùng một tổ hợp bị từ chối, không đổi gì
+  const dup = await api.patch(`/products/${p.id}`, { variants: [{ id: old.id, option_values: { Mùi: 'Cam' } }] });
+  assert.equal(dup.status, 409);
+  assert.equal(dup.body.error.code, 'OPTIONS_CONFLICT');
+  assert.deepEqual((await api.get(`/products/${p.id}`)).body.data.variants.find((x) => x.id === old.id).option_values, { Mùi: 'Chanh' }, 'giao dịch huỷ trọn gói');
+});
+
+test('Thêm thuộc tính mới vào sản phẩm đã có ma trận: biến thể cũ nhận giá trị đầu, giữ id; thiếu giá trị thì 400', async () => {
+  const { api, nh } = await setup();
+  const p = (await api.post('/products', { name: 'T', options: [{ name: 'Mùi', values: ['Cam', 'Chanh'] }], variants: [{ sku: 'T-CAM', option_values: { Mùi: 'Cam' } }, { sku: 'T-CHANH', option_values: { Mùi: 'Chanh' } }], shop_ids: [nh.id] })).body.data;
+  const [cam, chanh] = p.variants;
+  const newOpts = [{ name: 'Mùi', values: ['Cam', 'Chanh'] }, { name: 'Size', values: ['10ml', '30ml'] }];
+  const missing = await api.patch(`/products/${p.id}`, { options: newOpts });
+  assert.equal(missing.status, 400);
+  assert.equal(missing.body.error.code, 'OPTION_INCOMPLETE');
+  const ok = await api.patch(`/products/${p.id}`, {
+    options: newOpts,
+    variants: [
+      { id: cam.id, option_values: { Mùi: 'Cam', Size: '10ml' } },
+      { id: chanh.id, option_values: { Mùi: 'Chanh', Size: '10ml' } },
+      { sku: 'T-CAM-30', option_values: { Mùi: 'Cam', Size: '30ml' } },
+      { sku: 'T-CHANH-30', option_values: { Mùi: 'Chanh', Size: '30ml' } },
+    ],
+  });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const v = ok.body.data.variants;
+  assert.equal(v.length, 4);
+  assert.deepEqual(v.find((x) => x.id === cam.id).option_values, { Mùi: 'Cam', Size: '10ml' });
+  assert.equal(v.find((x) => x.id === cam.id).name, 'Cam / 10ml', 'tên tự đặt theo giá trị mới');
+});
+
+test('Đổi nhãn thuộc tính và giá trị: cập nhật mọi biến thể (kể cả đã lưu trữ), giữ id, tên tự đặt theo nhãn mới', async () => {
+  const { api, nh } = await setup();
+  const p = (await api.post('/products', { name: 'T', options, variants: rows({ opening_qty: undefined }), shop_ids: [nh.id] })).body.data;
+  const ids = p.variants.map((v) => v.id);
+  await api.patch(`/products/${p.id}`, { variants: [{ id: ids[3], active: false }] }); // một biến thể đã tắt, không nằm trong lần gửi sau
+  const r = await api.patch(`/products/${p.id}`, {
+    options: [{ name: 'Hương', values: ['Cam ngọt', 'Chanh'] }, { name: 'Size', values: ['10ml', '30ml'] }],
+    option_renames: [{ from: 'Mùi', to: 'Hương', values: { Cam: 'Cam ngọt' } }],
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const v = r.body.data.variants;
+  assert.deepEqual(v.map((x) => x.id), ids, 'giữ id và thứ tự');
+  assert.deepEqual(v[0].option_values, { Hương: 'Cam ngọt', Size: '10ml' });
+  assert.equal(v[0].name, 'Cam ngọt / 10ml');
+  assert.deepEqual(v[3].option_values, { Hương: 'Chanh', Size: '30ml' }, 'biến thể đã tắt cũng được đổi nhãn');
+  assert.equal(v[0].sku, p.variants[0].sku, 'SKU không đổi');
+});
+
+test('Xoá hẳn một thuộc tính: được nếu các biến thể còn lại vẫn khác nhau; trùng thì 409 OPTIONS_CONFLICT và không đổi gì', async () => {
+  const { api, nh } = await setup();
+  const p = (await api.post('/products', { name: 'T', options, variants: rows({ opening_qty: undefined }), shop_ids: [nh.id] })).body.data;
+  const conflict = await api.patch(`/products/${p.id}`, { options: [options[0]] });
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.error.code, 'OPTIONS_CONFLICT');
+  assert.deepEqual((await api.get(`/products/${p.id}`)).body.data.options, options, 'không đổi gì khi bị từ chối');
+  // Bỏ bớt các biến thể Size 30ml trước thì xoá thuộc tính Size được
+  const ids = p.variants.map((v) => v.id);
+  const ok = await api.patch(`/products/${p.id}`, {
+    options: [options[0]],
+    variants: [
+      { id: ids[0], option_values: { Mùi: 'Cam' } },
+      { id: ids[1], remove: true },
+      { id: ids[2], option_values: { Mùi: 'Chanh' } },
+      { id: ids[3], remove: true },
+    ],
+  });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.deepEqual(ok.body.data.variants.map((x) => x.option_values), [{ Mùi: 'Cam' }, { Mùi: 'Chanh' }]);
+});
+
+test('Sản phẩm cũ nhiều biến thể không thuộc tính: gán từng biến thể vào một tổ hợp', async () => {
+  const { api, nh } = await setup();
+  const p = (await api.post('/products', { name: 'Cũ', variants: [{ sku: 'C1', name: 'Bản đặc biệt' }, { sku: 'C2' }], shop_ids: [nh.id] })).body.data;
+  const r = await api.patch(`/products/${p.id}`, { options: [{ name: 'Loại', values: ['A', 'B'] }], variants: [{ id: p.variants[0].id, option_values: { Loại: 'A' } }, { id: p.variants[1].id, option_values: { Loại: 'B' } }] });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.data.variants.map((v) => v.name), ['Bản đặc biệt', 'B'], 'tên đặt tay giữ nguyên, tên trống thành tên tự đặt');
+});
