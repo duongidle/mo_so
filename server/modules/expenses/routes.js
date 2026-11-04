@@ -4,6 +4,7 @@ import { tx } from '../../db/index.js';
 import { body, money, query, optionalText, patchOf } from '../../lib/http.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
 import * as svc from './service.js';
+import * as rec from './recurring.js';
 
 const r = new Hono();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -37,6 +38,36 @@ r.patch('/expenses/:id', async (c) => {
   return c.json({ data: tx(() => svc.updateExpense(c.req.param('id'), input, c.get('actor'))) });
 });
 r.delete('/expenses/:id', (c) => c.json({ data: tx(() => svc.voidExpense(c.req.param('id'), c.get('actor'))) }));
+
+// Chi phí định kỳ
+const recurringInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  category_id: z.string(),
+  shop_id: z.string().nullish(),
+  channel_id: z.string().nullish(),
+  amount: money.refine((v) => v > 0, 'Số tiền phải > 0'),
+  method: z.enum(PAYMENT_METHODS).default('cash'),
+  payee: optionalText,
+  frequency: z.enum(['monthly', 'weekly', 'yearly']),
+  day_of_period: z.coerce.number().int().min(1).max(31),
+  start_date: date,
+  end_date: date.nullish(),
+});
+r.get('/recurring-expenses', (c) => c.json({ data: rec.listRecurring({ includeArchived: query(c, z.object({ include_archived: z.enum(['0', '1']).optional() })).include_archived === '1' }) }));
+r.post('/recurring-expenses', async (c) => {
+  const input = await body(c, recurringInput);
+  return c.json({ data: tx(() => rec.createRecurring(input, c.get('actor'))) }, 201);
+});
+r.get('/recurring-expenses/:id', (c) => c.json({ data: rec.getRecurring(c.req.param('id')) }));
+r.patch('/recurring-expenses/:id', async (c) => {
+  const input = await body(c, patchOf(recurringInput));
+  return c.json({ data: tx(() => rec.updateRecurring(c.req.param('id'), input, c.get('actor'))) });
+});
+r.delete('/recurring-expenses/:id', (c) => c.json({ data: tx(() => rec.archiveRecurring(c.req.param('id'), c.get('actor'))) }));
+r.post('/recurring-expenses/:id/pause', (c) => c.json({ data: tx(() => rec.setPaused(c.req.param('id'), true, c.get('actor'))) }));
+r.post('/recurring-expenses/:id/resume', (c) => c.json({ data: tx(() => rec.setPaused(c.req.param('id'), false, c.get('actor'))) }));
+r.post('/recurring-expenses/:id/run', (c) => c.json({ data: tx(() => rec.runNow(c.req.param('id'), c.get('actor'))) }, 201));
+r.get('/recurring-expenses/:id/preview', (c) => c.json({ data: rec.preview(c.req.param('id'), { count: query(c, z.object({ count: z.coerce.number().int().min(1).max(24).default(6) })).count }) }));
 
 r.get('/payments', (c) => {
   const q = query(c, z.object({ direction: z.enum(['in', 'out']).optional(), ref_type: z.string().optional(), method: z.string().optional(), shop_id: z.string().optional(), from: date.optional(), to: date.optional(), limit: z.coerce.number().int().min(1).max(500).default(100), cursor: z.string().optional() }));

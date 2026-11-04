@@ -6,6 +6,7 @@ import { emit, audit } from '../../lib/events.js';
 import { recordPayment } from '../payments/service.js';
 import { addOrderPayment } from '../orders/service.js';
 import { payoutMethodOf } from '../../lib/platforms.js';
+import { assertUnlocked } from '../../lib/period.js';
 
 const db = () => getDb();
 
@@ -60,12 +61,14 @@ export function createExpense(input, actor) {
   if (input.shop_id && !db().prepare('SELECT 1 FROM shops WHERE id = ?').get(input.shop_id)) throw notFound('Shop');
   const id = newId('exp');
   const at = nowIso();
+  const date = input.expense_date || businessDate(at);
+  assertUnlocked(date, 'Chi phí');
   db()
     .prepare(
-      `INSERT INTO expenses (id, category_id, shop_id, channel_id, amount, expense_date, payee, method, note, actor_id, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO expenses (id, category_id, shop_id, channel_id, amount, expense_date, payee, method, note, actor_id, created_at, updated_at, recurring_id, period_key)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.category_id, input.shop_id ?? null, input.channel_id ?? null, input.amount, input.expense_date || businessDate(at), input.payee ?? null, input.method ?? 'cash', input.note ?? null, actor?.id ?? null, at, at);
+    .run(id, input.category_id, input.shop_id ?? null, input.channel_id ?? null, input.amount, date, input.payee ?? null, input.method ?? 'cash', input.note ?? null, actor?.id ?? null, at, at, input.recurring_id ?? null, input.period_key ?? null);
   const e = getExpense(id);
   emit('expense.created', { entityType: 'expense', entityId: id, shopId: e.shop_id, data: e });
   audit(actor, 'expense.created', 'expense', id, null, e);
@@ -76,6 +79,7 @@ export function updateExpense(id, input, actor) {
   const before = getExpense(id);
   if (before.voided_at) throw badRequest('EXPENSE_VOIDED', 'Chi phí đã bị huỷ, không sửa được');
   const m = { ...before, ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) };
+  assertUnlocked([before.expense_date, m.expense_date], 'Chi phí');
   db()
     .prepare('UPDATE expenses SET category_id=?, shop_id=?, channel_id=?, amount=?, expense_date=?, payee=?, method=?, note=?, updated_at=? WHERE id=?')
     .run(m.category_id, m.shop_id ?? null, m.channel_id ?? null, m.amount, m.expense_date, m.payee ?? null, m.method, m.note ?? null, nowIso(), id);
@@ -87,6 +91,7 @@ export function updateExpense(id, input, actor) {
 /** Không xoá cứng: đánh dấu huỷ */
 export function voidExpense(id, actor) {
   const before = getExpense(id);
+  assertUnlocked(before.expense_date, 'Chi phí');
   db().prepare('UPDATE expenses SET voided_at = ?, updated_at = ? WHERE id = ?').run(nowIso(), nowIso(), id);
   audit(actor, 'expense.voided', 'expense', id, before, null);
   return getExpense(id);

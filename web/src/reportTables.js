@@ -73,6 +73,10 @@ export function reportTables(tab, d, { range, shopName } = {}) {
   return [info, T('Sức khoẻ kinh doanh', ['Chỉ số', 'Giá trị', 'Mức', 'Ngưỡng vàng', 'Ngưỡng đỏ'], d.data.map((h) => [h.label, h.value, { green: 'Xanh', yellow: 'Vàng', red: 'Đỏ' }[h.status] || 'Chưa có dữ liệu', h.threshold.warn, h.threshold.bad]))];
 }
 
+const VOUCHER_TYPES = { receipt: 'Phiếu thu khác', payment: 'Phiếu chi khác', journal: 'Bút toán tổng hợp' };
+const FREQ = { monthly: 'Hằng tháng', weekly: 'Hằng tuần', yearly: 'Hằng năm' };
+const ASSET_STATUS = { active: 'Đang khấu hao', done: 'Đã khấu hao hết', disposed: 'Đã thanh lý', voided: 'Đã huỷ' };
+
 /** Bảng xuất Excel cho các tab của Sổ kế toán. d = dữ liệu API của tab. */
 export function accountingTables(tab, d, { range, shopName } = {}) {
   const T = (name, headers, rows) => ({ name, headers, rows });
@@ -82,11 +86,14 @@ export function accountingTables(tab, d, { range, shopName } = {}) {
   if (tab === 'trial') return [info, T('Cân đối phát sinh', ['Tài khoản', 'Tên', 'Đầu kỳ Nợ', 'Đầu kỳ Có', 'Phát sinh Nợ', 'Phát sinh Có', 'Cuối kỳ Nợ', 'Cuối kỳ Có'], [...d.data.map((r) => [r.code, r.name, r.opening_debit, r.opening_credit, r.debit, r.credit, r.closing_debit, r.closing_credit]), ['', 'Tổng', d.totals.opening_debit, d.totals.opening_credit, d.totals.debit, d.totals.credit, d.totals.closing_debit, d.totals.closing_credit]])];
   if (tab === 'income') {
     const rows = [['Doanh thu bán hàng (5111)', d.revenue_goods], ['Doanh thu phí vận chuyển (5113)', d.revenue_shipping], ['Hàng bán bị trả lại (5212)', -d.returns], ['Doanh thu thuần', d.net_revenue], ['Giá vốn hàng bán (632)', -d.cogs], ['Lãi gộp', d.gross_profit],
-      ...d.selling_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ...d.admin_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ['Lãi thuần từ kinh doanh', d.operating_profit], ['Thu nhập khác (711)', d.other_income], ['Chi phí khác (811)', -d.other_expense], ['Lợi nhuận trước thuế', d.profit_before_tax]];
+      ...d.selling_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ...d.admin_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ...(d.depreciation_total ? [['Lãi thuần trước khấu hao', d.operating_profit_before_depreciation], ...d.depreciation.map((r) => [`Khấu hao/phân bổ: ${r.name} (${r.code})`, -r.amount])] : []), ['Lãi thuần từ kinh doanh', d.operating_profit], ['Thu nhập khác (711)', d.other_income], ['Chi phí khác (811)', -d.other_expense], ['Lợi nhuận trước thuế', d.profit_before_tax]];
     return [info, T('Kết quả kinh doanh', ['Khoản', 'Số tiền'], rows)];
   }
   if (tab === 'balance') return [T('Thông tin', ['Mục', 'Giá trị'], [['Báo cáo', 'Cân đối kế toán'], ['Đến ngày', dmy(d.as_of)], ['Phạm vi', 'Toàn tài khoản']]), T('Cân đối kế toán', ['Khoản', 'Số tiền'], [['TÀI SẢN', ''], ...d.assets.map((r) => [`${r.name} (${r.code})`, r.balance]), ['Tổng tài sản', d.total_assets], ['NỢ PHẢI TRẢ', ''], ...d.liabilities.map((r) => [`${r.name} (${r.code})`, r.balance]), ['Tổng nợ phải trả', d.total_liabilities], ['VỐN CHỦ SỞ HỮU', ''], ...d.equity.map((r) => [`${r.name} (${r.code})`, r.balance]), ['421 – Lợi nhuận kỳ này (chưa kết chuyển)', d.current_profit], ['Tổng vốn', d.total_equity], ['Tổng nợ và vốn', d.total_liabilities_equity]])];
   if (tab === 'cashflow') return [info, T('Lưu chuyển tiền', ['Khoản', 'Thu', 'Chi', 'Ròng'], [['Số dư đầu kỳ', '', '', d.opening_balance], ...d.data.map((g) => [g.label, g.inflow, g.outflow, g.net]), ['Tăng/giảm tiền trong kỳ', '', '', d.net_change], ['Số dư cuối kỳ', '', '', d.closing_balance]])];
+  if (tab === 'vouchers') return [T('Chứng từ', ['Mã', 'Loại', 'Ngày', 'Diễn giải', 'Shop', 'Số tiền', 'Tình trạng', 'Tài khoản', 'Nợ', 'Có'], d.flatMap((v) => v.lines.map((l, i) => [i ? '' : v.code, i ? '' : VOUCHER_TYPES[v.type], i ? '' : dmy(v.voucher_date), i ? '' : v.description, i ? '' : v.shop_name || '', i ? '' : v.total_amount, i ? '' : v.voided_at ? 'Đã huỷ' : '', `${l.account_code} ${l.account_name}`, l.debit, l.credit])))];
+  if (tab === 'recurring') return [T('Chi phí định kỳ', ['Tên', 'Danh mục', 'Shop', 'Chu kỳ', 'Ngày', 'Số tiền', 'Phương thức', 'Từ ngày', 'Đến ngày', 'Kỳ kế tiếp', 'Đã tạo', 'Tình trạng'], d.map((r) => [r.name, r.category_name, r.shop_name || 'Chung', FREQ[r.frequency], r.day_of_period, r.amount, r.method, dmy(r.start_date), r.end_date ? dmy(r.end_date) : '', r.next_run_date ? dmy(r.next_run_date) : '', r.created_count, r.paused_at ? 'Tạm dừng' : 'Đang chạy']))];
+  if (tab === 'assets') return [T('Tài sản & phân bổ', ['Tên', 'Loại', 'Ngày mua', 'Số tháng', 'Nguyên giá', 'Đã khấu hao/phân bổ', 'Giá trị còn lại', 'Shop', 'Tình trạng'], d.map((a) => [a.name, a.kind === 'fixed_asset' ? 'Tài sản cố định' : 'Chi phí trả trước', dmy(a.start_date), a.months, a.cost, a.accumulated, a.remaining, a.shop_name || 'Chung', ASSET_STATUS[a.status]]))];
   if (tab === 'accounts') return [T('Hệ thống tài khoản', ['Mã', 'Tên', 'Loại', 'Bên bình thường', 'Số dư'], d.map((a) => [a.code, a.name, a.type, a.normal_side === 'debit' ? 'Nợ' : 'Có', a.balance]))];
   return [info];
 }
@@ -94,7 +101,10 @@ export function accountingTables(tab, d, { range, shopName } = {}) {
 export const ACCOUNTING_TAB_METRICS = {
   overview: ['acc_cash', 'acc_receivable', 'acc_payable', 'acc_inventory', 'acc_profit'],
   trial: ['acc_trial'],
-  income: ['acc_net_revenue', 'acc_cogs', 'acc_gross_profit', 'acc_expenses', 'acc_profit'],
+  income: ['acc_net_revenue', 'acc_cogs', 'acc_gross_profit', 'acc_expenses', 'acc_depreciation', 'acc_other', 'acc_profit'],
+  assets: ['acc_depreciation'],
+  vouchers: ['acc_other'],
+  lock: ['acc_lock'],
   balance: ['acc_assets', 'acc_equity'],
   cashflow: ['acc_cashflow', 'acc_cash'],
 };

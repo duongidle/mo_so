@@ -1,4 +1,5 @@
 import { businessDate } from '../../lib/time.js';
+import { depreciationSchedule, postedPeriods } from '../../lib/schedule.js';
 
 /**
  * Quy tắc hạch toán: mỗi loại chứng từ một hàm THUẦN (không đụng DB) từ ảnh chụp chứng từ → danh sách bút toán.
@@ -147,7 +148,33 @@ function cashEntryEntry({ rows }, ctx) {
   );
 }
 
+/**
+ * Tài sản cố định / chi phí trả trước: một bút toán mua, mỗi tháng đã qua một bút toán khấu hao/phân bổ (ghi vào ngày cuối tháng),
+ * và một bút toán thanh lý nếu có. Phụ thuộc "hôm nay" (ctx.today) nên sổ được làm mới khi qua ngày (journal.js).
+ * Thanh lý: giá trị còn lại ghi thẳng vào 811 (chưa có tiền thu về; thu tiền bán tài sản ghi bằng phiếu thu tay).
+ */
+function assetEntries({ a }, ctx) {
+  if (a.voided_at) return [];
+  const sc = { shop_id: a.shop_id };
+  const fixed = a.kind === 'fixed_asset';
+  const base = { source_type: 'asset', source_id: a.id, shop_id: a.shop_id };
+  const out = [];
+  const pay = a.paid_via === 'unpaid' ? '331' : ctx.cashAccountFor(a.paid_via, a.start_date);
+  out.push(entry({ ...base, date: a.start_date, description: `${fixed ? 'Mua tài sản cố định' : 'Chi phí trả trước'}: ${a.name}` }, [dr(a.account_code, a.cost, sc), cr(pay, a.cost, sc)]));
+  const posted = postedPeriods(a, ctx.today);
+  for (const p of posted) {
+    out.push(entry({ ...base, date: p.date, description: `${fixed ? 'Khấu hao' : 'Phân bổ'} ${p.period}: ${a.name}` }, [dr(a.expense_account_code, p.amount, sc), cr(fixed ? '214' : '242', p.amount, sc)]));
+  }
+  if (a.disposed_at && a.disposed_at <= ctx.today) {
+    const acc = posted.reduce((s, p) => s + p.amount, 0);
+    const rest = a.cost - acc;
+    out.push(entry({ ...base, date: a.disposed_at, description: `Thanh lý: ${a.name}` }, fixed ? [dr('214', acc, sc), dr('811', rest, { ...sc, memo: 'Giá trị còn lại' }), cr('211', a.cost, sc)] : [dr('811', rest, { ...sc, memo: 'Giá trị còn lại' }), cr('242', rest, sc)]));
+  }
+  return out;
+}
+
 const POSTERS = {
+  asset: (s, c) => assetEntries(s, c),
   order: (s) => [orderEntry(s)],
   return: (s) => [returnEntry(s)],
   payment: (s, c) => [paymentEntry(s, c)],

@@ -71,6 +71,8 @@ function sourcePath(type, id) {
       const p = db().prepare('SELECT ref_type, ref_id FROM payments WHERE id = ?').get(id);
       return p?.ref_type === 'order' ? `/orders/${p.ref_id}` : p?.ref_type === 'purchase' ? '/purchases' : '/expenses?tab=cash';
     }
+    case 'manual': return '/accounting?tab=vouchers';
+    case 'asset': return '/accounting?tab=assets';
     case 'purchase': return '/purchases';
     case 'expense': return '/expenses';
     case 'stock': return '/stock';
@@ -191,14 +193,18 @@ export function incomeStatement({ from, to, shopIds } = {}) {
   const shopSql = f.shopIds ? `AND l.shop_id IN (${ph(f.shopIds)})` : '';
   const rows = db()
     .prepare(
-      `SELECT l.account_code AS c, SUM(l.debit) AS d, SUM(l.credit) AS k FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.code = l.account_code
-       WHERE e.voided_at IS NULL AND a.type IN ('revenue','contra_revenue','expense') AND e.entry_date >= ? AND e.entry_date <= ? ${shopSql} GROUP BY l.account_code`,
+      `SELECT l.account_code AS c, (e.source_type = 'asset' AND l.account_code != '811') AS dep, SUM(l.debit) AS d, SUM(l.credit) AS k FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.code = l.account_code
+       WHERE e.voided_at IS NULL AND a.type IN ('revenue','contra_revenue','expense') AND e.entry_date >= ? AND e.entry_date <= ? ${shopSql} GROUP BY l.account_code, dep`,
     )
     .all(f.from, f.to, ...(f.shopIds || []));
   const amt = new Map();
   const add = (code, v) => amt.set(code, (amt.get(code) || 0) + v);
   const names = accountNames();
-  for (const r of rows) add(r.c, names.has(r.c) && /^(5|7)/.test(r.c) && r.c !== '5212' ? r.k - r.d : r.d - r.k);
+  const depMap = new Map(); // khấu hao/phân bổ tài sản: tách riêng khỏi chi phí của báo cáo (không phải dòng chi phí)
+  for (const r of rows) {
+    if (r.dep) depMap.set(r.c, (depMap.get(r.c) || 0) + r.d - r.k);
+    else add(r.c, names.has(r.c) && /^(5|7)/.test(r.c) && r.c !== '5212' ? r.k - r.d : r.d - r.k);
+  }
   let sharedAllocated = 0;
   if (f.shopIds) {
     // Chi phí chung (ledger ghi shop NULL) → phần chia về shop đang xem, theo quy tắc phân bổ của báo cáo
@@ -214,9 +220,11 @@ export function incomeStatement({ from, to, shopIds } = {}) {
   const selling = detail(/^641/);
   const admin = detail(/^642/);
   const sum = (arr) => arr.reduce((a, r) => a + r.amount, 0);
+  const depreciation = [...depMap.entries()].filter(([, v]) => v !== 0).sort(([a], [b]) => a.localeCompare(b)).map(([code, amount]) => ({ code, name: names.get(code), amount }));
   const revenueNet = g('5111') + g('5113') - g('5212');
   const gross = revenueNet - g('632');
-  const operating = gross - sum(selling) - sum(admin);
+  const operatingBeforeDep = gross - sum(selling) - sum(admin);
+  const operating = operatingBeforeDep - sum(depreciation);
   return {
     filter: f,
     revenue_goods: g('5111'),
@@ -228,13 +236,16 @@ export function incomeStatement({ from, to, shopIds } = {}) {
     gross_profit: gross,
     selling_expenses: selling,
     admin_expenses: admin,
+    depreciation,
+    depreciation_total: sum(depreciation),
+    operating_profit_before_depreciation: operatingBeforeDep,
     operating_profit: operating,
     other_income: g('711'),
     other_expense: g('811'),
     profit_before_tax: operating + g('711') - g('811'),
     shared_expenses_allocated: sharedAllocated,
     by_account: Object.fromEntries(amt),
-    scope: { shop_filtered: Boolean(f.shopIds), other_items_excluded: Boolean(f.shopIds) },
+    scope: { shop_filtered: Boolean(f.shopIds), other_items_excluded: Boolean(f.shopIds), depreciation_not_in_reports: true },
   };
 }
 
@@ -276,7 +287,9 @@ const CASH_GROUPS = {
   '3388': ['Chi trả khoản khác (phí sàn, ship, chi phí chưa trả)', 'operating'],
   '711': ['Chênh lệch kiểm đếm thừa', 'other'],
   '811': ['Chênh lệch kiểm đếm thiếu và chi khác', 'other'],
-  '411': ['Vốn (số dư đầu, thu chi trước ngày mở sổ)', 'equity'],
+  '411': ['Vốn (số dư đầu, thu chi trước ngày mở sổ, góp/rút vốn)', 'equity'],
+  '211': ['Mua tài sản cố định', 'investing'],
+  '242': ['Chi phí trả trước (thuê, bảo hiểm…)', 'investing'],
 };
 const isCash = (c) => c.startsWith('111') || c.startsWith('112');
 

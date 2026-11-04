@@ -8,9 +8,14 @@ import { MetricFilters, MetricLabel } from '../components/MetricInfo.jsx';
 import Icon from '../components/Icon.jsx';
 import { vnd, fmtDate, monthStart, today } from '../lib.js';
 import { accountingTables, explainTable, sheetName } from '../reportTables.js';
+import { Vouchers, Recurring, Assets, LockTab, CategoryMapping } from './accounting/Extras.jsx';
 
-const TABS = [['overview', 'Tổng quan'], ['journal', 'Sổ nhật ký'], ['ledger', 'Sổ cái'], ['trial', 'Cân đối phát sinh'], ['income', 'Kết quả kinh doanh'], ['balance', 'Cân đối kế toán'], ['cashflow', 'Lưu chuyển tiền'], ['accounts', 'Hệ thống tài khoản']];
+const TABS = [['overview', 'Tổng quan'], ['vouchers', 'Chứng từ'], ['recurring', 'Chi phí định kỳ'], ['assets', 'Tài sản & phân bổ'], ['journal', 'Sổ nhật ký'], ['ledger', 'Sổ cái'], ['trial', 'Cân đối phát sinh'], ['income', 'Kết quả kinh doanh'], ['balance', 'Cân đối kế toán'], ['cashflow', 'Lưu chuyển tiền'], ['accounts', 'Hệ thống tài khoản'], ['lock', 'Khoá sổ']];
 const INTRO = {
+  vouchers: 'Chứng từ lập tay cho những việc không đi qua đơn, nhập hàng hay chi phí: góp vốn, rút vốn, tiền phạt, thu nhập khác. Bút toán tổng hợp để ghi tự do nhiều dòng. Huỷ không xoá hẳn.',
+  recurring: 'Khoản chi lặp lại (thuê kho, internet, lương). App tự tạo chi phí mỗi kỳ, tạo bù cả kỳ bỏ lỡ khi máy tắt.',
+  assets: 'Tài sản cố định và chi phí trả trước: ghi vào tài sản khi mua, rồi chia đều theo tháng thành chi phí (khấu hao hoặc phân bổ).',
+  lock: 'Khoá sổ để chốt số kỳ cũ: không ai sửa nhầm chi phí, thanh toán, chứng từ tay của kỳ đã chốt.',
   overview: 'Tiền, công nợ, hàng tồn và lãi của tháng này theo sổ kế toán. Sổ tự sinh từ đơn, thu chi, nhập hàng, kho và quỹ: không cần nhập tay.',
   journal: 'Mọi bút toán theo thời gian, mỗi bút toán có Nợ bằng Có. Bấm mã chứng từ để mở đơn hay phiếu gốc.',
   ledger: 'Một tài khoản: số dư đầu, từng dòng phát sinh, số dư cuối. Bấm diễn giải để mở chứng từ gốc.',
@@ -21,7 +26,7 @@ const INTRO = {
   accounts: 'Danh sách tài khoản. Tài khoản hệ thống không đổi được; bạn thêm được tài khoản con.',
 };
 const signed = (n) => (n < 0 ? `− ${vnd(-n)}` : vnd(n));
-const SRC = { order: 'Đơn bán', return: 'Trả hàng', payment: 'Thanh toán', purchase: 'Nhập hàng', expense: 'Chi phí', stock: 'Kho', cash_open: 'Số dư đầu quỹ', cash_entry: 'Quỹ', manual: 'Thủ công' };
+const SRC = { order: 'Đơn bán', return: 'Trả hàng', payment: 'Thanh toán', purchase: 'Nhập hàng', expense: 'Chi phí', stock: 'Kho', cash_open: 'Số dư đầu quỹ', cash_entry: 'Quỹ', manual: 'Chứng từ tay', asset: 'Tài sản' };
 
 export default function Accounting() {
   const { shopId, isAll, shop } = useSession();
@@ -31,15 +36,18 @@ export default function Accounting() {
   const [exportData, setExportData] = useState(null); // dữ liệu tab đang xem, để xuất Excel
   const shopParam = isAll ? undefined : shopId;
   const changeTab = (t) => { setExportData(null); setTab(t); };
-  const ctx = { range, shopParam, isAll, report: setExportData };
+  const ctx = { range, shopParam, isAll, report: setExportData, go: changeTab };
   return (
     <div className="page stack">
       <div className="page-head"><h1>Sổ kế toán</h1><ExportButton tab={tab} data={exportData} range={range} shopName={tab === 'income' && !isAll ? shop?.name : null} /></div>
       <Tabs options={TABS} value={tab} onChange={changeTab} />
       <p className="tab-intro">{INTRO[tab]}</p>
-      {!['overview', 'accounts', 'balance'].includes(tab) && <div className="row wrap"><DateRange {...range} onChange={setRange} /></div>}
+      {!['overview', 'accounts', 'balance', 'recurring', 'assets', 'lock'].includes(tab) && <div className="row wrap"><DateRange {...range} onChange={setRange} /></div>}
       <MetricFilters.Provider value={{ from: range.from, to: range.to, today: today() }}>
         {tab === 'overview' && <Overview {...ctx} />}
+        {tab === 'vouchers' && <Vouchers {...ctx} />}
+        {tab === 'recurring' && <Recurring {...ctx} />}
+        {tab === 'assets' && <Assets {...ctx} />}
         {tab === 'journal' && <Journal {...ctx} />}
         {tab === 'ledger' && <Ledger {...ctx} />}
         {tab === 'trial' && <Trial {...ctx} />}
@@ -47,6 +55,7 @@ export default function Accounting() {
         {tab === 'balance' && <Balance {...ctx} />}
         {tab === 'cashflow' && <CashFlow {...ctx} />}
         {tab === 'accounts' && <Accounts {...ctx} />}
+        {tab === 'lock' && <LockTab />}
       </MetricFilters.Provider>
     </div>
   );
@@ -63,7 +72,7 @@ function ExportButton({ tab, data, range, shopName }) {
     }
     XLSX.writeFile(wb, `ke-toan-${tab}-${range.from.replaceAll('-', '')}-${range.to.replaceAll('-', '')}.xlsx`);
   };
-  if (tab === 'overview') return null;
+  if (tab === 'overview' || tab === 'lock') return null;
   return <button className="btn" disabled={!data} onClick={go}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất Excel</button>;
 }
 
@@ -80,13 +89,14 @@ function useReport(fn, deps, report, pick = (r) => r.data) {
 const Th = ({ m, children, className = 'num' }) => <th className={className}>{m ? <MetricLabel metric={m}>{children}</MetricLabel> : children}</th>;
 const Src = ({ row, children }) => (row.source_path ? <Link to={row.source_path}>{children}</Link> : <>{children}</>);
 
-function Overview() {
+function Overview({ go }) {
   const state = useAsync(() => api.get('/accounting/overview'), []);
   return (
     <Async state={state}>
       {({ data: d }) => (
         <>
-          {d.warnings.map((w) => <div key={w.code} className="alert warn" role="alert">{w.message}</div>)}
+          {d.warnings.map((w) => <div key={w.code} className="alert warn" role="alert">{w.message}{w.code === 'LOCKED_PERIOD_CHANGED' && <> <button className="btn sm" onClick={() => go('lock')}>Xem chi tiết</button></>}</div>)}
+          {d.lock_date && <p className="muted small">Sổ đã khoá đến hết {fmtDate(d.lock_date)}.</p>}
           <div className="grid cols-3">
             <Kpi label="Tiền (quỹ)" metric="acc_cash" value={vnd(d.cash)} />
             <Kpi label="Phải thu khách" metric="acc_receivable" value={vnd(d.receivable_customers)} hint={`Sàn còn nợ: ${vnd(d.receivable_marketplace)}`} />
@@ -186,6 +196,7 @@ function Income({ range, shopParam, report }) {
       {({ data: d }) => (
         <>
           <div className="scope-strip" role="status">Đang xem: <b>{shopParam ? 'một shop' : 'Tất cả shop'}</b> · {fmtDate(range.from)} – {fmtDate(range.to)}{shopParam && <> · chi phí chung đã chia về shop như ở Báo cáo; chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên không có ở đây</>}</div>
+          <div className="scope-strip" role="note">Lợi nhuận ở đây gồm khấu hao/phân bổ tài sản và thu/chi khác (711, 811) mà tab Lợi nhuận của Báo cáo không có, nên có thể thấp hơn hoặc cao hơn Báo cáo. Dòng “Lãi thuần trước khấu hao” là số so sánh được với Báo cáo (chi phí định kỳ có ở cả hai vì là chi phí thật).</div>
           <Card flat><div className="stack" style={{ gap: 6 }}>
             <Line l="Doanh thu bán hàng (5111)" v={d.revenue_goods} indent />
             <Line l="Doanh thu phí vận chuyển (5113)" v={d.revenue_shipping} indent />
@@ -195,8 +206,13 @@ function Income({ range, shopParam, report }) {
             <Line l="Lãi gộp" v={d.gross_profit} bold m="acc_gross_profit" />
             {[...d.selling_expenses, ...d.admin_expenses].map((r) => <Line key={r.code} l={`${r.name} (${r.code})`} v={-r.amount} indent />)}
             <Line l="Chi phí bán hàng và quản lý" v={-[...d.selling_expenses, ...d.admin_expenses].reduce((a, r) => a + r.amount, 0)} m="acc_expenses" />
+            {d.depreciation_total !== 0 && <>
+              <Line l="Lãi thuần trước khấu hao" v={d.operating_profit_before_depreciation} bold />
+              {d.depreciation.map((r) => <Line key={r.code} l={`Khấu hao/phân bổ → ${r.name} (${r.code})`} v={-r.amount} indent />)}
+              <Line l="Khấu hao và phân bổ tài sản" v={-d.depreciation_total} m="acc_depreciation" />
+            </>}
             <Line l="Lãi thuần từ kinh doanh" v={d.operating_profit} bold />
-            <Line l="Thu nhập khác (711)" v={d.other_income} indent />
+            <Line l="Thu nhập khác (711)" v={d.other_income} indent m="acc_other" />
             <Line l="Chi phí khác (811)" v={-d.other_expense} indent />
             <Line l="Lợi nhuận trước thuế" v={d.profit_before_tax} bold m="acc_profit" />
           </div></Card>
@@ -274,6 +290,7 @@ function Accounts({ report }) {
           </table></div></Card>
         )}
       </Async>
+      <CategoryMapping />
       {form && (
         <Modal title="Thêm tài khoản con" onClose={() => setForm(null)} footer={<><button className="btn" onClick={() => setForm(null)}>Đóng</button><button className="btn primary" disabled={busy || !form.name.trim()} onClick={save}>Thêm</button></>}>
           <ErrorBox error={error} />
