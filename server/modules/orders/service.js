@@ -37,7 +37,10 @@ export function getOrder(id) {
     .get(id, id);
   if (!o) throw notFound('Đơn hàng');
   o.tags = JSON.parse(o.tags || '[]');
-  o.lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ? ORDER BY sort_order').all(o.id);
+  o.lines = db()
+    .prepare(`SELECT l.*, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url FROM order_lines l
+              LEFT JOIN variants v ON v.id = l.variant_id LEFT JOIN products p ON p.id = v.product_id WHERE l.order_id = ? ORDER BY l.sort_order`)
+    .all(o.id);
   o.history = db().prepare('SELECT * FROM order_status_history WHERE order_id = ? ORDER BY created_at').all(o.id);
   o.payments = listPaymentsFor('order', o.id);
   o.returns = db()

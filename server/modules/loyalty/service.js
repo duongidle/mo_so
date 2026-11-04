@@ -168,10 +168,12 @@ export function elementSuggestions(customerId, { shopId, limit = 10 } = {}) {
   );
   const products = db()
     .prepare(
-      `SELECT p.id, p.name, p.elements, GROUP_CONCAT(DISTINCT s.id) AS shop_ids, GROUP_CONCAT(DISTINCT s.name) AS shop_names, MIN(l.price) AS price
+      `SELECT p.id, p.name, cv.value_text AS elements, GROUP_CONCAT(DISTINCT s.id) AS shop_ids, GROUP_CONCAT(DISTINCT s.name) AS shop_names, MIN(l.price) AS price
        FROM products p JOIN variants v ON v.product_id = p.id AND v.archived_at IS NULL
        JOIN shop_listings l ON l.variant_id = v.id AND l.active = 1 JOIN shops s ON s.id = l.shop_id AND s.archived_at IS NULL
-       WHERE p.archived_at IS NULL AND p.elements IS NOT NULL AND s.id = ? GROUP BY p.id`,
+       JOIN custom_fields cf ON cf.entity_type = 'product' AND cf.role = 'element' AND cf.shop_id = s.id AND cf.archived_at IS NULL
+       JOIN custom_values cv ON cv.entity_type = 'product' AND cv.entity_id = p.id AND cv.field_id = cf.id AND cv.value_text IS NOT NULL
+       WHERE p.archived_at IS NULL AND s.id = ? GROUP BY p.id`,
     )
     .all(shopId);
   const data = [];

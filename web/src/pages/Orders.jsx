@@ -1,3 +1,4 @@
+import ProductThumb from '../components/ProductThumb.jsx';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
@@ -143,7 +144,7 @@ export function OrderDetail() {
                 <div className="table-wrap"><table>
                   <thead><tr><th>Sản phẩm</th><th className="num">SL</th><th className="num">Đơn giá</th><th className="num">Giá vốn</th><th className="num">Thành tiền</th></tr></thead>
                   <tbody>{o.lines.map((l) => (
-                    <tr key={l.id}><td>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
+                    <tr key={l.id}><td><div className="row" style={{ gap: 10 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div></div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
                   ))}</tbody>
                 </table></div>
               </Card>

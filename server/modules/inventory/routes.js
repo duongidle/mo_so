@@ -14,11 +14,12 @@ r.get('/stock', (c) => {
       warehouse_id: z.string().optional(),
       shop_id: z.string().optional(),
       q: z.string().optional(),
+      category_id: z.string().optional(),
       filter: z.enum(['low', 'slow', 'negative', 'in_stock']).optional(),
       limit: z.coerce.number().int().min(1).max(2000).default(500),
     }),
   );
-  const data = svc.listStock({ warehouseId: q.warehouse_id, shopId: q.shop_id, q: q.q, filter: q.filter, limit: q.limit });
+  const data = svc.listStock({ warehouseId: q.warehouse_id, shopId: q.shop_id, q: q.q, categoryId: q.category_id, filter: q.filter, limit: q.limit });
   const total_value = data.reduce((a, r) => a + r.stock_value, 0);
   return c.json({ data, summary: { total_value, sku_count: data.length, low: data.filter((d) => d.is_low).length, slow: data.filter((d) => d.is_slow).length } });
 });

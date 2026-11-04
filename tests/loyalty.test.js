@@ -6,13 +6,13 @@ import { addDays, businessDate } from '../server/lib/time.js';
 test('M9: hạng theo chi tiêu 12 tháng, nhắc mua lại, sinh nhật, gợi ý theo mệnh, mẫu tin', async () => {
   const { api, nh, pt, wh } = await setup();
   const perfume = (await api.post('/products', { name: 'Nước hoa ô tô', consumption_days: 45, variants: [{ sku: 'NH-1', default_price: 150000 }], shop_ids: [nh.id] })).body.data;
-  const water = (await api.post('/products', { name: 'Vòng thuỷ', elements: ['Thuỷ'], variants: [{ sku: 'PT-THUY', default_price: 400000 }], shop_ids: [pt.id] })).body.data;
-  await api.post('/products', { name: 'Nến hoả', elements: ['Hoả'], variants: [{ sku: 'PT-HOA', default_price: 100000 }], shop_ids: [pt.id] });
+  assert.equal((await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' })).status, 200);
+  const water = (await api.post('/products', { name: 'Vòng thuỷ', custom: { ngu_hanh: ['Thuỷ'] }, custom_shop_id: pt.id, variants: [{ sku: 'PT-THUY', default_price: 400000 }], shop_ids: [pt.id] })).body.data;
+  await api.post('/products', { name: 'Nến hoả', custom: { ngu_hanh: ['Hoả'] }, custom_shop_id: pt.id, variants: [{ sku: 'PT-HOA', default_price: 100000 }], shop_ids: [pt.id] });
   await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: perfume.variants[0].id, qty: 50, unit_cost: 40000 }] });
 
   const today = businessDate();
   // Mệnh là thông tin riêng của shop phong thuỷ
-  assert.equal((await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' })).status, 200);
   const cust = (await api.post('/customers', { name: 'Nguyễn Văn Tài', phone: '0911000111' })).body.data;
   const setMenh = await api.put(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`, { menh: 'Mộc', ngay_sinh: `1990-${today.slice(5)}` });
   assert.equal(setMenh.status, 200, JSON.stringify(setMenh.body));
@@ -76,8 +76,8 @@ test('Loyalty & Campaign: chiến dịch theo mệnh cho cả shop; khách bị 
   const { api, nh, pt, wh } = await setup();
   await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' });
   const perfume = (await api.post('/products', { name: 'Nước hoa ô tô', consumption_days: 30, variants: [{ sku: 'NH-1', default_price: 150000 }], shop_ids: [nh.id] })).body.data;
-  const water = (await api.post('/products', { name: 'Vòng thuỷ', elements: ['Thuỷ'], variants: [{ sku: 'PT-THUY', default_price: 400000 }], shop_ids: [pt.id] })).body.data;
-  await api.post('/products', { name: 'Nến hoả', elements: ['Hoả'], variants: [{ sku: 'PT-HOA', default_price: 100000 }], shop_ids: [pt.id] });
+  const water = (await api.post('/products', { name: 'Vòng thuỷ', custom: { ngu_hanh: ['Thuỷ'] }, custom_shop_id: pt.id, variants: [{ sku: 'PT-THUY', default_price: 400000 }], shop_ids: [pt.id] })).body.data;
+  await api.post('/products', { name: 'Nến hoả', custom: { ngu_hanh: ['Hoả'] }, custom_shop_id: pt.id, variants: [{ sku: 'PT-HOA', default_price: 100000 }], shop_ids: [pt.id] });
   await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: perfume.variants[0].id, qty: 20, unit_cost: 40000 }, { variant_id: water.variants[0].id, qty: 5, unit_cost: 100000 }] });
 
   // Khách mệnh Mộc (hợp Thuỷ), khách không rõ mệnh, khách mệnh Mộc đã mua vòng thuỷ

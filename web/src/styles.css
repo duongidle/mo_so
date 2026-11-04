@@ -389,3 +389,25 @@ body { background-image: var(--fibre); background-size: 320px; }
 .pick-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--rule); border-radius: 12px; cursor: pointer; background: var(--paper); }
 .pick-card.on { border-color: var(--seal); outline: 1px solid var(--seal); }
 .pick-card input { width: 18px; min-height: 18px; margin-top: 3px; }
+
+/* Ảnh sản phẩm, bảng biến thể ma trận */
+.thumb { display: inline-flex; align-items: center; justify-content: center; flex: none; overflow: hidden; border: 1px solid var(--rule); border-radius: 4px; background: color-mix(in srgb, var(--champagne) 22%, transparent); color: var(--terracotta); font-weight: 600; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.gallery-item { position: relative; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--paper, transparent); }
+.gallery-item img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.gallery-main { position: absolute; top: 4px; left: 4px; }
+.gallery-tools { display: flex; gap: 4px; padding: 4px; justify-content: center; }
+.gallery-tools .btn { min-height: 44px; min-width: 44px; padding: 0 8px; }
+.dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 104px; border: 1px dashed var(--terracotta); border-radius: 4px; cursor: pointer; color: var(--terracotta); font-weight: 500; text-align: center; padding: 8px; }
+.dropzone.over, .dropzone:hover { background: color-mix(in srgb, var(--champagne) 22%, transparent); }
+.tag-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; min-height: 44px; }
+.tag-input input { border: 0; outline: 0; background: transparent; flex: 1; min-width: 120px; padding: 6px 2px; box-shadow: none; }
+.tag { display: inline-flex; align-items: center; gap: 4px; background: color-mix(in srgb, var(--walnut) 8%, transparent); border-radius: 999px; padding: 4px 4px 4px 12px; font-size: 13.5px; }
+.tag button { border: 0; background: transparent; cursor: pointer; min-width: 28px; min-height: 28px; color: inherit; }
+.matrix th, .matrix td { white-space: nowrap; }
+.matrix input { min-width: 84px; width: 100%; }
+.matrix input.sku { min-width: 150px; }
+.matrix tr.off td { opacity: .55; }
+.matrix tr.apply-all td { background: color-mix(in srgb, var(--champagne) 16%, transparent); }
+.cat-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--rule); min-height: 52px; }

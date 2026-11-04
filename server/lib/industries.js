@@ -5,6 +5,7 @@ import { ELEMENTS } from './lunar.js';
  *  - theme: giao diện web (phongthuy | nuochoa | oto | general)
  *  - features: tính năng bật theo ngành (vd 'feng_shui' = mệnh, ngũ hành, âm lịch)
  *  - customer_fields: trường thông tin khách tạo sẵn cho shop khi chọn ngành này
+ *  - product_fields: trường thông tin sản phẩm tạo sẵn (riêng của shop đó), vd Ngũ hành hợp của shop phong thuỷ
  * Thêm ngành mới = thêm một mục ở đây (và một theme CSS nếu muốn giao diện riêng).
  * `role` cho app biết ý nghĩa của trường: birth_date, birth_year, element.
  */
@@ -16,6 +17,7 @@ export const INDUSTRIES = {
     theme: 'general',
     features: [],
     customer_fields: [],
+    product_fields: [],
   },
   phong_thuy: {
     id: 'phong_thuy',
@@ -29,6 +31,7 @@ export const INDUSTRIES = {
       { key: 'gioi_tinh', label: 'Giới tính', type: 'select', options: ['Nam', 'Nữ', 'Khác'] },
       { key: 'menh', label: 'Mệnh (để trống = tự tính)', type: 'select', options: ELEMENTS, role: 'element' },
     ],
+    product_fields: [{ key: 'ngu_hanh', label: 'Ngũ hành hợp', type: 'multiselect', options: ELEMENTS, role: 'element' }],
   },
   nuoc_hoa_o_to: {
     id: 'nuoc_hoa_o_to',
@@ -42,6 +45,7 @@ export const INDUSTRIES = {
       { key: 'dip_dung', label: 'Mua cho', type: 'select', options: ['Xe cá nhân', 'Quà tặng', 'Xe dịch vụ'] },
       { key: 'sinh_nhat', label: 'Sinh nhật', type: 'date', role: 'birth_date' },
     ],
+    product_fields: [],
   },
   nuoc_hoa: {
     id: 'nuoc_hoa',
@@ -58,6 +62,7 @@ export const INDUSTRIES = {
       { key: 'ngan_sach', label: 'Ngân sách mỗi lần', type: 'money' },
       { key: 'sinh_nhat', label: 'Sinh nhật', type: 'date', role: 'birth_date' },
     ],
+    product_fields: [],
   },
 };
 

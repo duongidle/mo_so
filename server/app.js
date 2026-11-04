@@ -21,6 +21,7 @@ import reportRoutes from './modules/reports/routes.js';
 import cashRoutes from './modules/cash/routes.js';
 import loyaltyRoutes from './modules/loyalty/routes.js';
 import customRoutes from './modules/custom/routes.js';
+import { uploadRoutes, fileRoutes } from './modules/uploads/routes.js';
 import systemRoutes from './modules/system/routes.js';
 import { docsRoutes } from './modules/system/docs.js';
 
@@ -52,6 +53,8 @@ export function createApp() {
   secured.route('/cash', cashRoutes);
   secured.route('/loyalty', loyaltyRoutes);
   secured.route('/custom', customRoutes);
+  secured.route('/uploads', uploadRoutes); // POST /uploads/images
+  secured.route('/files', fileRoutes); // GET /files/images/:id (cần đăng nhập)
   secured.route('/system', systemRoutes); // /system/api-keys, /webhooks, /backups, /export, /events
   api.route('/', secured);
 

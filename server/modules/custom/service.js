@@ -1,7 +1,7 @@
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
-import { badRequest, notFound } from '../../lib/errors.js';
+import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { parse, refsOf, evaluate, FormulaError } from '../../lib/formula.js';
 import { ROLES } from '../../lib/industries.js';
 
@@ -77,6 +77,11 @@ export function createField(input) {
   if (input.show_in_list) {
     if (input.entity_type !== 'customer') throw badRequest('NOT_CUSTOMER', 'Chỉ trường thông tin khách mới hiện thành cột ở danh sách khách');
     assertColumnRoom(input.shop_id);
+  }
+  if (input.entity_type !== 'customer') {
+    // Khoá trường sản phẩm/đơn/phiếu: duy nhất trong phạm vi shop, và trường riêng của shop không được trùng khoá với trường toàn hệ thống
+    const clash = db().prepare(`SELECT 1 FROM custom_fields WHERE entity_type = ? AND key = ? AND archived_at IS NULL AND (shop_id IS ? OR shop_id IS NULL OR ? IS NULL)`).get(input.entity_type, input.key, input.shop_id ?? null, input.shop_id ?? null);
+    if (clash) throw conflict('DUPLICATE_KEY', `Khoá "${input.key}" đã được dùng`);
   }
   if (input.role && !ROLES.includes(input.role)) throw badRequest('INVALID_ROLE', `Vai trò không hợp lệ: ${input.role}`);
   if (input.type === 'formula') {
@@ -186,10 +191,12 @@ function rawValues(entityType, entityId, shopId) {
   const out = {};
   // Khách: chỉ lấy giá trị của các trường thuộc shop đang xem, để giá trị của shop khác không lọt sang
   const scoped = entityType === 'customer';
+  // Sản phẩm/đơn/phiếu: khi biết shop thì chỉ lấy trường toàn hệ thống + trường của shop đó (trường riêng của shop khác có thể trùng khoá)
+  const soft = !scoped && !!shopId;
   const rows = db()
     .prepare(`SELECT f.key, f.type, v.value_text, v.value_num FROM custom_values v JOIN custom_fields f ON f.id = v.field_id
-              WHERE v.entity_type = ? AND v.entity_id = ? AND f.archived_at IS NULL ${scoped ? 'AND f.shop_id = ?' : ''}`)
-    .all(...(scoped ? [entityType, entityId, shopId] : [entityType, entityId]));
+              WHERE v.entity_type = ? AND v.entity_id = ? AND f.archived_at IS NULL ${scoped ? 'AND f.shop_id = ?' : soft ? 'AND (f.shop_id IS NULL OR f.shop_id = ?)' : ''}`)
+    .all(...(scoped || soft ? [entityType, entityId, shopId] : [entityType, entityId]));
   for (const r of rows) {
     out[r.key] = r.type === 'boolean' ? r.value_num === 1 : r.value_num !== null ? r.value_num : r.type === 'multiselect' ? JSON.parse(r.value_text) : r.value_text;
   }

@@ -16,7 +16,6 @@ async function seedCatalog(api, nh, pt, wh) {
   assert.equal(perfume.status, 201, JSON.stringify(perfume.body));
   const ty = await api.post('/products', {
     name: 'Tỳ hưu thạch anh',
-    elements: ['Thổ', 'Kim'],
     variants: [{ sku: 'PT-TYHUU', default_price: 500000 }],
     shop_ids: [pt.id],
   });

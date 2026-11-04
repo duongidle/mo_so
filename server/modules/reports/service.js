@@ -4,6 +4,7 @@ import { allocate } from '../../lib/money.js';
 import { getSettings } from '../settings/service.js';
 import { listStock } from '../inventory/service.js';
 import { COUNTED, readStats } from './stats.js';
+import { categoryClause as categoryClauseOf } from '../../lib/categories.js';
 
 const db = () => getDb();
 
@@ -31,17 +32,8 @@ const LINE_RETURNED = `COALESCE((SELECT SUM(json_extract(j.value, '$.value')) FR
   WHERE rr.order_id = l.order_id AND json_extract(j.value, '$.order_line_id') = l.id), 0)`;
 const LINE_NET = `(l.line_total - l.allocated_order_discount - ${LINE_RETURNED})`;
 
-/** Danh mục và mọi danh mục con của nó */
-function categoryTree(categoryId) {
-  return db()
-    .prepare(`WITH RECURSIVE t(id) AS (SELECT id FROM categories WHERE id = ? UNION SELECT c.id FROM categories c JOIN t ON c.parent_id = t.id) SELECT id FROM t`)
-    .all(categoryId)
-    .map((r) => r.id);
-}
 function categoryClause(f) {
-  if (!f.categoryId) return { sql: '', params: [] };
-  const ids = categoryTree(f.categoryId);
-  return { sql: ` AND p.category_id IN (${ids.map(() => '?').join(',')})`, params: ids };
+  return categoryClauseOf(f.categoryId);
 }
 
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
@@ -320,7 +312,9 @@ export function byProduct(filter, { limit = 50 } = {}) {
 }
 
 /**
- * Doanh thu theo ngũ hành của sản phẩm. Sản phẩm hợp nhiều hành thì chia đều doanh thu cho các hành đó
+ * Doanh thu theo ngũ hành của sản phẩm. Ngũ hành là trường sản phẩm (vai trò `element`) của từng shop phong thuỷ,
+ * nên mỗi dòng đơn đọc ngũ hành theo đúng shop của đơn; shop không có trường này (ngành khác) hoặc sản phẩm chưa gán → "chưa gán".
+ * Sản phẩm hợp nhiều hành thì chia đều doanh thu cho các hành đó
  * (để tổng 5 hành + "chưa gán" luôn bằng doanh thu thuần của dòng hàng, không đếm trùng).
  */
 export function byElement(filter) {
@@ -329,9 +323,11 @@ export function byElement(filter) {
   const cat = categoryClause(f);
   const rows = db()
     .prepare(
-      `SELECT p.elements, SUM(l.qty - l.returned_qty) AS qty, SUM(${LINE_NET}) AS revenue
+      `SELECT cv.value_text AS elements, SUM(l.qty - l.returned_qty) AS qty, SUM(${LINE_NET}) AS revenue
        FROM order_lines l JOIN orders o ON o.id = l.order_id JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
-       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql} GROUP BY p.id`,
+       LEFT JOIN custom_fields cf ON cf.entity_type = 'product' AND cf.role = 'element' AND cf.shop_id = o.shop_id AND cf.archived_at IS NULL
+       LEFT JOIN custom_values cv ON cv.entity_type = 'product' AND cv.entity_id = p.id AND cv.field_id = cf.id
+       WHERE ${where.join(' AND ')} AND o.status IN ${COUNTED}${cat.sql} GROUP BY p.id, o.shop_id`,
     )
     .all(...params, ...cat.params);
   const acc = new Map(['Kim', 'Mộc', 'Thuỷ', 'Hoả', 'Thổ', null].map((e) => [e, { element: e, revenue: 0, qty: 0 }]));
