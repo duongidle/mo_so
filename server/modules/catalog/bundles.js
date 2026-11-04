@@ -32,14 +32,20 @@ export function setComponents(bundleId, comps) {
   for (const c of comps) ins.run(bundleId, c.variant_id, c.qty);
 }
 
-/** Số combo bán được ngay = min theo từng thành phần (tồn / SL mỗi combo). warehouseId rỗng = cộng mọi kho. */
-export function availableBundles(bundleId, warehouseId) {
+/**
+ * Số combo bán được ngay = min theo từng thành phần (tồn / SL mỗi combo).
+ * warehouse: một kho (chuỗi), nhiều kho (mảng: cộng tồn các kho đó, vì đơn lấy được từ nhiều kho), hoặc rỗng = mọi kho.
+ */
+export function availableBundles(bundleId, warehouse) {
   const comps = componentsOf(bundleId);
   if (!comps.length) return 0;
+  const ids = Array.isArray(warehouse) ? warehouse : warehouse ? [warehouse] : null;
   return Math.min(
     ...comps.map((c) => {
-      const onHand = warehouseId
-        ? db().prepare('SELECT COALESCE(on_hand,0) AS n FROM stock_levels WHERE warehouse_id = ? AND variant_id = ?').get(warehouseId, c.component_variant_id)?.n ?? 0
+      const onHand = ids
+        ? ids.length
+          ? db().prepare(`SELECT COALESCE(SUM(on_hand),0) AS n FROM stock_levels WHERE variant_id = ? AND warehouse_id IN (${ids.map(() => '?').join(',')})`).get(c.component_variant_id, ...ids).n
+          : 0
         : db().prepare('SELECT COALESCE(SUM(on_hand),0) AS n FROM stock_levels WHERE variant_id = ?').get(c.component_variant_id).n;
       return Math.floor(Math.max(0, onHand) / c.qty);
     }),

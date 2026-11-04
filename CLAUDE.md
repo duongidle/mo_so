@@ -19,7 +19,7 @@ Mục tiêu cốt lõi: **một nguồn dữ liệu thật duy nhất**. Mọi �
 5. **Đơn giản trước, mở rộng sau.** Chỉ làm tính năng khi đã có nhu cầu thật.
 
 ### Ngoài phạm vi (hiện tại)
-- Kế toán, sổ sách theo Thông tư 152/2025, kê khai thuế. Sẽ dùng phần mềm kế toán riêng, đồng bộ qua API/webhook.
+- Kê khai thuế và sổ sách nộp cơ quan thuế theo Thông tư 152/2025 (sổ kế toán nội bộ có từ mục 5.16, nhưng chưa phải sổ theo mẫu của Thông tư). Cần phần mềm kế toán riêng thì đồng bộ qua API/webhook.
 - Hoá đơn điện tử (HĐĐT). App chỉ tạo **phiếu bán hàng** (chứng từ nội bộ), không phải hoá đơn hợp lệ với cơ quan thuế.
 - Kéo đơn tự động từ Shopee API (để giai đoạn sau, cần Shopee duyệt).
 - Nhiều người dùng trong **cùng một tài khoản** (nhân viên, phân quyền). Hiện mỗi tài khoản là một chủ kinh doanh với dữ liệu riêng (mục 3A); thêm nhân viên vào một tài khoản chưa làm.
@@ -101,7 +101,7 @@ moso/
 ├─ brand/               ← logo (SVG), tokens.css — xem mục 7A
 ├─ scripts/             ← seed, backup tay, reset mật khẩu
 ├─ tests/               ← test API bằng node:test
-└─ data/                ← master.db, accounts/<id>.db, backups/<id>/ (gitignore)
+└─ data/                ← master.db, accounts/<id>.db, uploads/<id>/ (ảnh), backups/<id>/ (gitignore)
 ```
 
 ---
@@ -129,8 +129,8 @@ moso/
 
 ### 5.1 Shop, Kho, Kênh
 - **Shop** = một mảng kinh doanh (giống chi nhánh). Vào app chọn shop đang làm việc; mọi màn hình bán hàng, sản phẩm, báo cáo mặc định lọc theo shop đó. Có chế độ **"Tất cả shop"** cho báo cáo.
-- **Kho** = nơi để hàng thật. Tách khỏi shop. Một shop có **kho mặc định** để trừ hàng khi bán; một kho phục vụ được nhiều shop.
-- **Kênh** (`channel`): `shopee`, `facebook`, `direct`, `other` (+ kênh tuỳ chỉnh sau). Mỗi đơn thuộc 1 shop và 1 kênh.
+- **Kho** = nơi để hàng thật. Tách khỏi shop. Một shop có **danh sách kho xếp theo ưu tiên** (`shop_warehouses`, API `GET/PUT /shops/:id/warehouses`): đơn lấy hàng từ kho ưu tiên 1, thiếu thì lấy tiếp kho kế tiếp. Kho đầu là **kho chính**; `shops.default_warehouse_id` luôn bằng kho đó (service giữ đồng bộ). Một kho phục vụ được nhiều shop.
+- **Kênh** (`channel`): `direct`, `other` (luôn có), kênh của các **nền tảng** (`shopee`, `tiktok`, `facebook`, `zalo`, mục 5.15) và kênh tuỳ chỉnh (`ch_…`, tạo ở Cài đặt → Nền tảng bán hàng). Mỗi đơn thuộc 1 shop và 1 kênh. Kênh bị tắt (`archived_at`) ẩn khỏi bộ chọn tạo đơn và không tạo đơn mới được (`CHANNEL_DISABLED`), nhưng đơn cũ vẫn xem và lọc được. Kênh sàn (`is_marketplace = 1`) quyết định cách tính số tiền cần thu (xem 5.6).
 
 ### 5.1A Thiết lập lần đầu của tài khoản mới
 Đăng ký xong, tài khoản chưa có shop nên không có gì để làm. Giao diện dẫn qua 3 bước, mỗi bước chỉ hỏi những gì cần:
@@ -140,8 +140,12 @@ moso/
 Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu tiên, trang chủ nhắc tiếp (có thể ẩn). Các shop về sau thêm ở Cài đặt → Shop & kho.
 
 ### 5.2 Sản phẩm
-- **Sản phẩm gốc** (`products`) sống ở cấp toàn hệ thống: tên, mô tả, ảnh, danh mục, đơn vị, thuộc tính phong thuỷ (ngũ hành hợp), chu kỳ dùng hết (ngày).
+- **Sản phẩm gốc** (`products`) sống ở cấp toàn hệ thống: tên, mô tả, ảnh, danh mục, thương hiệu, đơn vị, chu kỳ dùng hết (ngày). Ngũ hành hợp **không còn là cột**: là trường sản phẩm riêng của shop thuộc ngành phong thuỷ (mục 5.14); cột `products.elements` cũ giữ lại nhưng không ghi nữa.
 - **Biến thể / SKU** (`variants`): mỗi sản phẩm ≥ 1 biến thể (mùi, size, màu…). Tồn kho và giá tính theo biến thể. Sản phẩm đơn giản có 1 biến thể mặc định.
+- **Biến thể dạng ma trận**: `products.options` (JSON, tối đa 3 thuộc tính, mỗi thuộc tính nhiều giá trị) và `variants.option_values` (giá trị của biến thể). Form sinh bảng tổ hợp, mỗi dòng có SKU tự sinh (`MAGOC-CAM-10ML`, sửa được), giá bán, giá vốn, tồn đầu kỳ, mã vạch, ảnh, công tắc bán. Tên biến thể tự đặt = các giá trị nối bằng " / ". Server báo SKU trùng kèm số thứ tự dòng (`details.index`). **Tồn đầu kỳ** ghi bằng `applyMovement('opening')` trong cùng transaction với việc tạo sản phẩm (kho chọn trên form, mặc định kho của shop niêm yết đầu tiên; thiếu kho → `WAREHOUSE_REQUIRED`, không tạo gì). Sửa: thêm giá trị sinh dòng mới (tự niêm yết ở các shop của sản phẩm); bỏ giá trị gửi `{id, remove:true}`: biến thể đã có lịch sử kho/đơn/nhập/kiểm kê thì **lưu trữ**, chưa từng dùng thì xoá hẳn (quy ước 6: dữ liệu nháp). **Chuyển đổi sau khi đã tạo**: sản phẩm một biến thể (hoặc cũ nhiều biến thể không thuộc tính) tick "Có biến thể" thì mỗi biến thể đã có chọn một tổ hợp ("Biến thể hiện có là…", mặc định tổ hợp đầu còn trống), giữ nguyên id, SKU, tồn, giá, lịch sử; chỉ thêm `option_values` và tên tự đặt (tên đặt tay giữ nguyên). Sản phẩm đã có thuộc tính được thêm thuộc tính mới (biến thể cũ nhận giá trị đầu, đổi được), đổi tên thuộc tính/giá trị (`option_renames`: server đổi nhãn cho MỌI biến thể kể cả đã lưu trữ, giữ id) và xoá thuộc tính. Server kiểm trong một transaction rằng ánh xạ biến thể → tổ hợp là 1-1: thiếu giá trị → `OPTION_INCOMPLETE` (400), hai biến thể đang bán trùng tổ hợp (vd xoá thuộc tính làm hai biến thể giống nhau) → `OPTIONS_CONFLICT` (409), không đổi gì.
+- **Ảnh sản phẩm** (`product_images`, `variants.image_id`): trình duyệt thu nhỏ (WebP, cạnh dài 1200px, q0.82) rồi `POST /uploads/images` (thân thô, ≤ 3 MB, **kiểm magic bytes** webp/jpeg/png, không tin Content-Type), lưu `data/uploads/<accountId>/<img_id>.<ext>`. `GET /files/images/:id` cần đăng nhập và tra trong DB của tài khoản đang đăng nhập nên ảnh của tài khoản khác là 404; `Cache-Control: private, max-age=31536000, immutable`. `PUT /products/:id/images` đặt thứ tự (`[{id, variant_id?}]`); ảnh đầu được chép vào `products.image_url`; ảnh bị gỡ chỉ đánh dấu `archived_at`, file vẫn giữ. Sao lưu hằng ngày chép thêm ảnh mới sang `data/backups/<id>/uploads/` (nút "Tải bản sao lưu" vẫn chỉ là file DB). Ảnh tải lên nhưng chưa gắn sản phẩm nào (`product_id` NULL) chưa có việc dọn.
+- **Danh mục** (`categories`, cây): lọc theo danh mục luôn **gồm con cháu** (`server/lib/categories.js`, dùng cho sản phẩm, `/variants`, `/stock`, báo cáo). Đổi cha tạo vòng → `CATEGORY_CYCLE`. Lưu trữ danh mục còn sản phẩm → `CATEGORY_IN_USE` (hoặc kèm `move_products_to` để chuyển sang danh mục khác); còn danh mục con → `CATEGORY_HAS_CHILDREN`. Trang Sản phẩm có tab "Danh mục" (thêm, đổi tên, chọn cha, sắp thứ tự, lưu trữ, số sản phẩm).
+- **Combo** có nút "+ Combo" và form riêng (tên, ảnh, SKU, giá, danh mục, shop, thành phần × số lượng, giá vốn ước tính, số bán được); form sản phẩm thường không còn ô "Loại". Danh sách lọc theo loại Sản phẩm/Combo và danh mục.
 - **Niêm yết theo shop** (`shop_listings`): biến thể được bán ở shop nào, giá bán riêng của shop, trạng thái đang bán/ngừng.
 - **Đồng bộ sản phẩm giữa shop** = tạo niêm yết ở shop đích từ niêm yết của shop nguồn (chọn từng sản phẩm hoặc toàn bộ). Thông tin sản phẩm dùng chung (vì là sản phẩm gốc), giá được chép sang rồi chỉnh riêng. Tuỳ chọn: ghi đè giá nếu đã tồn tại.
 - **Combo**: biến thể `kind = 'bundle'` gồm các biến thể đơn (không lồng combo) kèm số lượng mỗi combo (`bundle_components`). Combo **không có tồn riêng**: số bán được = min theo thành phần (tồn / SL mỗi combo); nhập hàng, điều chỉnh, chuyển kho, kiểm kê chỉ làm trên thành phần (chặn `BUNDLE_NO_STOCK`). Bán combo trừ kho từng thành phần; giá vốn dòng = Σ SL × giá vốn thành phần lúc bán; ảnh chụp thành phần + giá vốn lưu ở `order_line_components` để huỷ đơn/trả hàng hoàn đúng kể cả khi công thức combo đổi sau. Biến thể đã có lịch sử kho/đơn không đổi loại được (`KIND_LOCKED`).
@@ -154,6 +158,7 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
 - Không cho tồn âm theo mặc định (cấu hình `allow_negative_stock` trong settings, mặc định `false`). Đơn import từ kênh có thể vượt tồn → được phép nhưng gắn cờ cảnh báo.
 - **Kiểm kho**: phiếu kiểm kê nhiều bước (`stock_counts`): tạo phiếu (chụp tồn) → nhập số đếm dần, lưu giữa chừng → hoàn tất sinh `adjust_in/out` theo chênh lệch. Chênh lệch tính theo tồn hệ thống **tại lúc nhập số đếm của từng dòng**, nên hàng bán trước hoặc sau lúc đếm không làm sai. Dòng chưa đếm: bỏ qua (mặc định) hoặc coi là 0. Thiếu giá vốn cho hàng nhập lần đầu thì cả phiếu không áp. Phiếu đã chốt không sửa.
 - **Chuyển kho**: `transfer_out` + `transfer_in` với cùng giá vốn.
+- **Một đơn lấy từ nhiều kho**: khi xác nhận, `planAllocation` (`server/modules/orders/allocation.js`) chia từng biến thể có tồn (combo tách thành thành phần × SL) theo thứ tự kho của shop; tồn được trừ ảo dần qua các dòng. Hết tồn mọi kho thì phần còn lại dồn vào kho ưu tiên 1 và đánh dấu thiếu: bị chặn `STOCK_NOT_ENOUGH` trừ khi cho phép âm kho (đơn import). Mỗi phần ghi một `sale_out` riêng và một dòng `order_line_allocations` (kho, SL, `unit_cost` = giá bình quân của **chính kho đó** lúc xuất, chụp lại, không tính lại). Phân bổ tay (`lines[].allocations`, lưu ở `order_lines.planned_allocations` cho đơn nháp): tổng từng biến thể phải bằng SL cần (`ALLOCATION_MISMATCH`), kho ngoài danh sách của shop chỉ bị cảnh báo. `POST /orders/allocation-preview` xem trước, không ghi.
 
 ### 5.4 Nhập hàng (Purchase)
 - **Nhà cung cấp** (`suppliers`).
@@ -185,8 +190,15 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
   - `draft`: chưa ảnh hưởng gì.
   - `confirmed`: **trừ kho** (sale_out), chụp giá vốn.
   - `cancelled` từ confirmed/shipping: **cộng lại kho**.
-  - Trả hàng: phiếu trả (`order_returns`) cộng kho với giá vốn đã chụp, ghi giảm doanh thu.
+  - Trả hàng: phiếu trả (`order_returns`) cộng kho với giá vốn đã chụp, ghi giảm doanh thu. **Phiếu trả kiểu KiotViet** (migration 027), kênh thường:
+    - `goods_amount`: giá trị hàng trả = phần tiền thực của dòng (đã trừ giảm giá dòng và giảm giá đơn chia) theo SL, **làm tròn luỹ kế** (giá trị luỹ kế sau lần này − tổng đã trả trước đó; trả hết dòng thì tổng đúng bằng tiền thực của dòng, `returnLineValue`).
+    - `shipping_refund_amount`: hoàn phí ship cho khách (tối đa phí ship còn lại của đơn). `return_fee_amount`: phí trả hàng shop giữ lại (tối đa hàng + ship hoàn; shop giữ toàn bộ tiền thì đặt phí = giá trị trả). `return_shipping_cost`: ship chiều về shop chịu.
+    - **Cần trả khách** = hàng + ship hoàn − phí trả hàng. `refund_amount` = tiền trả ngay (kèm phương thức), không vượt cần trả khách và số khách đã trả.
+    - Trên đơn: `returned_goods_amount`, `returned_shipping_amount`, `return_fee_amount`, `return_shipping_cost` (tổng các phiếu); `returned_amount` = hàng + ship hoàn − phí trả hàng = **mức giảm số phải thu** (mọi công thức công nợ `total − returned_amount − paid` giữ nguyên); `refund_owed_amount` = max(0, đã thu − phải thu) = **shop còn nợ khách**, hoàn sau bằng thanh toán chiều chi (tối đa số còn nợ). Đơn COD khách không nhận: trả hết + hoàn hết ship, tiền trả 0 → không còn phải thu, không còn doanh thu ship.
+    - **Kênh sàn**: sàn tự hoàn tiền cho người mua → không có ship hoàn, phí trả hàng, tiền trả khách (chặn `MARKETPLACE_RETURN`); hàng trả giảm phải thu sàn (1388); ship chiều về vẫn nhập được. Phí sàn vẫn giả định không được hoàn.
+    - Lãi gộp đơn = `net_amount` − ship hoàn − hàng trả + phí trả hàng − giá vốn − ship chiều về (`orderGrossProfit`).
   - Bán trực tiếp: nút "Bán ngay" đi thẳng `draft → completed` + thanh toán đủ trong 1 bước.
+  - Giao diện luôn gửi `customer_id` (khách mới được tạo qua `POST /customers` trước rồi mới chọn) nên đơn từ giao diện không tự sinh hồ sơ trùng. Đơn nháp sửa được qua `PATCH /orders/:id` (chỉ nháp).
 - **Tiền trên đơn**:
   - `subtotal` = Σ(đơn giá × SL) dòng
   - `discount_amount` (giảm giá đơn) + giảm giá từng dòng
@@ -196,6 +208,8 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
   - `net_amount` = total − platform_fee − seller_shipping (**shop thực nhận**)
   - `cogs_amount` = Σ giá vốn dòng
   - `gross_profit` = net − cogs (tính khi báo cáo, có cả chi phí trả hàng)
+  - **Giá vốn lưu thành tổng tiền**: `order_lines.cogs_amount` = Σ (SL − đã nhập lại) × `unit_cost` của các phân bổ còn hiệu lực (0 khi nháp/huỷ); `orders.cogs_amount` = Σ các dòng. `order_lines.unit_cost` chỉ để hiển thị (`round(cogs/SL)`) vì chia nhiều kho thì đơn giá không còn nguyên. Mọi báo cáo dùng `SUM(cogs_amount)`; báo cáo theo kho cộng từ phân bổ của kho đó. `orders.warehouse_id` = kho chính.
+  - **Huỷ / trả hàng**: nhập lại đúng kho đã xuất, đúng giá vốn đã chụp. Trả một phần lấy từ phân bổ tạo sau cùng trước (LIFO); phiếu trả có thể chọn kho nhận khác (giá vốn hoàn vẫn là giá đã chụp). Trả không nhập lại (hàng hỏng) không đổi giá vốn. `cogs_amount` giảm đúng bằng giá vốn đã hoàn. `npm run check-stock` đối chiếu tồn với sổ kho và `cogs_amount` với phân bổ.
   - `paid_amount`, `payment_status`: `unpaid | partial | paid | refunded`
   - **Số tiền cần thu** khác nhau theo kênh: kênh sàn (`channels.is_marketplace = 1`) → cần thu `net_amount` (sàn trừ phí rồi mới trả shop); kênh khác → cần thu `total_amount` (phí ship shop chịu là khoản chi riêng). Đều trừ phần hàng đã trả.
 - **Phiếu bán hàng**: trang in khổ A5/80mm từ đơn, có logo/tên shop, không gọi là "hoá đơn".
@@ -218,7 +232,7 @@ Sau đó vào Tổng quan; nếu còn thiếu kho/sản phẩm ở shop đầu t
 - Chi phí có **phương thức trả** (`method`): quyết định tiền chi ra khỏi quỹ nào, và được tính là tiền ra trong dòng tiền.
 - **Thanh toán** (`payments`): thu từ đơn, trả nhà cung cấp, hoàn tiền khách, NCC hoàn tiền. Phương thức: tiền mặt, chuyển khoản, Shopee payout, COD, thẻ, ví, khác. Huỷ phiếu nhập đã trả tiền NCC bắt buộc ghi nhận NCC hoàn tiền (`PURCHASE_PAID`).
 - **Quỹ tiền** (`cash_accounts`, `cash_entries`): két tiền mặt, tài khoản ngân hàng, ví. Mỗi phương thức thanh toán thuộc đúng một quỹ (mặc định: Tiền mặt = cash, cod; Ngân hàng = các phương thức còn lại). **Số dư không lưu, luôn tính từ sổ**: số dư đầu (tại `opening_date`) + thu − chi − chi phí theo phương thức ± chuyển quỹ ± điều chỉnh. Chuyển quỹ = hai dòng đối ứng (tổng không đổi, huỷ cả hai phía). **Kiểm đếm** ghi phần chênh thành một dòng điều chỉnh, không sửa thu chi cũ. Phương thức chưa gán quỹ được báo riêng (`unassigned`).
-- **Đối soát Shopee**: tiền đơn Shopee hoàn thành nhưng chưa ghi nhận payout = "tiền đang treo".
+- **Đối soát sàn**: tiền đơn của một kênh sàn (Shopee, TikTok Shop, kênh sàn tuỳ chỉnh) đã hoàn thành nhưng chưa ghi nhận tiền về = "tiền đang treo". Mỗi sàn đối soát riêng (`/reconciliation/pending?channel_id=`); ghi nhận tiền về dùng phương thức payout của sàn đó (`shopee_payout`, `tiktok_payout`; kênh sàn tuỳ chỉnh dùng `bank`) và từ chối đơn thuộc kênh khác. Báo cáo dòng tiền tách tiền treo theo sàn (`marketplace_by_channel`).
 
 ### 5.9 Báo cáo & Sức khoẻ kinh doanh
 Lọc: khoảng thời gian, shop (1 / nhiều / tất cả), kênh, danh mục. So sánh với kỳ trước.
@@ -246,6 +260,7 @@ Hiệu năng: bảng đệm `daily_stats(business_date, shop_id, channel_id)` (m
 - **Dòng tiền** tính cả chi phí là tiền ra. Lọc theo shop: chi phí chung không thuộc shop nào nên báo riêng (`shared_expenses_not_included`).
 - **Ước tính thuế** (`tax_enabled`, `tax_rules`): **mặc định tắt và app không tự đặt mức thuế nào** vì mức thuế/ngưỡng của hộ kinh doanh thay đổi theo thời kỳ (các nguồn tra cứu còn mâu thuẫn nhau). Người dùng tự nhập các khoản (tỷ lệ %, cơ sở tính: doanh thu thuần / + phí ship / lợi nhuận ròng, ngưỡng miễn thuế cả năm). Ngưỡng tính cộng dồn từ đầu năm dương lịch, thuế một kỳ = thuế cộng dồn cuối kỳ − trước kỳ nên cộng các kỳ liền nhau ra đúng cả năm. Là thuế của cả hộ nên không tính khi lọc shop/kênh. Chỉ là ước tính để thấy lợi nhuận sau thuế, không phải tờ khai.
 - **Xuất Excel** từ mọi tab báo cáo (đúng cái đang xem, mỗi bảng một sheet, tiền và tỷ lệ là số).
+- **Từ điển chỉ số và phạm vi hiển thị** (`web/src/metrics.js`, một nguồn): mỗi chỉ số có nghĩa, cách tính, nguồn (đơn trạng thái nào, theo ngày nào, hàng trả tính vào ngày đơn gốc), phạm vi (`filter`: theo shop & kênh đang lọc; `shop_plus_shared`: shop + chi phí chung được chia; `account`: toàn tài khoản như công nợ NCC, số dư quỹ, thuế; `warehouse`: tồn kho theo shop, tính đến hôm nay) và link tới dữ liệu gốc. Nút ⓘ ở mọi KPI, dòng và cột của Báo cáo và Tổng quan. Đầu trang Báo cáo luôn có dải "Đang xem: shop · khoảng ngày · kênh · so với kỳ trước". Server trả `meta.scope` (chỉ thêm) cho overview, cashflow, aging, health, inventory. Khi sửa công thức ở `server/modules/reports` phải sửa định nghĩa ở `metrics.js`; test quét mọi `metric=` để không có khoá thiếu. Excel xuất kèm sheet "Giải thích".
 - **Cách đọc số liệu** (`/guide`, trong menu): thay vì nhìn hàng chục chỉ số, trả lời 5 câu hỏi (Tiền có đủ không? Bán có lời không? Hàng có kẹt/sắp hết không? Khách có quay lại không? Chi phí có phình ra không?), mỗi câu có màu xanh/vàng/đỏ, số chính và việc nên làm; kèm từ điển từng con số. Chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên (quỹ âm, đang lỗ); không bịa ngưỡng mới.
 
 ### 5.10 Loyalty & Campaign
@@ -261,10 +276,15 @@ Một module gộp mọi việc chăm sóc khách (trước đây là trang Chă
 
 ### 5.11 Trường tuỳ chỉnh & Công thức
 - Định nghĩa trường tuỳ chỉnh cho đối tượng: `product`, `customer`, `order`, `purchase`. Kiểu: text, number, money, date, select, multi-select, boolean, **formula**.
-- **Phạm vi trường**: sản phẩm/đơn/phiếu nhập: toàn hệ thống (mặc định, để cộng gộp được giữa shop) hoặc riêng 1 shop. **Khách hàng: luôn riêng 1 shop** (bắt buộc `shop_id`); khoá chỉ cần duy nhất trong shop; đọc/ghi giá trị luôn kèm `shop_id`. Trường có thể mang `role` (`birth_date`, `birth_year`, `element`) để app biết dùng vào việc gì (tính mệnh, nhắc sinh nhật). Gộp khách: giá trị của hồ sơ giữ lại thắng, trường còn thiếu lấy từ hồ sơ bị gộp.
+- **Phạm vi trường**: sản phẩm/đơn/phiếu nhập: toàn hệ thống (mặc định, để cộng gộp được giữa shop) hoặc riêng 1 shop. **Khách hàng: luôn riêng 1 shop** (bắt buộc `shop_id`); khoá chỉ cần duy nhất trong shop; đọc/ghi giá trị luôn kèm `shop_id`. Trường bắt buộc (`required`) chỉ chặn khi yêu cầu xoá/để trống chính nó: bản ghi cũ thiếu giá trị vẫn sửa được các ô khác (giao diện vẫn hiện `*`). Hiện lại trường đã ẩn thì kiểm lại vai trò và khoá trùng (`DUPLICATE_ROLE`, `DUPLICATE_KEY`). Trường có thể mang `role` (`birth_date`, `birth_year`, `element`) để app biết dùng vào việc gì (tính mệnh, nhắc sinh nhật). Gộp khách: giá trị của hồ sơ giữ lại thắng, trường còn thiếu lấy từ hồ sơ bị gộp.
 - **Trường công thức**: biểu thức an toàn (không `eval`) trên các trường của chính bản ghi, vd `{total_amount} - {cogs_amount} - {custom.phi_dong_goi}`. Hàm: `IF, ROUND, MIN, MAX, ABS, DAYS_BETWEEN, TODAY`.
 - **Chỉ số tuỳ chỉnh cho báo cáo**: công thức trên các chỉ số tổng hợp, vd `{net_revenue} / {order_count}`, áp dụng được cho 1 shop / nhiều shop.
 - Lưu giá trị: bảng EAV `custom_values(entity_type, entity_id, field_id, value_text, value_num)`.
+- **Danh mục biến** (`server/modules/custom/variables.js`, một nguồn cho cả kiểm tra lẫn gợi ý): chỉ cột có nhãn tiếng Việt, không có id, thời điểm nội bộ, JSON, cột khách cũ. Khách có thêm biến theo shop `shop_order_count`, `shop_total_spent`, `shop_last_order_at`. Công thức trường chỉ nhận biến trong danh mục + `{custom.khoá}` (lỗi nêu tên biến và vị trí); công thức đã lưu từ trước vẫn đọc được vì chỉ kiểm khi tạo/sửa. Chỉ số báo cáo chỉ nhận biến trong `REPORT_VARIABLES` (`reports/service.js`).
+- Hàm: `IF ROUND MIN MAX ABS DAYS_BETWEEN TODAY CONCAT YEAR MONTH COALESCE` (`FUNCTION_DOCS` trong `formula.js`). CONCAT coi giá trị thiếu là chuỗi rỗng, COALESCE lấy giá trị đầu tiên có dữ liệu, còn lại giá trị thiếu lan truyền.
+- **Xem trước**: `POST /custom/formula/preview` tính trên bản ghi mẫu (gần nhất trong shop, hoặc `entity_id`); chỉ số báo cáo tính trên tháng này. Lỗi trả kèm `position`.
+- **Vai trò** (`role`): chỉ đúng đối tượng (khách: ngày sinh, năm sinh, mệnh; sản phẩm: mệnh/ngũ hành), mỗi shop một trường mỗi vai trò. **Bắt buộc** (`required`): kiểm khi lưu giá trị qua `PUT /custom/values`, không áp cho trường công thức.
+- Giao diện quản lý trường là một component dùng chung (`FieldsManager`) cho Cài đặt và trang Khách hàng; ô soạn công thức là `FormulaEditor`.
 
 ### 5.12 API & Webhook
 - REST tại `/api/v1`. Xác thực bằng **session cookie** (web) hoặc **API key** (`Authorization: Bearer tk_live_…`, lưu dạng hash, có quyền `read`/`write`).
@@ -280,12 +300,49 @@ Một module gộp mọi việc chăm sóc khách (trước đây là trang Chă
 - Vì chạy trong mạng LAN, vẫn bắt buộc đăng nhập (người khác cùng wifi có thể mở được).
 - Lên VPS: đặt sau reverse proxy có HTTPS (Caddy), bật cookie `Secure`.
 
+### 5.15 Nền tảng bán hàng (plugin)
+- Danh mục nền tảng ở `server/lib/platforms.js` (như `industries.js`): `shopee`, `tiktok` (TikTok Shop), `facebook`, `zalo`. Mỗi nền tảng gồm kênh, `is_marketplace`, phương thức payout (chỉ sàn), mẫu import dựng sẵn, chức năng (`import`, `reconciliation`). Thêm nền tảng = thêm một mục ở đó + migration seed kênh (lưu trữ sẵn) và mẫu import.
+- Cài đặt `enabled_platforms` (mặc định `["shopee","facebook"]`, tài khoản cũ giữ hành vi cũ) chỉ đổi qua `POST /platforms/:id/enable|disable`, không qua `PATCH /settings`. **Bật**: bỏ lưu trữ kênh, bảo đảm mẫu import tồn tại, bảo đảm phương thức payout thuộc một quỹ (mặc định quỹ ngân hàng). **Tắt**: chỉ lưu trữ kênh; đơn, tiền treo, mẫu import, phương thức payout giữ nguyên. Đều ghi `audit_log`.
+- Phương thức thanh toán hợp lệ = phương thức gốc + payout của mọi nền tảng (`paymentMethods()`), nên đơn cũ trả bằng payout của nền tảng đã tắt vẫn hợp lệ; giao diện chỉ ẩn payout của nền tảng đang tắt khỏi bộ chọn.
+- Kênh tuỳ chỉnh: `POST/PATCH /channels` (id `ch_…`, tên không trùng, `is_marketplace`, lưu trữ). Kênh dựng sẵn không sửa qua đây. Đã có đơn thì không đổi loại kênh (sàn/thường) vì đổi cách tính số tiền cần thu. `GET /channels` chỉ trả kênh đang bật; `?include_archived=1` trả cả kênh đã tắt (để đọc tên kênh của đơn cũ).
+- Mẫu import TikTok (`imp_tiktok`) là **mẫu khởi đầu** theo tên cột file xuất đơn của TikTok Seller Center, chưa kiểm với file thật, sửa được ở trình sửa mẫu; file xuất đơn không có phí sàn.
+- Giao diện: Cài đặt → "Nền tảng bán hàng" (thẻ nền tảng + công tắc Kết nối + kênh tuỳ chỉnh); tab "Đối soát sàn" ở Chi phí & đối soát (chọn sàn trong các sàn đang bật, ẩn nếu không có sàn nào); Tổng quan tách "Tiền sàn đang treo" theo sàn. `session` có `platforms`, `platformEnabled(id)`, `marketplaces`, `channels` (đang bật) và `allChannels` (gồm đã tắt).
+
 ### 5.14 Ngành bán
 - Mỗi shop chọn một **ngành bán** (`shops.industry`, đổi trong Cài đặt → Shop & kho). Danh mục ngành nằm ở `server/lib/industries.js`: `general` (Bán lẻ chung), `phong_thuy`, `nuoc_hoa_o_to` (nước hoa/tinh dầu/phụ kiện thơm cho xe: nhóm hương, dòng xe, mua cho xe nào), `nuoc_hoa` (nước hoa mặc cho người: nhóm hương, nồng độ, thương hiệu yêu thích, phong cách, dịp dùng, ngân sách, sinh nhật). Hai ngành nước hoa **tách biệt**: khách và cách bán khác nhau nên trường khách và giao diện khác nhau. Thêm ngành = thêm một mục ở đó (và một theme CSS nếu muốn giao diện riêng).
-- Ngành quyết định: (1) **theme giao diện** (mục 7A), (2) **tính năng** bật theo ngành (`feng_shui`: mệnh, ngũ hành, âm lịch, doanh thu theo ngũ hành, gợi ý theo mệnh), (3) **trường thông tin khách tạo sẵn** cho shop.
+- Ngành quyết định: (1) **theme giao diện** (mục 7A), (2) **tính năng** bật theo ngành (`feng_shui`: mệnh, ngũ hành, âm lịch, doanh thu theo ngũ hành, gợi ý theo mệnh), (3) **trường thông tin khách tạo sẵn** cho shop, (4) **trường thông tin sản phẩm tạo sẵn** (`product_fields`, riêng shop đó). Ngành phong thuỷ có `ngu_hanh` ("Ngũ hành hợp", nhiều lựa chọn, vai trò `element`): `applyIndustry` tạo cho shop, báo cáo theo ngũ hành đọc theo shop của đơn (shop không có trường, ví dụ ngành khác, hoặc sản phẩm chưa gán → "chưa gán"), gợi ý theo mệnh đọc theo shop đang xem. Khoá trường sản phẩm duy nhất trong phạm vi shop nên hai shop phong thuỷ đều có `ngu_hanh` riêng.
 - Chọn/đổi ngành chỉ **thêm** trường còn thiếu (theo khoá hoặc vai trò), không xoá hay ẩn gì: trường và dữ liệu của ngành cũ vẫn giữ.
 - Chủ shop tự thêm/sửa/ẩn trường khách của shop trong trang Khách hàng → "Thông tin khách của shop".
 - Chuyển shop ở bộ chọn shop thì giao diện, tính năng và trường khách đổi theo. "Tất cả shop" dùng giao diện chung, không có thông tin riêng của shop nào.
+
+### 5.16 Kế toán (sổ cái kép, Phase 8a + 8b)
+- **Sổ cái là dữ liệu dẫn xuất**, cùng mẫu với `daily_stats` (5.9): trigger SQLite trên `orders`, `order_lines`, `order_line_allocations`, `order_returns`, `purchases`, `payments`, `expenses`, `cash_entries`, `cash_accounts`, `stock_movements` (chỉ `adjust_in/out`, `damage_out`, `opening`) ghi `(source_type, source_id)` vào `journal_dirty`. `flushJournal()` chạy trước mọi lần đọc sổ kế toán: xoá bút toán tự động cũ của chứng từ bẩn rồi sinh lại từ trạng thái hiện tại bằng hàm thuần `postingsFor()` (`server/modules/accounting/posting.js`). Mã bút toán (`BT-…`) giữ nguyên khi sinh lại. Bút toán tay (`is_auto = 0`, `source_type = 'manual'`, làm ở 8b) không bao giờ bị sinh lại.
+- Mỗi bút toán phải cân (Σ Nợ = Σ Có): chặn khi sinh, kiểm lại ở `verifyJournal()`; `npm run check-journal [-- --fix]` (như `check-stats`) so sổ lưu với sổ dựng lại trong bộ nhớ, phát hiện thiếu/thừa/sai/không cân/mồ côi.
+- **Hệ thống tài khoản** (`accounts`): 111/112 (tiền mặt, ngân hàng/ví; mỗi quỹ một tài khoản con 111x/112x tạo tự động bằng trigger), 1131 tiền đang chuyển, 131, 1388, 156, 211, 214, 242, 331, 3388, 411, 421, 5111, 5113, 5118 (doanh thu khác: phí trả hàng, dòng doanh thu riêng trong KQKD), 5212, 632, 6411–6418, 6422, 6428, 711, 811. Tài khoản hệ thống không đổi/xoá; thêm được tài khoản con. Danh mục chi phí gán tài khoản chi phí (`expense_categories.account_code`, mặc định theo bảng seed; danh mục mới chưa gán → 6428).
+- **Quy tắc hạch toán** khớp ĐÚNG cách báo cáo đếm (cùng trạng thái, cùng ngày):
+  | Chứng từ | Bút toán | Ngày |
+  |---|---|---|
+  | Đơn đã xác nhận trở đi, kênh thường | Nợ 131 total · Có 5111 hàng (sau giảm giá) · Có 5113 phí ship · Nợ 6411 phí sàn / Nợ 6412 ship shop chịu, Có 3388 · Nợ 632 / Có 156 giá vốn | ngày đơn |
+  | Đơn kênh sàn | Nợ 1388 net · Nợ 6411 · Nợ 6412 · Có 5111 · Có 5113 · giá vốn như trên | ngày đơn |
+  | Phiếu trả hàng | Nợ 5212 hàng trả · Nợ 5113 ship hoàn · Có 131 (hoặc 1388) phần còn lại sau phí trả hàng · Có 5118 phí trả hàng (cấn vào công nợ khách) · Nợ 6412 / Có 3388 ship chiều về · nhập lại kho: Nợ 156 / Có 632 theo giá vốn đã chụp. Phí sàn không hoàn | ngày của ĐƠN GỐC (như báo cáo) |
+  | Thanh toán | Thu: Nợ quỹ / Có 131 (hoặc 1388, 331 khi NCC hoàn); chi/hoàn: ngược lại. Quỹ = tài khoản con của quỹ chứa phương thức; chưa gán quỹ → 1131 (cảnh báo ở Tổng quan) | ngày thanh toán |
+  | Phiếu nhập đã nhận | Nợ 156 / Có 331 tổng phiếu. Huỷ/nháp: không có bút toán | ngày nhận |
+  | Chi phí | Nợ tài khoản danh mục (kèm shop) / Có quỹ theo phương thức, trống thì 3388. Chi phí chung giữ shop NULL | ngày chi phí |
+  | Kho | adjust_in: Nợ 156 / Có 711 · adjust_out, hỏng: Nợ 811 / Có 156 · tồn đầu: Nợ 156 / Có 411 · chuyển kho: không có | ngày biến động |
+  | Quỹ | Số dư đầu: Nợ quỹ / Có 411 · chuyển quỹ: Nợ đích / Có nguồn · kiểm đếm thừa: Nợ quỹ / Có 711, thiếu: Nợ 811 / Có quỹ | ngày dòng |
+  - Thu chi **trước ngày mở sổ** của một quỹ đã nằm trong số dư đầu (khớp `cash/balanceOf`), nên phía tiền được ghi vào 411 thay vì tài khoản quỹ.
+- **Báo cáo** (`/accounting`, giao diện "Kế toán → Sổ kế toán"): tổng quan, sổ nhật ký, sổ cái (bấm mở chứng từ gốc), cân đối phát sinh, KQKD (lọc kỳ và shop), cân đối kế toán (luôn toàn tài khoản; lợi nhuận lũy kế chưa kết chuyển hiện thành "421 – lợi nhuận kỳ này"), lưu chuyển tiền trực tiếp, hệ thống tài khoản; xuất Excel từng tab; ⓘ giải thích ở `metrics.js`.
+- **KQKD theo shop** dùng đúng hàm phân bổ chi phí chung của báo cáo (`expenseItems`), nên lợi nhuận từng shop = báo cáo. Điều chỉnh kho/kiểm đếm quỹ (711/811) không thuộc shop nào nên chỉ có khi xem tất cả shop; báo cáo không đếm chúng, nên KQKD tất cả shop = lợi nhuận báo cáo + các khoản đó.
+- **Chênh lệch có chủ đích với báo cáo**: (1) tài khoản 156 lệch vài đồng so với Σ tồn × giá vốn bình quân do làm tròn giá bình quân và giá nhập phân bổ về đồng nguyên (cận trên nêu trong test); (2) báo cáo cắt công nợ mỗi đơn ở 0, sổ cái giữ số dư có (đơn sàn trả toàn phần: sàn không hoàn phí nên shop nợ sàn phần phí); (3) phí sàn/ship shop chịu trên đơn kênh thường ghi phải trả khác (3388) vì chưa có dòng tiền.
+- **8b. Nghiệp vụ bổ sung** (migrations 025, 026):
+  - **Chứng từ tay** (`vouchers` + bút toán `source_type='manual'`, `is_auto=0`, không bao giờ sinh lại; `verifyJournal` chỉ kiểm chúng có cân). Ba loại: Phiếu thu khác `PT-` (Nợ quỹ / Có tài khoản đối ứng: 411 góp vốn, 711 thu khác), Phiếu chi khác `PC-` (Nợ đối ứng: 811 tiền phạt, 411 rút vốn / Có quỹ), Bút toán tổng hợp `BT-` (nhiều dòng, phải cân). Có ngày, mô tả, shop và đối tác tuỳ chọn. Sửa = thay các dòng trong cùng transaction; huỷ = `voided_at`, không xoá; phát sự kiện `voucher.*` và ghi `audit_log`. Không hạch toán vào tài khoản tổng 111/112/1131; phiếu thu/chi không đối ứng với quỹ khác (dùng chuyển quỹ); dòng tiền không được lập trước ngày mở sổ của quỹ (`CASH_BEFORE_OPENING`).
+  - **Dòng tiền của chứng từ tay và tài sản vào số dư quỹ**: `cash/balanceOf` cộng thêm (a) Nợ − Có của các bút toán tay trên tài khoản 111x/112x của quỹ (mọi ngày đến ngày xem; vì cấm lập trước ngày mở sổ nên không cần cận dưới), (b) nguyên giá tài sản mua bằng phương thức thuộc quỹ (như chi phí). Sổ quỹ (`cash/ledger`) có thêm các dòng đó. Nhờ vậy số dư tài khoản 111x/112x luôn bằng `balanceOf` (test mở rộng).
+  - **Chi phí định kỳ** (`recurring_expenses`; `expenses.recurring_id`, `period_key`, unique `(recurring_id, period_key)` nên không bao giờ trùng, kể cả chi phí đã huỷ vẫn giữ khoá kỳ). Chu kỳ tháng (ngày 1–31, tháng ngắn lấy ngày cuối), tuần (1 = thứ Hai … 7), năm. Job `server/jobs/recurring.js` chạy khi khởi động rồi mỗi giờ, từng tài khoản, tạo mọi kỳ đến hạn còn thiếu (tạo bù khi máy tắt). Tiếp tục sau tạm dừng không tạo bù thời gian tạm dừng (`skip_before`). Kỳ rơi vào kỳ đã khoá sổ bị bỏ qua và báo lại. "Tạo ngay kỳ này", xem trước các kỳ sắp tới, lưu trữ thay vì xoá. Chi phí định kỳ là dòng `expenses` thật nên vào Báo cáo như mọi chi phí. Hàm lịch thuần ở `server/lib/schedule.js`.
+  - **Tài sản & chi phí trả trước** (`assets`): `fixed_asset` (211, hao mòn 214) hoặc `prepaid` (242). Mua: Nợ 211/242 / Có quỹ theo phương thức hoặc 331 nếu chưa trả (phiếu chi tay để trả sau). Mỗi tháng đã trọn một bút toán Nợ 641x/642x / Có 214 hoặc 242, ghi vào ngày CUỐI THÁNG, kỳ đầu là tháng của ngày mua; chia bằng `allocate()` nên Σ các kỳ = nguyên giá. Thanh lý: dừng khấu hao từ ngày thanh lý (tháng chưa trọn không tính), giá trị còn lại vào 811 (đơn giản hoá: tiền bán tài sản ghi bằng phiếu thu tay). Huỷ bản ghi nhập nhầm = `voided_at`.
+  - **Khấu hao luôn mới**: bút toán tài sản phụ thuộc "hôm nay" (`server/lib/clock.js`, test đặt được ngày giả). `flushJournal` đọc mốc `journal_meta.asset_day`; khi ngày đổi (kể cả đồng hồ giả lùi/tiến) nó đánh dấu bẩn mọi tài sản chưa huỷ một lần rồi sinh lại, cùng ngày thì không làm gì. `verifyJournal` dựng sổ kỳ vọng bằng cùng "hôm nay" nên luôn khớp.
+  - **Khoá sổ** (`accounting_lock_date`, đặt qua `POST /accounting/lock`, có kiểm tra ở `PATCH /settings`): chứng từ tay, chi phí, thanh toán (cả huỷ), chuyển quỹ/kiểm đếm quỹ, tài sản có ngày ≤ ngày khoá (cả ngày cũ lẫn ngày mới khi sửa) bị chặn `409 PERIOD_LOCKED`. Đơn và phiếu nhập KHÔNG bị chặn (đơn sàn import muộn là bình thường); lúc khoá app chụp số dư mọi tài khoản đến ngày khoá (`period_lock_snapshots`, kèm băm), trang Tổng quan so lại và báo "kỳ đã khoá có thay đổi sau khoá" với danh sách tài khoản đổi; "Chấp nhận và chụp lại" bằng cách khoá lại cùng ngày.
+  - **KQKD và báo cáo**: khấu hao/phân bổ là dòng riêng (`depreciation`), không nằm trong 641x/642x; có `operating_profit_before_depreciation`. Khấu hao KHÔNG có trong "Lợi nhuận ròng ước tính" của Báo cáo (nó không phải dòng chi phí), chi phí định kỳ thì có ở cả hai. Quyết định giữ nguyên số của Báo cáo ở giai đoạn này; chênh lệch giữa lợi nhuận kế toán và Báo cáo = khấu hao + thu/chi khác (711/811, gồm chứng từ tay, thanh lý) + chênh lệch kho/quỹ, đã ghi ở giao diện và `metrics.js` (`acc_depreciation`, `acc_other`, `acc_lock`). Khấu hao của tài sản "Chung" (không shop) không chia về shop khi lọc shop, như điều chỉnh kho.
+  - Giao diện thêm các tab Chứng từ, Chi phí định kỳ, Tài sản & phân bổ, Khoá sổ (xuất Excel cho ba danh sách đầu), ánh xạ danh mục chi phí → tài khoản và tạo danh mục ở tab Hệ thống tài khoản.
 
 ---
 
@@ -300,11 +357,14 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | (master.db) `accounts`, `sessions`, `api_key_index` | sổ tài khoản: đăng nhập, phiên, tra key → tài khoản (mục 3A) |
 | `shops` | mảng kinh doanh; `default_warehouse_id`, `code_prefix` |
 | `warehouses` | kho |
-| `channels` | kênh bán (seed sẵn 4 kênh) |
+| `channels` | kênh bán (seed sẵn direct/facebook/shopee/other; tiktok, zalo seed ở trạng thái tắt; kênh tuỳ chỉnh `ch_…`) |
 | `categories` | danh mục sản phẩm (cây) |
-| `products`, `variants` | sản phẩm gốc & SKU |
+| `products`, `variants` | sản phẩm gốc & SKU (`options`, `option_values`, `image_id`) |
+| `product_images` | chỉ mục ảnh sản phẩm (file ở `data/uploads/<account>/`), nơi kiểm quyền đọc ảnh |
 | `shop_listings` | biến thể bán ở shop nào, giá bao nhiêu |
 | `stock_levels`, `stock_movements` | tồn kho & sổ cái kho |
+| `shop_warehouses` | danh sách kho của shop theo ưu tiên (1 = lấy trước) |
+| `order_line_allocations` | từng phần xuất kho của dòng đơn: kho, SL, giá vốn chụp, SL đã nhập lại |
 | `stock_counts`, `stock_count_lines` | kiểm kê |
 | `suppliers`, `purchases`, `purchase_lines` | nhập hàng |
 | `customers`, `customer_notes` | hồ sơ khách chung |
@@ -316,7 +376,14 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | `custom_fields`, `custom_values`, `report_metrics` | tuỳ chỉnh |
 | `loyalty_tiers`, `reminders`, `message_templates` | loyalty |
 | `daily_stats`, `daily_stats_dirty` | bảng đệm tổng hợp báo cáo + ô cần tính lại (trigger trên `orders`) |
-| `cash_accounts`, `cash_entries` | quỹ tiền; chuyển quỹ và điều chỉnh kiểm đếm |
+| `cash_accounts`, `cash_entries` | quỹ tiền; chuyển quỹ và điều chỉnh kiểm đếm. `cash_accounts.account_code` = tài khoản con 111x/112x |
+| `accounts` | hệ thống tài khoản kế toán (mục 5.16) |
+| `journal_entries`, `journal_lines` | sổ nhật ký/sổ cái kép, dẫn xuất từ chứng từ (migration 024) |
+| `journal_dirty` | chứng từ cần sinh lại bút toán (trigger trên chứng từ) |
+| `vouchers` | chứng từ tay: phiếu thu/chi khác, bút toán tổng hợp; bút toán `manual` đi kèm (migration 025) |
+| `recurring_expenses` | chi phí định kỳ; `expenses.recurring_id/period_key` chống tạo trùng kỳ (migration 025) |
+| `assets` | tài sản cố định, chi phí trả trước; bút toán mua/khấu hao/thanh lý dẫn xuất (migration 026) |
+| `journal_meta`, `period_lock_snapshots` | mốc làm mới khấu hao theo ngày; ảnh chụp số liệu kỳ khoá sổ (migration 026) |
 | `events`, `webhooks`, `webhook_deliveries` | sự kiện & webhook |
 | `audit_log` | ai sửa gì, khi nào, trước/sau |
 | `sequences` | bộ đếm sinh mã hiển thị |
@@ -336,18 +403,18 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 |---|---|
 | Đăng nhập / Đăng ký / Thiết lập lần đầu | đăng ký tài khoản; tạo shop (chọn ngành) → popup tạo kho → tạo sản phẩm đầu tiên |
 | Tổng quan | doanh thu hôm nay/tháng, LN gộp, đơn chờ xử lý, cảnh báo sức khoẻ, hàng sắp hết, khách cần nhắc |
-| Bán nhanh (POS) | tìm SKU, giỏ hàng, chọn khách (gõ SĐT), giảm giá, thu tiền, "Bán ngay" |
-| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; chi tiết đơn; đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
+| Bán nhanh (POS) | tìm SKU (có ảnh), giỏ hàng, chọn khách bằng bộ chọn gọn (`CustomerPicker`, luôn gửi `customer_id`), giảm giá, thu tiền, "Bán ngay"; tự phân bổ kho, chỉ báo khi lấy từ kho phụ |
+| Đơn hàng | danh sách lọc theo trạng thái/kênh/ngày; **form tạo/sửa đơn** `/orders/new`, `/orders/:id/edit` (bố cục 7:5, một cột trên điện thoại, thanh hành động dính đáy: sản phẩm có ảnh/tồn theo kho, chọn khách có sẵn hoặc tạo nhanh, kênh, phí sàn chỉ với kênh sàn, tổng + lãi gộp ước tính, chia kho tay từ `allocation-preview`, "Lưu nháp / Xác nhận đơn / Bán xong"); chi tiết đơn (nút Sửa cho đơn nháp); đổi trạng thái; thanh toán; trả hàng; in phiếu; nhập từ file; xuất file (CSV/Excel) |
 | Import đơn | chọn file → chọn mẫu map cột → xem thử → xác nhận → kết quả |
 | Sản phẩm | danh sách theo shop, chi tiết sản phẩm + biến thể, niêm yết theo shop, đồng bộ sang shop khác |
 | Kho | tồn theo kho, lịch sử biến động, kiểm kê, chuyển kho |
 | Nhập hàng | phiếu nhập, nhà cung cấp, công nợ NCC |
 | Khách hàng | danh sách theo shop (lọc nhãn, mệnh, cột riêng), thêm khách vào shop, hồ sơ (đơn, mệnh, hạng, nhãn, thông tin riêng, ghi chú), xoá khỏi shop, gộp trùng, xuất file |
 | Loyalty & Campaign | hôm nay nên liên hệ (nhắc mua lại, sinh nhật), gợi ý theo mệnh, hạng khách, mẫu tin nhắn, tự động hoá (chưa có) |
-| Chi phí & đối soát | tab Chi phí (danh sách, thêm nhanh, chọn phương thức trả), Quỹ tiền (số dư, chuyển quỹ, kiểm đếm, sổ quỹ), Đối soát Shopee |
+| Chi phí & đối soát | tab Chi phí (danh sách, thêm nhanh, chọn phương thức trả), Quỹ tiền (số dư, chuyển quỹ, kiểm đếm, sổ quỹ), Đối soát sàn (chọn sàn) |
 | Báo cáo | các tab: Doanh thu, Lợi nhuận (kèm ước tính thuế), Chi phí, Kênh, Sản phẩm (lọc danh mục), Khách, Kho, Tiền & công nợ (số dư quỹ, dòng tiền, tuổi nợ), Chỉ số tuỳ chỉnh, Sức khoẻ; xuất Excel từng tab |
 | Cách đọc số liệu | 5 câu hỏi sức khoẻ kinh doanh có màu và việc nên làm, màu nghĩa là gì, từ điển các con số |
-| Cài đặt | shop, kho, kênh, ngưỡng sức khoẻ và cách chia chi phí chung, trường tuỳ chỉnh, thuế ước tính, API key, webhook, sao lưu, mật khẩu |
+| Cài đặt | shop, kho, nền tảng bán hàng và kênh, ngưỡng sức khoẻ và cách chia chi phí chung, trường tuỳ chỉnh, thuế ước tính, API key, webhook, sao lưu, mật khẩu |
 
 ### Phong cách
 - Nhận diện, bảng màu và quy tắc dùng màu: xem mục 7A. Token màu nằm ở `brand/tokens.css`.
@@ -355,6 +422,8 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 - Trang giao diện không dùng ngôi "cậu/tớ" (app nhiều tài khoản): dùng câu mệnh lệnh trung tính hoặc "bạn".
 - Màu trạng thái đơn là ngoại lệ chức năng (nháp xám, xác nhận xanh dương, đang giao tím, hoàn thành xanh lá, huỷ đỏ, trả hàng cam), đã giảm bão hoà trong `tokens.css` để hợp tông.
 - Nút bấm cao ≥ 44px trên điện thoại.
+- **Mật độ giao diện**: máy tính gọn kiểu CRM, điện thoại giữ ≥44px và chữ ô nhập 16px. Cỡ chữ, chiều cao ô, padding bảng/thẻ/modal là token trên `:root` (`--fs-base`, `--control-h`, `--cell-py`, `--h1`, `--kpi`…) trong `web/src/styles.css`; từ 900px trở lên đổi sang giá trị gọn (chữ 14px, ô 36px, bảng 9px 12px). Không viết cứng cỡ chữ/chiều cao ô, dùng token.
+- **Ô nhập tiền** dùng `components/MoneyInput.jsx` (hiện `1.250.000`, giữ số nguyên, căn phải), không dùng `<input type=number>`.
 
 ---
 
@@ -450,6 +519,7 @@ Mỗi module = DB migration + service + routes + UI + test + cập nhật PROGRE
 | M11 | API key, webhook, tài liệu API | M0 | Trung bình |
 | M12 | Sao lưu tự động, xuất CSV, khôi phục | M0 | Cao |
 | M13 | Giao diện web đầy đủ (làm song song từng module) | — | Bắt buộc |
+| M14 | Kế toán kép: sổ cái dẫn xuất, báo cáo kế toán (8a); chứng từ tay, chi phí định kỳ, tài sản, khoá sổ (8b) | M5, M7, M8 | Cao |
 
 ---
 
@@ -511,6 +581,7 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Công thức: tự viết bộ phân tích, không `eval`; giá trị thiếu → null, chia 0 → null | Mục 5.11 yêu cầu biểu thức an toàn. Thiếu dữ liệu mà coi là 0 sẽ ra con số trông hợp lý nhưng sai. |
 | 2026-11-03 | Nhắc mua lại: ngày hết = ngày mua gần nhất + chu kỳ × số lượng lần mua đó | Mua 3 chai nước hoa thì không hết sau 1 chu kỳ. Trạng thái xử lý gắn với ngày mua nên khách mua lại thì nhắc cũ tự hết. |
 | 2026-11-03 | Nền trang web sáng hơn Linen gốc nửa tông (`#F2EADC`), thẻ giấy `#FAF6EC`; Linen `#EDE3D2` vẫn là màu thương hiệu | Nền Linen nguyên bản thấy chói mắt khi nhìn lâu trên màn hình. Chỉ đổi lớp nền của giao diện web (`web/src/styles.css`), không đổi `brand/tokens.css`, logo hay chữ trên nền tối. Walnut/nền vẫn ≥ 12:1. |
+| 2026-11-04 | Theme `phongthuy` đặt nền sáng hơn một tông nữa: `--bg` `#F6F0E4`, `--paper` `#FCF9F3` (chỉ trong `[data-theme=phongthuy]`); thanh bên chỉ mở rộng khi `:has(:focus-visible)` thay vì `:focus-within` | Nền phong thuỷ vẫn thấy tối so với các ngành khác. Tương phản trên `--bg`: Walnut 13.9:1, Terracotta 5.1:1, Oxblood 8.2:1 (trên `--paper`: 15.0, 5.5, 8.9). Click chuột làm thanh bên kẹt mở vì `:focus-within`; focus-visible chỉ bật khi dùng bàn phím. Hover tách luật riêng để trình duyệt thiếu `:has` không mất hiệu ứng. |
 | 2026-11-03 | Giao diện phẳng: không đổ bóng, không làm mờ kính, không hạt giấy, không dịch chuyển nổi; thanh bên và thanh tab dính sát mép | Concept phong thuỷ cần tĩnh và chắc, không "3D bay bổng". Phân tầng bằng viền champagne mảnh và nền giấy sáng/tối thay cho bóng. Biểu đồ dùng màu đặc có độ trong, không dải màu chuyển. |
 | 2026-11-03 | Cho phép phong thuỷ rõ hơn trong giao diện: ngũ hành (chữ Hán + màu), âm lịch, la bàn bát quái, trống đồng, lôi văn, vân giấy dó/gỗ dạng phẳng, dấu triện. Sửa mục 7A | Chủ shop thấy bản đầu "chưa phong thuỷ". Ngũ hành/âm lịch là dữ liệu thật của app (mệnh khách, hành sản phẩm) nên đưa lên thành ngôn ngữ thiết kế thay vì trang trí. Họa tiết giữ nét mảnh và tiết chế để không ra kiểu quán trà. Rồng, tiền xu, mây/sóng vẫn không dùng. |
 | 2026-11-03 | Doanh thu theo ngũ hành chia đều cho các hành của sản phẩm hợp nhiều hành | Tránh đếm trùng: tổng 5 hành + "chưa gán" luôn bằng doanh thu hàng. Có test. |
@@ -536,4 +607,32 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Lọc danh mục chỉ áp dụng cho báo cáo sản phẩm và ngũ hành | Doanh thu, phí ship, phí sàn, chi phí thuộc cả đơn chứ không thuộc từng dòng; chia theo danh mục phải bịa tỷ lệ. |
 | 2026-11-03 | Route PATCH dùng `patchOf`; huỷ phiếu nhập đã trả tiền phải kèm NCC hoàn tiền | `.partial()` của zod 4 áp `.default()` làm sửa đơn nháp xoá phí ship/phí sàn/giảm giá và sửa đơn đã chốt luôn bị 409. Huỷ phiếu nhập đã trả để tiền đã chi nằm đó không hàng, không công nợ. |
 | 2026-11-03 | Trang "Cách đọc số liệu" chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên | Chủ shop nhìn nhiều chỉ số không biết xem gì. Ngưỡng bịa thêm sẽ gây báo động giả; quỹ âm hoặc đang lỗ thì đúng với mọi shop. |
+| 2026-11-04 | Shop có danh sách kho xếp ưu tiên (`shop_warehouses`) thay cho một kho mặc định; đơn tự lấy từ kho đầu rồi tới kho sau | Hàng thật nằm ở nhiều chỗ; một đơn thiếu ở kho này vẫn bán được nếu kho kia còn. `default_warehouse_id` giữ nguyên và đồng bộ với kho đầu để code cũ không vỡ. |
+| 2026-11-04 | Giá vốn lưu thành tổng tiền `order_lines.cogs_amount`, phân bổ lưu ở `order_line_allocations` với giá vốn chụp từng kho | Hai kho có giá bình quân khác nhau thì đơn giá trung bình của dòng không nguyên; nhân ngược `unit_cost × SL` sẽ lệch vài đồng. Cộng số nguyên theo phần thì đúng từng đồng (nguyên tắc 1). Hoàn kho/trả hàng đi đúng phần đã chụp nên không phải tính lại giá vốn. |
+| 2026-11-04 | Trả một phần hoàn theo LIFO phân bổ; cho chọn kho nhận khác | Phiếu trả không ghi hàng đến từ kho nào. LIFO xác định được, dễ giải thích; kho nhận khác vì hàng trả có thể nhập về chỗ khác, giá vốn hoàn vẫn là giá đã chụp. |
+| 2026-11-04 | `/variants` không truyền `warehouse_id` thì tính tổng các kho của shop cho cả biến thể đơn và combo | Trước đây biến thể đơn ra 0 còn combo cộng mọi kho, không nhất quán. Tổng theo kho của shop đúng với những gì đơn thật sự lấy được. |
+| 2026-11-04 | Trường tuỳ chỉnh bắt buộc chỉ chặn khi yêu cầu xoá/để trống nó | Bắt mọi lần lưu phải đủ trường bắt buộc khiến bản ghi cũ (tạo trước khi trường được đặt bắt buộc) không sửa được ô nào. Giao diện vẫn hiện dấu * và nhắc nhẹ. |
+| 2026-11-04 | Lưu trữ kho còn trong danh sách kho của shop trả 409 `WAREHOUSE_IN_USE`; `force` gỡ kho khỏi các shop (có audit); kho duy nhất của shop không bao giờ lưu trữ được (`WAREHOUSE_LAST`) | Lưu trữ lặng lẽ khiến shop trỏ vào kho đã ẩn, đơn không biết lấy hàng ở đâu. |
+| 2026-11-04 | Bỏ biến thể phải qua bước xác nhận liệt kê cái xoá hẳn / cái lưu trữ (`POST /products/:id/removal-preview`) | Bỏ giá trị thuộc tính từng âm thầm ngừng bán hoặc xoá biến thể. |
+| 2026-11-04 | Job hằng ngày dọn ảnh tải lên chưa gắn sản phẩm quá 7 ngày: đánh dấu `archived_at`, chỉ xoá file đó | Ảnh tải lên rồi bỏ dở tích tụ mãi trong data/uploads. Ảnh đang gắn sản phẩm/biến thể không bao giờ bị đụng. |
+| 2026-11-04 | Sổ kế toán chia tab thành 3 nhóm (Nghiệp vụ / Sổ / Báo cáo); số dư quỹ âm hiện màu đỏ kèm gợi ý | 12 tab tràn ngang bị cắt. Quỹ âm thường là thu chi chưa ghi hoặc thiếu số dư đầu kỳ. |
+| 2026-11-04 | Mật độ giao diện theo token: gọn trên máy tính (≥900px), thoáng trên điện thoại (ô ≥44px, chữ ô nhập 16px) | Cỡ chữ và ô nhập cho điện thoại làm giao diện máy tính to và loãng như app di động; chữ ô nhập <16px làm iOS tự phóng to. |
 | 2026-11-04 | Đổi slogan "Dấu vết của thời gian" → **"Hành Trình Phương Đông"** (thanh bên, trang đăng nhập, `logo-lockup.svg`) | Slogan mới nói hành trình làm ăn trên mảnh đất phương đông. Tên concept thiết kế "Dấu vết thời gian" (mục 7A) giữ nguyên vì là ngôn ngữ thiết kế, không phải slogan. Chữ trong lockup tạo lại outline bằng Noto Serif SemiBold. |
+| 2026-11-04 | Nền tảng bán hàng dạng plugin (`platforms.js`), bật/tắt từng nền tảng; thêm TikTok Shop và Zalo; bỏ code cứng Shopee ở phương thức thanh toán, đối soát, import; đối soát theo từng sàn | Chủ shop bán thêm TikTok Shop và chưa muốn thấy nền tảng mình không dùng. Mặc định giữ Shopee + Facebook để tài khoản cũ không đổi hành vi. Tắt chỉ lưu trữ kênh (không xoá dữ liệu) và chặn tạo đơn mới ở kênh tắt; phương thức payout luôn hợp lệ kể cả khi nền tảng tắt để thanh toán cũ không thành rác. Mẫu import TikTok dựng theo tên cột công khai, chưa kiểm với file thật nên ghi rõ trong mẫu. |
+| 2026-11-04 | Ngũ hành chuyển từ cột `products.elements` sang trường sản phẩm riêng của từng shop phong thuỷ (`product_fields` của ngành, vai trò `element`); migration 021 tạo trường cho shop phong thuỷ đang có và chép giá trị cho sản phẩm niêm yết ở shop đó, giữ cột cũ | Ngũ hành chỉ có nghĩa ở shop phong thuỷ, cùng nguyên tắc với mệnh của khách (thông tin riêng theo shop). Cột chung buộc mọi shop thấy ô ngũ hành. Báo cáo đọc theo shop của đơn nên tổng 5 hành + "chưa gán" vẫn bằng doanh thu hàng. Phải đổi chỉ mục khoá trường: trước đây khoá trường sản phẩm duy nhất toàn hệ thống nên hai shop không cùng có `ngu_hanh` được. |
+| 2026-11-04 | Ảnh sản phẩm lưu file trên đĩa (`data/uploads/<tài khoản>/`) có bảng chỉ mục `product_images`, phục vụ qua route cần đăng nhập; ảnh riêng của biến thể ở `variants.image_id` (không phải `product_images.variant_id`) | Nhúng ảnh vào SQLite làm file DB và bản sao lưu phình nhanh. Phục vụ file tĩnh công khai sẽ lộ ảnh giữa các tài khoản, nên tra id trong DB của tài khoản đang đăng nhập. Một ảnh dùng chung được cho nhiều biến thể (cùng màu khác size) nên con trỏ nằm ở biến thể. Ảnh gỡ chỉ lưu trữ để không mất dữ liệu. |
+| 2026-11-04 | Bỏ biến thể khỏi ma trận: xoá hẳn nếu chưa từng dùng, lưu trữ nếu đã có lịch sử kho/đơn/nhập/kiểm kê | Đúng quy ước 6 (chỉ xoá cứng dữ liệu nháp chưa phát sinh gì); biến thể có tồn đầu kỳ đã có biến động nên chỉ lưu trữ. |
+| 2026-11-04 | Cho chuyển sản phẩm đã tạo sang ma trận, thêm/đổi tên/xoá thuộc tính; đổi nhãn là thao tác riêng (`option_renames`) áp lên mọi biến thể giữ id; ánh xạ biến thể → tổ hợp phải 1-1 (`OPTION_INCOMPLETE`, `OPTIONS_CONFLICT`) | Phiên bản đầu khoá cấu trúc thuộc tính khiến shop "tạo sản phẩm không biến thể rồi sau bán thêm mùi/size" phải tạo sản phẩm trùng, tách lịch sử kho và đơn. Đổi tên không còn nguy hiểm vì là đổi nhãn có kiểm soát chứ không phải xoá rồi sinh lại; kiểm 1-1 trong một transaction chặn việc hai biến thể rơi vào cùng tổ hợp. |
+| 2026-11-04 | Lưu trữ danh mục còn sản phẩm bị chặn, kèm tuỳ chọn chuyển sản phẩm sang danh mục khác trong cùng giao dịch | Lưu trữ lặng lẽ sẽ để sản phẩm trỏ vào danh mục ẩn; chọn danh mục đã lưu trữ làm cha/nhãn cũng bị chặn. |
+| 2026-11-04 | Trường tuỳ chỉnh: danh mục biến có nhãn thay cho cột thô, xem trước công thức, một trình quản lý trường dùng chung | Chủ shop không biết gõ biến nào. Cột thô từ `PRAGMA` lộ id, JSON và cột khách cũ; nay chỉ biến có nhãn, kiểm lúc tạo/sửa (công thức cũ vẫn đọc được). Xem trước báo lỗi đúng vị trí thay vì chỉ báo lỗi lúc lưu. Hai bản quản lý trường (Cài đặt, Khách hàng) hợp thành một để khỏi lệch nhau. |
+| 2026-11-04 | Từ điển chỉ số một nguồn `metrics.js` + ⓘ tại chỗ + dải phạm vi, thay vì chỉ trang hướng dẫn riêng | Chủ shop không biết số lấy ở đâu, tính cho shop nào hay cả hệ thống. Giải thích phải nằm ngay cạnh con số, và phạm vi phải nói rõ vì có số không theo bộ lọc (nợ NCC, số dư quỹ, thuế, tồn kho tính đến hôm nay). |
+| 2026-11-04 | Kế toán kép **dẫn xuất từ chứng từ bằng trigger + sinh lại**, không ghi bút toán trong code nghiệp vụ | Cùng mẫu với `daily_stats` đã chứng minh trong dự án: trigger bắt mọi đường thay đổi (kể cả SQL trực tiếp, import) nên không thể quên; sinh lại từ trạng thái hiện tại nên sửa/huỷ đơn không cần bút toán đảo; một bộ quy tắc duy nhất (`posting.js`) khớp cách báo cáo đếm, có `verifyJournal` và test đối chiếu KQKD, quỹ, tồn kho, công nợ với báo cáo. Đổi lại: bút toán không bất biến (phải khoá sổ ở 8b), sổ chỉ cập nhật khi đọc. |
+| 2026-11-04 | Chứng từ tay = bút toán `manual` + bảng `vouchers` (tiêu đề), không nhét vào `cash_entries`; `cash/balanceOf` cộng thêm dòng tiền của chúng và nguyên giá tài sản | `cash_entries.kind` có CHECK, đổi phải dựng lại bảng cùng trigger; bút toán tay đã là nguồn sự thật của sổ cái nên số dư quỹ đọc thẳng từ chúng thì không thể lệch. Đổi lại: chứng từ tay không được lập trước ngày mở sổ của quỹ. |
+| 2026-11-04 | Khấu hao dẫn xuất theo "hôm nay" và làm mới một lần mỗi ngày bằng mốc `journal_meta` | Khấu hao thay đổi theo thời gian mà không có sự kiện nào kích hoạt trigger. Mốc ngày giữ chi phí gần 0 khi cùng ngày, và đồng hồ giả (`clock.js`) cho test kiểm qua nhiều tháng không cần chờ. |
+| 2026-11-04 | Khấu hao không đưa vào "Lợi nhuận ròng ước tính" của Báo cáo; chỉ có ở KQKD kế toán, kèm dòng "lãi thuần trước khấu hao" | Giai đoạn này không đổi số của Báo cáo; khấu hao không phải một dòng chi phí. Chi phí định kỳ là chi phí thật nên có ở cả hai. Ghi rõ ở giao diện và `metrics.js` để hai con số lệch không gây hiểu nhầm. |
+| 2026-11-04 | Khoá sổ chặn chứng từ tay/chi phí/thanh toán/quỹ/tài sản, chỉ cảnh báo với đơn và phiếu nhập (so ảnh chụp số dư lúc khoá) | Đơn sàn import muộn là bình thường nên chặn sẽ mất dữ liệu; nhưng số kỳ đã chốt đổi thì phải thấy ngay. Chi phí định kỳ rơi vào kỳ khoá bị bỏ qua thay vì lặng lẽ sửa kỳ đã chốt. |
+| 2026-11-04 | Phiếu trả hàng theo mô hình KiotViet/MISA: hàng trả, hoàn ship, phí trả hàng, ship chiều về, cần trả khách, tiền trả khách; thêm `refund_owed_amount` (còn nợ khách) | Rà soát thấy trả hàng không hoàn tiền làm sổ (131 dư Có) và báo cáo (chặn công nợ ở 0, đơn vẫn "đã thu đủ") nói khác nhau, và không có cách ghi "shop giữ lại tiền" dù chủ shop coi đó là doanh thu. KiotViet/Sổ Bán Hàng có sẵn các khoản này; kế toán TT200 giảm trừ doanh thu bằng 5212. |
+| 2026-11-04 | Giá trị hàng trả làm tròn luỹ kế (luỹ kế sau lần này − tổng đã trả) thay vì làm tròn riêng từng lần | Dòng 100đ có 3 cái trả 3 lần ra 99đ, phạm quy ước 14. Trừ theo tổng đã ghi (kể cả phiếu cũ) nên phiếu cũ không làm lệch; `npm run check-returns` chỉ báo, không sửa số đã chụp. |
+| 2026-11-04 | Phí trả hàng ghi vào tài khoản mới 5118 (không dùng 711); `returned_amount` của đơn đổi nghĩa thành "giảm số phải thu", phần hàng thuần tách ra `returned_goods_amount` | 711 chỉ có điều chỉnh kho/quỹ không thuộc shop và không có trong báo cáo, nên dùng sẽ làm sổ lệch báo cáo. Giữ `returned_amount` làm số giảm phải thu để mọi công thức công nợ (báo cáo, tuổi nợ, đối soát sàn) không phải sửa. |
+| 2026-11-04 | Doanh thu thuần báo cáo chỉ gồm hàng; phí trả hàng là dòng riêng cộng vào lãi gộp (kế hoạch ban đầu muốn cộng thẳng vào doanh thu thuần) | Báo cáo theo sản phẩm/ngũ hành chia doanh thu theo dòng hàng và phải cộng ra đúng doanh thu thuần; phí trả hàng không thuộc dòng nào. Lãi và (doanh thu thuần + phí trả hàng) vẫn không đổi khi shop giữ trọn tiền. |
+| 2026-11-04 | Kênh sàn: không có hoàn ship, phí trả hàng, tiền trả khách | Sàn tự hoàn tiền cho người mua rồi trừ vào tiền trả shop; shop không giữ tiền của người mua. |

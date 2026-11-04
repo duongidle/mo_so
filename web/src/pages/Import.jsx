@@ -53,12 +53,14 @@ const ACTION = { created: ['Tạo mới', 'h-green'], updated: ['Cập nhật', 
 
 /** Nhập đơn từ file Excel/CSV. Mở từ trang Đơn hàng. */
 export default function ImportPanel({ onClose, defaultShop }) {
-  const { shops, channels } = useSession();
+  const { shops, channels, platforms } = useSession();
+  // Mặc định theo nền tảng đầu tiên đang bật có nhập file (không có thì mẫu chuẩn)
+  const startPlatform = platforms.find((p) => p.enabled && p.features.includes('import'));
   const profiles = useAsync(() => api.get('/imports/profiles'), []);
   const batches = useAsync(() => api.get('/imports/batches'), []);
   const [shop, setShop] = useState(defaultShop && defaultShop !== 'all' ? defaultShop : shops[0]?.id);
-  const [profileId, setProfileId] = useState('imp_shopee');
-  const [channel, setChannel] = useState('shopee');
+  const [profileId, setProfileId] = useState(startPlatform?.import_profile_id || 'imp_standard');
+  const [channel, setChannel] = useState(startPlatform?.channel_id || 'other');
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -99,14 +101,14 @@ export default function ImportPanel({ onClose, defaultShop }) {
   return (
     <Modal title="Nhập đơn từ file" wide onClose={onClose}>
       <div className="row between wrap">
-        <p className="muted small" style={{ margin: 0 }}>Dùng cho file xuất từ Shopee hoặc file theo mẫu chuẩn của Mở Sổ (Facebook, hàng loạt). Đơn đã có sẽ được cập nhật, không tạo trùng.</p>
+        <p className="muted small" style={{ margin: 0 }}>Dùng cho file xuất đơn từ sàn (Shopee, TikTok Shop…) hoặc file theo mẫu chuẩn của Mở Sổ (Facebook, Zalo, hàng loạt). Chọn đúng mẫu map cột của nền tảng. Đơn đã có sẽ được cập nhật, không tạo trùng.</p>
         <a className="btn sm" href="/api/v1/imports/template.csv">Tải file mẫu chuẩn</a>
       </div>
       <Card title="1. Chọn file">
         <div className="grid cols-2">
           <Field label="Vào shop"><select value={shop} onChange={(e) => setShop(e.target.value)}>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
           <Field label="Mẫu map cột">
-            <div className="row"><select value={profileId} onChange={(e) => { setProfileId(e.target.value); const p = profiles.data.data.find((x) => x.id === e.target.value); if (p) setChannel(p.channel_id); }}>{profiles.data?.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+            <div className="row"><select value={profileId} onChange={(e) => { setProfileId(e.target.value); const p = profiles.data.data.find((x) => x.id === e.target.value); if (p) setChannel(p.channel_id); }}>{profiles.data?.data?.filter((p) => p.id === profileId || channels.some((c) => c.id === p.channel_id)).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
               <button className="btn sm" type="button" onClick={() => setEditing({ profile })} disabled={!profile}>Sửa</button>
               <button className="btn sm" type="button" onClick={() => setEditing({ profile: null })}>Mẫu mới</button></div>
           </Field>

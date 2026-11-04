@@ -4,6 +4,7 @@ import { nowIso, businessDate } from '../../lib/time.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { audit } from '../../lib/events.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
+import { assertUnlocked } from '../../lib/period.js';
 
 const db = () => getDb();
 
@@ -27,24 +28,42 @@ function flows(methods, from, to) {
   const exp = methods.length
     ? db().prepare(`SELECT COALESCE(SUM(amount),0) AS v FROM expenses WHERE voided_at IS NULL AND method IN (${marks(methods)}) AND expense_date >= ? AND expense_date <= ?`).get(...methods, lo, to).v
     : 0;
-  return { cash_in: sumPay('in'), cash_out: sumPay('out'), expenses_out: exp };
+  // Mua tài sản / chi phí trả trước trả bằng phương thức của quỹ (phát sinh ở ngày mua)
+  const assets = methods.length
+    ? db().prepare(`SELECT COALESCE(SUM(cost),0) AS v FROM assets WHERE voided_at IS NULL AND paid_via IN (${marks(methods)}) AND start_date >= ? AND start_date <= ?`).get(...methods, lo, to).v
+    : 0;
+  return { cash_in: sumPay('in'), cash_out: sumPay('out'), expenses_out: exp, assets_out: assets };
 }
 
 function entriesSum(accountId, from, to) {
   return db().prepare(`SELECT COALESCE(SUM(amount),0) AS v FROM cash_entries WHERE account_id = ? AND voided_at IS NULL AND entry_date >= ? AND entry_date <= ?`).get(accountId, from || '0000-00-00', to).v;
 }
 
+/**
+ * Dòng tiền của chứng từ tay (phiếu thu/chi, bút toán tổng hợp) trên tài khoản 111x/112x của quỹ: Nợ − Có, mọi ngày đến asOf.
+ * Chứng từ tay không được lập trước ngày mở sổ của quỹ (vouchers.js chặn) nên không cần cận dưới ngày.
+ */
+function manualSum(accountCode, asOf) {
+  if (!accountCode) return 0;
+  return db()
+    .prepare(`SELECT COALESCE(SUM(l.debit - l.credit),0) AS v FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id WHERE e.source_type = 'manual' AND e.voided_at IS NULL AND l.account_code = ? AND e.entry_date <= ?`)
+    .get(accountCode, asOf).v;
+}
+
 /** Số dư tại cuối ngày asOf. Tính từ sổ, không lưu. */
 export function balanceOf(account, asOf = businessDate()) {
   const f = flows(account.methods, account.opening_date, asOf);
   const entries = entriesSum(account.id, account.opening_date, asOf);
+  const vouchers = manualSum(account.account_code, asOf);
   return {
+    assets_out: f.assets_out,
+    vouchers,
     opening_balance: account.opening_balance,
     cash_in: f.cash_in,
     cash_out: f.cash_out,
     expenses_out: f.expenses_out,
     entries,
-    balance: account.opening_balance + f.cash_in - f.cash_out - f.expenses_out + entries,
+    balance: account.opening_balance + f.cash_in - f.cash_out - f.expenses_out - f.assets_out + entries + vouchers,
   };
 }
 
@@ -58,12 +77,12 @@ export function listAccounts({ asOf = businessDate(), includeArchived = false } 
   const assigned = new Set(accounts.filter((a) => !a.archived_at).flatMap((a) => a.methods));
   const loose = PAYMENT_METHODS.filter((m) => !assigned.has(m));
   const looseFlows = flows(loose, null, asOf);
-  const looseNet = looseFlows.cash_in - looseFlows.cash_out - looseFlows.expenses_out;
+  const looseNet = looseFlows.cash_in - looseFlows.cash_out - looseFlows.expenses_out - looseFlows.assets_out;
   return {
     as_of: asOf,
     data,
     total_balance: data.filter((a) => !a.archived_at).reduce((s, a) => s + a.balance, 0),
-    unassigned: { methods: loose, net: looseNet, has_activity: looseFlows.cash_in + looseFlows.cash_out + looseFlows.expenses_out !== 0 },
+    unassigned: { methods: loose, net: looseNet, has_activity: looseFlows.cash_in + looseFlows.cash_out + looseFlows.expenses_out + looseFlows.assets_out !== 0 },
   };
 }
 
@@ -109,9 +128,10 @@ export function transfer({ fromId, toId, amount, date, note }, actor) {
   const from = getAccount(fromId);
   const to = getAccount(toId);
   if (from.archived_at || to.archived_at) throw conflict('ACCOUNT_ARCHIVED', 'Quỹ đã lưu trữ');
+  const d = date || businessDate();
+  assertUnlocked(d, 'Chuyển quỹ');
   const pair = newId('cpr');
   const at = nowIso();
-  const d = date || businessDate();
   const ins = db().prepare('INSERT INTO cash_entries (id, account_id, kind, amount, entry_date, pair_id, note, actor_id, created_at) VALUES (?,?,?,?,?,?,?,?,?)');
   ins.run(newId('cen'), from.id, 'transfer', -amount, d, pair, note ?? null, actor?.id ?? null, at);
   ins.run(newId('cen'), to.id, 'transfer', amount, d, pair, note ?? null, actor?.id ?? null, at);
@@ -127,6 +147,7 @@ export function countAccount(id, { countedAmount, note }, actor) {
   const a = getAccount(id);
   if (a.archived_at) throw conflict('ACCOUNT_ARCHIVED', 'Quỹ đã lưu trữ');
   const today = businessDate();
+  assertUnlocked(today, 'Kiểm đếm quỹ');
   const system = balanceOf(a, today).balance;
   const diff = countedAmount - system;
   if (diff !== 0) {
@@ -143,6 +164,7 @@ export function voidEntry(id, actor) {
   const e = db().prepare('SELECT * FROM cash_entries WHERE id = ?').get(id);
   if (!e) throw notFound('Dòng sổ quỹ');
   if (e.voided_at) throw conflict('ALREADY_VOIDED', 'Dòng này đã huỷ');
+  assertUnlocked(e.entry_date, 'Dòng sổ quỹ');
   const at = nowIso();
   if (e.pair_id) db().prepare('UPDATE cash_entries SET voided_at = ? WHERE pair_id = ? AND voided_at IS NULL').run(at, e.pair_id);
   else db().prepare('UPDATE cash_entries SET voided_at = ? WHERE id = ?').run(at, id);
@@ -174,6 +196,14 @@ export function ledger(id, { from, to = businessDate(), limit = 200 } = {}) {
     );
   }
   parts.push(
+    ...db()
+      .prepare(`SELECT a.id, a.start_date AS date, a.created_at AS at, -a.cost AS amount, 'asset' AS source, 'asset' AS ref_type, a.id AS ref_id, a.paid_via AS method, a.name AS note FROM assets a WHERE a.voided_at IS NULL AND a.start_date >= ? AND a.start_date <= ? AND a.paid_via IN (${marks(methods.length ? methods : ['-'])})`)
+      .all(lo, to, ...(methods.length ? methods : ['-'])),
+    ...(a.account_code
+      ? db()
+          .prepare(`SELECT e.id, e.entry_date AS date, e.created_at AS at, l.debit - l.credit AS amount, 'voucher' AS source, 'voucher' AS ref_type, e.source_id AS ref_id, NULL AS method, e.description AS note FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id WHERE e.source_type = 'manual' AND e.voided_at IS NULL AND l.account_code = ? AND e.entry_date >= ? AND e.entry_date <= ?`)
+          .all(a.account_code, lo, to)
+      : []),
     ...db()
       .prepare(`SELECT id, entry_date AS date, created_at AS at, amount, kind AS source, NULL AS ref_type, pair_id AS ref_id, NULL AS method, note FROM cash_entries WHERE account_id = ? AND voided_at IS NULL AND entry_date >= ? AND entry_date <= ?`)
       .all(id, lo, to),

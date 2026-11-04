@@ -11,9 +11,11 @@ import { addDays, businessDate } from '../server/lib/time.js';
 async function world() {
   const ctx = await setup();
   const { api, nh, pt, wh } = ctx;
-  const mkP = async (name, sku, price, shops) => (await api.post('/products', { name, variants: [{ sku, default_price: price }], shop_ids: shops })).body.data.variants[0];
-  const a = await mkP('A', 'A1', 100000, [nh.id, pt.id]);
-  const b = await mkP('B', 'B1', 80000, [nh.id, pt.id]);
+  // pt là shop phong thuỷ: ngũ hành của sản phẩm là trường riêng của shop; đơn ở nh (ngành chung) rơi vào "chưa gán"
+  assert.equal((await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' })).status, 200);
+  const mkP = async (name, sku, price, shops, el) => (await api.post('/products', { name, variants: [{ sku, default_price: price }], shop_ids: shops, ...(el ? { custom: { ngu_hanh: el }, custom_shop_id: pt.id } : {}) })).body.data.variants[0];
+  const a = await mkP('A', 'A1', 100000, [nh.id, pt.id], ['Kim', 'Thuỷ']);
+  const b = await mkP('B', 'B1', 80000, [nh.id, pt.id], ['Mộc']);
   const combo = (await api.post('/products', { name: 'Combo', variants: [{ sku: 'CB1', kind: 'bundle', default_price: 250000, components: [{ variant_id: a.id, qty: 2 }, { variant_id: b.id, qty: 1 }] }], shop_ids: [pt.id] })).body.data.variants[0];
   const pur = (await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: a.id, qty: 40, unit_cost: 40000 }, { variant_id: b.id, qty: 40, unit_cost: 30000 }] })).body.data;
   const ord = async (o) => {
@@ -190,7 +192,8 @@ test('Huỷ phiếu nhập đã trả tiền NCC: bắt buộc ghi nhận NCC ho
 
 test('PATCH chỉ đổi đúng trường được gửi, không đặt các trường khác về mặc định (đơn, chi phí, phiếu nhập, sản phẩm, webhook)', async () => {
   const { api, nh, wh } = await setup();
-  const a = (await api.post('/products', { name: 'A', unit: 'chai', elements: ['Kim'], tags: ['x'], variants: [{ sku: 'A1', default_price: 100000, min_stock: 5 }], shop_ids: [nh.id] })).body.data;
+  await api.patch(`/shops/${nh.id}`, { industry: 'phong_thuy' });
+  const a = (await api.post('/products', { name: 'A', unit: 'chai', custom: { ngu_hanh: ['Kim'] }, custom_shop_id: nh.id, tags: ['x'], variants: [{ sku: 'A1', default_price: 100000, min_stock: 5 }], shop_ids: [nh.id] })).body.data;
   await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: a.variants[0].id, qty: 50, unit_cost: 40000 }] });
 
   // Đơn nháp: sửa ghi chú không được xoá phí ship/phí sàn/giảm giá
@@ -223,7 +226,8 @@ test('PATCH chỉ đổi đúng trường được gửi, không đặt các tr�
 
   // Sản phẩm: đổi tên không đặt lại đơn vị, ngũ hành, nhãn; đổi SKU không đặt lại giá/tồn tối thiểu
   const pr = (await api.patch(`/products/${a.id}`, { name: 'A mới', variants: [{ id: a.variants[0].id, name: 'Bản 1' }] })).body.data;
-  assert.deepEqual([pr.name, pr.unit, pr.elements, pr.tags], ['A mới', 'chai', ['Kim'], ['x']]);
+  assert.deepEqual([pr.name, pr.unit, pr.tags], ['A mới', 'chai', ['x']]);
+  assert.deepEqual((await api.get(`/custom/values/product/${a.id}?shop_id=${nh.id}`)).body.data.ngu_hanh, ['Kim'], 'ngũ hành (trường sản phẩm của shop) không bị xoá khi sửa tên'); 
   assert.deepEqual([pr.variants[0].default_price, pr.variants[0].min_stock], [100000, 5]);
 
   // Webhook: đổi URL không bật lại hook đã tắt và không đặt lại danh sách sự kiện

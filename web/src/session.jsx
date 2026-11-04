@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from './api.js';
+import { methodLabels, methodOptions } from './lib.js';
 
 const Ctx = createContext(null);
 export const useSession = () => useContext(Ctx);
@@ -11,10 +12,11 @@ export function SessionProvider({ user, onLogout, children }) {
     try { return localStorage.getItem('moso.shop') || ''; } catch { return ''; }
   });
   const load = useCallback(async () => {
-    const [shops, warehouses, channels, settings, industries] = await Promise.all([
-      api.get('/shops'), api.get('/warehouses'), api.get('/channels'), api.get('/settings'), api.get('/industries'),
+    const [shops, warehouses, channels, settings, industries, platforms] = await Promise.all([
+      api.get('/shops'), api.get('/warehouses'), api.get('/channels', { include_archived: 1 }), api.get('/settings'), api.get('/industries'), api.get('/platforms'),
     ]);
-    setMeta({ shops: shops.data, warehouses: warehouses.data, channels: channels.data, settings: settings.data, industries: industries.data });
+    // channels: kênh đang bật (cho bộ chọn khi tạo đơn); allChannels: gồm kênh đã tắt (đọc tên và lọc đơn cũ)
+    setMeta({ shops: shops.data, warehouses: warehouses.data, allChannels: channels.data, channels: channels.data.filter((c) => !c.archived_at), settings: settings.data, industries: industries.data, platforms: platforms.data });
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -32,8 +34,10 @@ export function SessionProvider({ user, onLogout, children }) {
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   if (!meta) return <div className="empty">Đang tải…</div>;
   const features = industry?.features || [];
+  const platformEnabled = (id) => !!meta.platforms.find((p) => p.id === id)?.enabled;
+  const marketplaces = meta.channels.filter((c) => c.is_marketplace); // sàn đang bật: chọn khi đối soát
   return (
-    <Ctx.Provider value={{ user, onLogout, ...meta, reload: load, shopId: effective, setShopId, shop, isAll: effective === 'all', industry, theme, features, has: (f) => features.includes(f) }}>
+    <Ctx.Provider value={{ user, onLogout, ...meta, reload: load, shopId: effective, setShopId, shop, isAll: effective === 'all', industry, theme, features, has: (f) => features.includes(f), platformEnabled, marketplaces, methodLabels: methodLabels(meta.platforms), methodList: (current) => methodOptions(meta.platforms, current) }}>
       {children}
     </Ctx.Provider>
   );

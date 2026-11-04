@@ -4,6 +4,7 @@ import { getDb, tenantStore } from '../db/index.js';
 import { forEachAccount, getMaster } from '../db/tenancy.js';
 import { config } from '../lib/config.js';
 import { businessDate, addDays } from '../lib/time.js';
+import { cleanupUnusedImages } from './uploads.js';
 
 const NAME_RE = /^moso-(\d{8})-(\d{4})\.db$/;
 
@@ -33,6 +34,28 @@ export function listBackups(dir = backupDir()) {
     });
 }
 
+/**
+ * Chép ảnh sản phẩm của tài khoản sang <thư mục sao lưu>/uploads/ (chỉ chép file chưa có; ảnh không bao giờ bị sửa nên đủ).
+ * Chỉ chạy khi sao lưu theo ngữ cảnh một tài khoản, không chạy cho sổ tài khoản (master).
+ */
+export function mirrorUploads(dir) {
+  const accountId = tenantStore()?.accountId;
+  if (!accountId || dir === masterBackupDir()) return 0;
+  const src = path.join(config.dataDir, 'uploads', accountId);
+  if (!fs.existsSync(src)) return 0;
+  const dest = path.join(dir, 'uploads');
+  fs.mkdirSync(dest, { recursive: true });
+  let copied = 0;
+  for (const f of fs.readdirSync(src)) {
+    const to = path.join(dest, f);
+    if (fs.existsSync(to)) continue;
+    fs.copyFileSync(path.join(src, f), `${to}.tmp`);
+    fs.renameSync(`${to}.tmp`, to);
+    copied++;
+  }
+  return copied;
+}
+
 /** Sao lưu bằng SQLite online backup (an toàn khi đang có người ghi). */
 export async function runBackup(date = new Date(), { conn = getDb(), dir = backupDir() } = {}) {
   fs.mkdirSync(dir, { recursive: true });
@@ -42,7 +65,8 @@ export async function runBackup(date = new Date(), { conn = getDb(), dir = backu
   await conn.backup(tmp);
   fs.renameSync(tmp, file); // chỉ lộ ra khi đã ghi xong
   const pruned = pruneBackups(date, { dir });
-  return { name, file, size: fs.statSync(file).size, pruned };
+  const uploads = mirrorUploads(dir);
+  return { name, file, size: fs.statSync(file).size, pruned, uploads };
 }
 
 /**
@@ -92,6 +116,10 @@ export function startBackupScheduler({ intervalMs = 3600_000 } = {}) {
   const tick = async () => {
     try {
       await forEachAccount(async (a) => {
+        try {
+          const c = cleanupUnusedImages();
+          if (c.archived) console.log(`Đã dọn ${c.archived} ảnh tải lên không dùng (${a.username})`);
+        } catch (e) { console.error('Dọn ảnh lỗi:', e); }
         if (listBackups().some((b) => b.name.startsWith(`moso-${today()}`))) return;
         const r = await runBackup();
         console.log(`Đã sao lưu tự động (${a.username}): ${r.name}`);

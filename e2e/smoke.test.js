@@ -88,6 +88,18 @@ test('đăng nhập sai mật khẩu báo lỗi, đúng thì vào được', { s
   await ok.ctx.close();
 });
 
+test('thanh bên tự thu gọn sau khi click menu bằng chuột', { skip }, async () => {
+  const { page, errors, ctx } = await login();
+  const width = () => page.locator('.sidebar').evaluate((el) => el.getBoundingClientRect().width);
+  await page.mouse.move(10, 300);
+  await page.locator('.sidebar a.nav[title="Đơn hàng"]').click();
+  await page.mouse.move(700, 400);
+  await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().width < 100, null, { timeout: 5000 });
+  assert.ok(await width() < 100);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('chuyển shop đổi giao diện, tính năng và trường khách đúng theo ngành', { skip }, async () => {
   const { page, errors, ctx } = await login();
   await pickShop(page, 'Nước hoa');
@@ -450,6 +462,25 @@ test('tài chính: chi phí trả bằng ngân hàng, quỹ tiền (chuyển qu�
   for (const q of ['Tiền có đủ không?', 'Bán có lời không?', 'Hàng có bị kẹt hoặc sắp hết không?', 'Khách có quay lại không?', 'Chi phí có đang phình ra không?']) assert.ok(await page.locator(`text=${q}`).count(), q);
   await page.click('summary:has-text("Biên lợi nhuận gộp")');
   await page.waitForSelector('text=/giá bán chưa đủ cao/i');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Đơn mới: tìm và chọn khách có sẵn, đơn gắn đúng customer_id, không sinh hồ sơ trùng', { skip }, async () => {
+  const { page, errors, ctx } = await login({ width: 1280, height: 860 });
+  await pickShop(page, 'Nước hoa');
+  const before = (await api('GET', '/customers?q=Lan')).data.length;
+  await page.goto(`${base}/orders/new`);
+  await page.fill('input[aria-label="Tìm sản phẩm"]', 'MT-1');
+  await page.click('[role=option]:has-text("Móc treo")');
+  await page.fill('input[aria-label="Tìm khách hàng"]', 'Lan');
+  await page.click('[role=option]:has-text("Chị Lan")');
+  await page.waitForSelector('.cust-card:has-text("Chị Lan")');
+  await page.click('button:has-text("Bán xong")');
+  await page.waitForURL(/\/orders\/ord_/);
+  const order = (await api('GET', '/orders?customer_id=' + ids.cust)).data.find((o) => o.status === 'completed');
+  assert.ok(order, 'đơn gắn đúng khách đã chọn');
+  assert.equal((await api('GET', '/customers?q=Lan')).data.length, before, 'không tạo khách trùng');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

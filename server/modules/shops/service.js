@@ -9,10 +9,52 @@ import { badRequest, notFound } from '../../lib/errors.js';
 // Màu nhận diện shop: giữ trong tông giấy–gỗ–gốm của thương hiệu (đã giảm bão hoà), vẫn đủ khác nhau để phân biệt
 const PALETTE = ['#865C49', '#42633F', '#33566F', '#8A4E14', '#6A4A70', '#A23A30'];
 
+const withWarehouses = (s) => ({ ...s, warehouse_ids: shopWarehouses(s.id).map((w) => w.warehouse_id) });
+
 export function getShop(id) {
   const s = getDb().prepare('SELECT * FROM shops WHERE id = ?').get(id);
   if (!s) throw notFound('Shop');
-  return s;
+  return withWarehouses(s);
+}
+
+/** Kho của shop theo thứ tự ưu tiên (1 = lấy hàng trước) */
+export function shopWarehouses(shopId) {
+  return getDb()
+    .prepare(
+      `SELECT sw.warehouse_id, sw.priority, w.code, w.name, w.archived_at FROM shop_warehouses sw JOIN warehouses w ON w.id = sw.warehouse_id
+       WHERE sw.shop_id = ? ORDER BY sw.priority`,
+    )
+    .all(shopId);
+}
+
+/**
+ * Đặt danh sách kho của shop (đã sắp theo ưu tiên). Kho đầu tiên là kho chính: giữ shops.default_warehouse_id đồng bộ
+ * để mọi chỗ còn đọc kho mặc định vẫn đúng. Danh sách rỗng = shop chưa có kho.
+ */
+export function setShopWarehouses(shopId, warehouseIds, actor) {
+  const before = getShop(shopId);
+  const ids = [...new Set(warehouseIds)];
+  for (const id of ids) assertWarehouse(id);
+  const db = getDb();
+  db.prepare('DELETE FROM shop_warehouses WHERE shop_id = ?').run(shopId);
+  const ins = db.prepare('INSERT INTO shop_warehouses (shop_id, warehouse_id, priority) VALUES (?,?,?)');
+  ids.forEach((w, i) => ins.run(shopId, w, i + 1));
+  db.prepare('UPDATE shops SET default_warehouse_id = ?, updated_at = ? WHERE id = ?').run(ids[0] ?? null, nowIso(), shopId);
+  const after = getShop(shopId);
+  audit(actor, 'shop.warehouses_changed', 'shop', shopId, { warehouse_ids: before.warehouse_ids }, { warehouse_ids: after.warehouse_ids });
+  emit('shop.updated', { entityType: 'shop', entityId: shopId, shopId, data: after });
+  return shopWarehouses(shopId);
+}
+
+/** Đưa một kho lên đầu danh sách của shop (thêm nếu chưa có) */
+function promoteWarehouse(shopId, warehouseId) {
+  const cur = shopWarehouses(shopId).map((w) => w.warehouse_id).filter((w) => w !== warehouseId);
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare('DELETE FROM shop_warehouses WHERE shop_id = ?').run(shopId);
+    const ins = db.prepare('INSERT INTO shop_warehouses (shop_id, warehouse_id, priority) VALUES (?,?,?)');
+    [warehouseId, ...cur].forEach((w, i) => ins.run(shopId, w, i + 1));
+  })();
 }
 
 export function shopHasFeature(shopId, feature) {
@@ -23,7 +65,8 @@ export function shopHasFeature(shopId, feature) {
 export function listShops({ includeArchived = false } = {}) {
   return getDb()
     .prepare(`SELECT * FROM shops ${includeArchived ? '' : 'WHERE archived_at IS NULL'} ORDER BY created_at`)
-    .all();
+    .all()
+    .map(withWarehouses);
 }
 
 function assertWarehouse(id) {
@@ -55,6 +98,7 @@ export function createShop(input, actor) {
     at,
     at,
   );
+  if (input.default_warehouse_id) promoteWarehouse(id, input.default_warehouse_id);
   applyIndustry(id);
   const s = getShop(id);
   audit(actor, 'shop.created', 'shop', id, null, s);
@@ -68,12 +112,18 @@ export function updateShop(id, input, actor) {
   const before = getShop(id);
   if (input.default_warehouse_id !== undefined) assertWarehouse(input.default_warehouse_id);
   const next = { ...before };
+  delete next.warehouse_ids;
   for (const f of FIELDS) if (input[f] !== undefined) next[f] = input[f];
   next.code = next.code.toUpperCase();
   next.updated_at = nowIso();
   getDb()
     .prepare(`UPDATE shops SET ${FIELDS.map((f) => `${f}=?`).join(', ')}, updated_at=? WHERE id=?`)
     .run(...FIELDS.map((f) => next[f]), next.updated_at, id);
+  // Đổi kho mặc định = đưa kho đó lên ưu tiên 1 (kho cũ vẫn ở danh sách, xếp sau)
+  if (input.default_warehouse_id !== undefined && input.default_warehouse_id !== before.default_warehouse_id) {
+    if (input.default_warehouse_id) promoteWarehouse(id, input.default_warehouse_id);
+    else setShopWarehouses(id, [], actor);
+  }
   if (next.industry !== before.industry) applyIndustry(id);
   const after = getShop(id);
   audit(actor, 'shop.updated', 'shop', id, before, after);

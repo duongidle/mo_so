@@ -4,6 +4,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num, fmtDate, METHODS } from '../lib.js';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
+import MoneyInput from '../components/MoneyInput.jsx';
 
 const ST = { draft: 'Nháp', received: 'Đã nhận', cancelled: 'Đã huỷ' };
 
@@ -86,17 +87,17 @@ function PurchaseForm({ onClose, onSaved }) {
         <div key={l.id} className="row">
           <div className="grow"><div>{l.name}</div><div className="small muted">{l.sku}</div></div>
           <input type="number" min="1" value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} style={{ width: 70 }} aria-label="Số lượng" />
-          <input type="number" min="0" value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 110 }} aria-label="Giá nhập" />
+          <MoneyInput value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 110 }} aria-label="Giá nhập" />
         </div>
       ))}
       <div className="grid cols-3">
-        <Field label="Phí ship nhập"><input type="number" min="0" value={fees.shipping_fee} onChange={(e) => setFees({ ...fees, shipping_fee: e.target.value })} /></Field>
-        <Field label="Phí khác"><input type="number" min="0" value={fees.other_fee} onChange={(e) => setFees({ ...fees, other_fee: e.target.value })} /></Field>
-        <Field label="Chiết khấu"><input type="number" min="0" value={fees.discount_amount} onChange={(e) => setFees({ ...fees, discount_amount: e.target.value })} /></Field>
+        <Field label="Phí ship nhập"><MoneyInput value={fees.shipping_fee} onChange={(e) => setFees({ ...fees, shipping_fee: e.target.value })} /></Field>
+        <Field label="Phí khác"><MoneyInput value={fees.other_fee} onChange={(e) => setFees({ ...fees, other_fee: e.target.value })} /></Field>
+        <Field label="Chiết khấu"><MoneyInput value={fees.discount_amount} onChange={(e) => setFees({ ...fees, discount_amount: e.target.value })} /></Field>
       </div>
       <p className="small muted">Phí và chiết khấu được chia vào giá vốn từng dòng theo giá trị.</p>
       <label className="check"><input type="checkbox" checked={receive} onChange={(e) => setReceive(e.target.checked)} />Nhận hàng ngay (cộng kho)</label>
-      {receive && <Field label="Đã trả nhà cung cấp"><input type="number" min="0" value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>}
+      {receive && <Field label="Đã trả nhà cung cấp"><MoneyInput value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>}
       <div className="row between"><b>Tổng cộng</b><b className="num">{vnd(total)}</b></div>
       <ErrorBox error={error} />
     </Modal>
@@ -135,7 +136,7 @@ function PurchaseView({ id, onClose }) {
             </div>
           )}
           {p.status === 'received' && p.debt > 0 && (
-            <div className="row"><input type="number" min="1" placeholder={`Trả nợ (còn ${p.debt})`} value={pay} onChange={(e) => setPay(e.target.value)} /><button className="btn" disabled={busy || !pay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay) }); setPay(''); s.reload(); })}>Ghi trả</button></div>
+            <div className="row"><MoneyInput placeholder={`Trả nợ (còn ${p.debt})`} value={pay} onChange={(e) => setPay(e.target.value)} /><button className="btn" disabled={busy || !pay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay) }); setPay(''); s.reload(); })}>Ghi trả</button></div>
           )}
         </>
       )}</Async>

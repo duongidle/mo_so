@@ -5,6 +5,7 @@ import { AppError, badRequest, notFound } from '../../lib/errors.js';
 import { audit } from '../../lib/events.js';
 import { createOrder, updateOrder, transitionOrder, createReturn, addOrderPayment, getOrder } from '../orders/service.js';
 import { getShop } from '../shops/service.js';
+import { payoutMethodOf } from '../../lib/platforms.js';
 
 const db = () => getDb();
 
@@ -58,7 +59,7 @@ function applyOne(shop, channelId, row, statusMap, actor) {
   const status = normalizeStatus(row.status, statusMap);
   if (!status) throw badRequest('UNKNOWN_STATUS', `Không hiểu trạng thái "${row.status}". Thêm vào bảng ánh xạ trạng thái của mẫu import.`);
   const existing = db().prepare('SELECT id FROM orders WHERE shop_id = ? AND channel_id = ? AND external_id = ?').get(shop.id, channelId, String(row.external_id));
-  const paidMethod = channelId === 'shopee' ? 'shopee_payout' : 'bank';
+  const paidMethod = payoutMethodOf(channelId);
 
   if (!existing) {
     const createStatus = status === 'returned' ? 'completed' : status === 'cancelled' ? 'draft' : status;

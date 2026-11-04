@@ -8,6 +8,7 @@ import { lunarInfo } from './lib.js';
 import Auth from './pages/Auth.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Pos from './pages/Pos.jsx';
+import OrderForm from './pages/OrderForm.jsx';
 import { OrderList, OrderDetail } from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
 import Stock from './pages/Stock.jsx';
@@ -16,6 +17,7 @@ import { CustomerList, CustomerDetail } from './pages/Customers.jsx';
 import Loyalty from './pages/Loyalty.jsx';
 import Expenses from './pages/Expenses.jsx';
 import Reports from './pages/Reports.jsx';
+import Accounting from './pages/Accounting.jsx';
 import Guide from './pages/Guide.jsx';
 import Settings from './pages/Settings.jsx';
 import Onboarding, { GettingStarted, useSetupProgress, readDismissed, DISMISS_KEY } from './pages/Onboarding.jsx';
@@ -24,7 +26,8 @@ const NAV = [
   { group: null, items: [['/', 'Tổng quan', 'home', true], ['/pos', 'Bán nhanh', 'bag'], ['/orders', 'Đơn hàng', 'receipt']] },
   { group: 'Hàng hoá', items: [['/products', 'Sản phẩm', 'tag'], ['/stock', 'Kho', 'box'], ['/purchases', 'Nhập hàng', 'truck']] },
   { group: 'Khách', items: [['/customers', 'Khách hàng', 'users'], ['/loyalty', 'Loyalty & Campaign', 'heart']] },
-  { group: 'Sổ sách', items: [['/expenses', 'Chi phí & đối soát', 'wallet'], ['/reports', 'Báo cáo', 'chart'], ['/guide', 'Cách đọc số liệu', 'book'], ['/settings', 'Cài đặt', 'cog']] },
+  { group: 'Kế toán', items: [['/expenses', 'Chi phí & quỹ', 'wallet'], ['/accounting', 'Sổ kế toán', 'book']] },
+  { group: 'Sổ sách', items: [['/reports', 'Báo cáo', 'chart'], ['/guide', 'Cách đọc số liệu', 'book'], ['/settings', 'Cài đặt', 'cog']] },
 ];
 const PRIMARY = ['/', '/pos', '/orders', '/stock'];
 
@@ -35,7 +38,7 @@ function ShopSwitcher() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   // "Tất cả shop" chỉ có ở Báo cáo, Khách hàng, Kho, Tổng quan, Đơn, Loyalty & Campaign (CLAUDE.md mục 7)
-  const allowAll = ['/', '/reports', '/customers', '/stock', '/orders', '/loyalty', '/guide'].some((p) => (p === '/' ? pathname === '/' : pathname.startsWith(p)));
+  const allowAll = ['/', '/reports', '/customers', '/stock', '/orders', '/loyalty', '/guide', '/accounting'].some((p) => (p === '/' ? pathname === '/' : pathname.startsWith(p)));
   const current = shopId === 'all' && !allowAll ? shops[0]?.id : shopId;
   const shop = shops.find((s) => s.id === current);
   useEffect(() => {
@@ -75,6 +78,7 @@ function Shell({ progress, reopenGuide }) {
   const togglePin = () => setPinned((p) => { try { localStorage.setItem('moso.pin', p ? '0' : '1'); } catch { /* bỏ qua */ } return !p; });
   const lunar = lunarInfo();
   const dateText = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  const blurOnClick = (e) => { if (e.detail > 0) e.currentTarget.blur(); }; // click chuột không giữ focus; trình duyệt cũ thiếu :has
   const tab = (to, label, icon) => (
     <NavLink to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}><Icon name={icon} />{label}</NavLink>
   );
@@ -87,13 +91,13 @@ function Shell({ progress, reopenGuide }) {
           <div key={i}>
             {i > 0 && <div className="nav-sep" />}
             {g.items.map(([to, label, icon, end]) => (
-              <NavLink key={to} to={to} end={end} title={label} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
+              <NavLink key={to} to={to} end={end} title={label} onClick={blurOnClick} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
             ))}
           </div>
         ))}
         <div className="me">
-          <button className="pin" onClick={togglePin} title={pinned ? 'Thu gọn thanh bên' : 'Ghim thanh bên luôn mở'}><Icon name="panel" /><span className="lbl">{pinned ? 'Thu gọn' : 'Ghim thanh bên'}</span></button>
-          <button onClick={onLogout} title="Đăng xuất"><Icon name="out" /><span className="lbl">Đăng xuất · {user.displayName}</span></button>
+          <button className="pin" onClick={(e) => { blurOnClick(e); togglePin(); }} title={pinned ? 'Thu gọn thanh bên' : 'Ghim thanh bên luôn mở'}><Icon name="panel" /><span className="lbl">{pinned ? 'Thu gọn' : 'Ghim thanh bên'}</span></button>
+          <button onClick={(e) => { blurOnClick(e); onLogout(); }} title="Đăng xuất"><Icon name="out" /><span className="lbl">Đăng xuất · {user.displayName}</span></button>
         </div>
       </nav>
       <div className="main">
@@ -105,6 +109,8 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/" element={<Dashboard progress={progress} reopenGuide={reopenGuide} />} />
           <Route path="/pos" element={<Pos />} />
           <Route path="/orders" element={<OrderList />} />
+          <Route path="/orders/new" element={<OrderForm />} />
+          <Route path="/orders/:id/edit" element={<OrderForm />} />
           <Route path="/orders/:id" element={<OrderDetail />} />
           <Route path="/import" element={<Navigate to="/orders?import=1" replace />} />
           <Route path="/products" element={<Products />} />
@@ -117,12 +123,13 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/care" element={<Navigate to="/loyalty" replace />} />
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/accounting" element={<Accounting />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/more" element={<More />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
-      {!['/pos', '/orders'].includes(pathname) && <Link to="/pos" className="fab"><Icon name="plus" />Đơn</Link>}
+      {!['/pos', '/orders'].includes(pathname) && !pathname.startsWith('/orders/new') && !pathname.endsWith('/edit') && <Link to="/pos" className="fab"><Icon name="plus" />Đơn</Link>}
       <nav className="tabbar" aria-label="Thanh tab">
         {tab('/', 'Tổng quan', 'home')}
         {tab('/pos', 'Bán hàng', 'bag')}

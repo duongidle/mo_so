@@ -5,7 +5,7 @@ import { createField } from '../custom/service.js';
 const GENDER = { male: 'Nam', female: 'Nữ', other: 'Khác' };
 
 /**
- * Tạo sẵn các trường thông tin khách của ngành cho shop. Chỉ THÊM, không xoá/đổi gì:
+ * Tạo sẵn các trường thông tin khách và thông tin sản phẩm của ngành cho shop. Chỉ THÊM, không xoá/đổi gì:
  *  - trường cùng khoá hoặc cùng vai trò đã có (kể cả do chủ shop tự tạo) thì bỏ qua;
  *  - trường của ngành cũ vẫn giữ nguyên cùng dữ liệu đã nhập (không mất dữ liệu khi đổi ngành).
  * Trả về danh sách khoá vừa tạo.
@@ -23,6 +23,16 @@ export function applyIndustry(shopId) {
     if (keys.has(def.key) || (def.role && roles.has(def.role))) continue;
     createField({ entity_type: 'customer', shop_id: shopId, sort_order: order++, ...def });
     created.push(def.key);
+  }
+  // Trường sản phẩm của ngành: riêng shop này, cũng chỉ thêm
+  const pExisting = db.prepare(`SELECT key, role FROM custom_fields WHERE entity_type = 'product' AND shop_id = ? AND archived_at IS NULL`).all(shopId);
+  const pKeys = new Set(pExisting.map((f) => f.key));
+  const pRoles = new Set(pExisting.map((f) => f.role).filter(Boolean));
+  let pOrder = pExisting.length;
+  for (const def of ind.product_fields ?? []) {
+    if (pKeys.has(def.key) || (def.role && pRoles.has(def.role))) continue;
+    createField({ entity_type: 'product', shop_id: shopId, sort_order: pOrder++, ...def });
+    created.push(`product.${def.key}`);
   }
   if (created.length && ind.features.includes('feng_shui')) backfillFromLegacy(shopId);
   return created;

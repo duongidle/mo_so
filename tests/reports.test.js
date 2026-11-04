@@ -109,8 +109,9 @@ test('M8: báo cáo tổng quan, phân bổ chi phí chung, so sánh kỳ trư�
 
 test('M8: doanh thu theo ngũ hành chia đều cho sản phẩm hợp nhiều hành, tổng không lệch', async () => {
   const { api, nh, wh } = await setup();
-  const a = (await api.post('/products', { name: 'Tỳ hưu', elements: ['Thổ', 'Kim'], variants: [{ sku: 'TH-1', default_price: 500001 }], shop_ids: [nh.id] })).body.data;
-  const b = (await api.post('/products', { name: 'Vòng', elements: ['Mộc'], variants: [{ sku: 'V-1', default_price: 300000 }], shop_ids: [nh.id] })).body.data;
+  await api.patch(`/shops/${nh.id}`, { industry: 'phong_thuy' });
+  const a = (await api.post('/products', { name: 'Tỳ hưu', custom: { ngu_hanh: ['Thổ', 'Kim'] }, custom_shop_id: nh.id, variants: [{ sku: 'TH-1', default_price: 500001 }], shop_ids: [nh.id] })).body.data;
+  const b = (await api.post('/products', { name: 'Vòng', custom: { ngu_hanh: ['Mộc'] }, custom_shop_id: nh.id, variants: [{ sku: 'V-1', default_price: 300000 }], shop_ids: [nh.id] })).body.data;
   const c = (await api.post('/products', { name: 'Nước hoa', variants: [{ sku: 'NH-1', default_price: 100000 }], shop_ids: [nh.id] })).body.data;
   await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [a, b, c].map((p) => ({ variant_id: p.variants[0].id, qty: 5, unit_cost: 1000 })) });
   await api.post('/orders', { shop_id: nh.id, lines: [{ sku: 'TH-1', qty: 1 }, { sku: 'V-1', qty: 1 }, { sku: 'NH-1', qty: 2 }], status: 'completed' });
@@ -120,4 +121,32 @@ test('M8: doanh thu theo ngũ hành chia đều cho sản phẩm hợp nhiều h
   assert.equal(by['Mộc'], 300000);
   assert.equal(by[null], 200000, 'sản phẩm chưa gán hành');
   assert.equal(r.reduce((s, x) => s + x.revenue, 0), 1000001, 'tổng khớp doanh thu hàng');
+});
+
+test('Phase 7: meta.scope báo phạm vi khác bộ lọc, không đổi số', async () => {
+  const { api, nh } = await scenario();
+  const all = (await api.get('/reports/cashflow')).body;
+  assert.equal(all.meta.scope.shop_filtered, false);
+  assert.equal(all.meta.scope.shared_expenses_included, true);
+  assert.equal(all.meta.scope.supplier_payable, 'account');
+
+  const one = (await api.get(`/reports/cashflow?shop_id=${nh.id}`)).body;
+  assert.equal(one.meta.scope.shop_filtered, true);
+  assert.equal(one.meta.scope.shared_expenses_included, false);
+  assert.equal(one.meta.scope.supplier_payable, 'account');
+  assert.equal(one.data.supplier_payable, all.data.supplier_payable, 'nợ NCC không đổi khi lọc shop');
+
+  const ag = (await api.get(`/reports/aging?shop_id=${nh.id}`)).body;
+  assert.equal(ag.meta.scope.supplier, 'account');
+  assert.equal(ag.meta.scope.customer, 'shop');
+  assert.equal((await api.get('/reports/aging')).body.meta.scope.customer, 'account');
+
+  const ov = (await api.get(`/reports/overview?shop_id=${nh.id}`)).body;
+  assert.equal(ov.meta.scope.tax, 'household');
+  assert.equal(ov.meta.scope.shop_filtered, true);
+  assert.ok(ov.data.current && ov.data.previous_filter, 'dữ liệu cũ vẫn nguyên');
+
+  const inv = (await api.get(`/reports/inventory?shop_id=${nh.id}`)).body;
+  assert.equal(inv.meta.scope.shop_filtered, true);
+  assert.ok((await api.get(`/reports/health?shop_id=${nh.id}`)).body.meta.scope.days_of_inventory === 'shop');
 });
