@@ -41,13 +41,13 @@ const LIST = [
     tip: 'Giảm giá tăng mà số đơn không tăng theo: khuyến mãi đang không có tác dụng.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('returned_amount', 'Hàng trả', {
-    group: 'Doanh thu và lãi', what: 'Tiền hàng khách đã trả lại (một phần hoặc toàn bộ).',
-    formula: 'Σ tiền hàng ghi trên phiếu trả của các đơn trong kỳ',
+    group: 'Doanh thu và lãi', what: 'Tiền hàng khách đã trả lại (một phần hoặc toàn bộ), theo giá khách thực mua (đã trừ giảm giá dòng và phần giảm giá đơn chia cho dòng đó).',
+    formula: 'Σ giá trị hàng ghi trên phiếu trả của các đơn trong kỳ (không gồm hoàn phí ship và phí trả hàng)',
     source: `${COUNTED_TXT} Hàng trả được tính vào ngày của đơn gốc, không phải ngày khách trả, nên doanh thu một ngày đã chốt không đổi ngược về sau.`,
     tip: 'Cao bất thường: kiểm tra chất lượng, mô tả sản phẩm, đóng gói.', drill: ordersLink('returned'),
   }),
   M('net_revenue', 'Doanh thu thuần', {
-    group: 'Doanh thu và lãi', what: 'Tiền hàng thật sự bán được: tiền hàng trừ giảm giá và hàng khách trả lại. Chưa gồm phí ship khách trả.',
+    group: 'Doanh thu và lãi', what: 'Tiền hàng thật sự bán được: tiền hàng trừ giảm giá và hàng khách trả lại. Chưa gồm phí ship khách trả và phí trả hàng thu được (hai khoản đó hiện riêng).',
     formula: 'Tiền hàng − giảm giá − hàng trả', source: `${COUNTED_TXT} ${BY_DATE} Hàng trả tính vào ngày đơn gốc.`,
     tip: 'Dùng số này để so sánh các tháng với nhau, không dùng tổng tiền khách trả (có lẫn phí ship).', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
@@ -75,8 +75,17 @@ const LIST = [
 
   // ---------- Lợi nhuận ----------
   M('shipping_fee', 'Phí ship khách trả', {
-    group: 'Doanh thu và lãi', what: 'Tiền ship khách trả thêm trên đơn.', formula: 'Σ phí ship khách trả trên đơn', source: `${COUNTED_TXT} ${BY_DATE}`,
+    group: 'Doanh thu và lãi', what: 'Tiền ship khách trả thêm trên đơn, đã trừ phần ship hoàn lại cho khách khi trả hàng.', formula: 'Σ (phí ship khách trả − phí ship đã hoàn khách)', source: `${COUNTED_TXT} ${BY_DATE}`,
     tip: 'Được cộng vào lợi nhuận gộp, nhưng không nằm trong doanh thu thuần.', drill: ordersCounted, drillNote: ORDERS_NOTE,
+  }),
+  M('return_fee', 'Phí trả hàng thu được', {
+    group: 'Doanh thu và lãi', what: 'Tiền shop giữ lại khi khách trả hàng (phí trả hàng, hoặc giữ toàn bộ tiền khách đã trả). Là doanh thu khác, cộng vào lợi nhuận gộp, không nằm trong doanh thu thuần.',
+    formula: 'Σ phí trả hàng ghi trên phiếu trả', source: `${COUNTED_TXT} ${BY_DATE} Tính vào ngày của đơn gốc. Khớp tài khoản 5118 trong sổ kế toán.`,
+    tip: 'Lợi nhuận gộp chỉ giữ nguyên khi khách trả hàng nếu shop thu phí này. Không thu thì doanh thu và lãi của đơn mất theo hàng trả.', drill: ordersCounted, drillNote: ORDERS_NOTE,
+  }),
+  M('return_shipping_cost', 'Phí ship chiều về (trả hàng)', {
+    group: 'Doanh thu và lãi', what: 'Tiền ship shop trả để nhận hàng khách gửi lại (hoặc đơn bị khách từ chối nhận).', formula: 'Σ phí ship chiều về ghi trên phiếu trả',
+    source: `${COUNTED_TXT} ${BY_DATE} Tính vào ngày của đơn gốc. Ghi vào chi phí vận chuyển (6412) trong sổ kế toán.`, tip: 'Cao: xem lại chính sách đổi trả, hoặc thu phí trả hàng để bù.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('platform_fee', 'Phí sàn', {
     group: 'Doanh thu và lãi', what: 'Hoa hồng, phí thanh toán, phí dịch vụ sàn thu trên đơn.', formula: 'Σ phí sàn ghi trên đơn',
@@ -92,8 +101,8 @@ const LIST = [
     tip: 'Giá vốn sai thì lợi nhuận sai mà trông vẫn hợp lý. Nhập đủ phí nhập hàng để giá vốn đúng.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('gross_profit', 'Lợi nhuận gộp', {
-    group: 'Doanh thu và lãi', what: 'Tiền còn lại sau khi trừ giá nhập của hàng đã bán, phí sàn và tiền ship shop chịu. Chưa trừ chi phí vận hành.',
-    formula: 'Doanh thu thuần + phí ship khách trả − phí sàn − ship shop chịu − giá vốn', source: `${COUNTED_TXT} ${BY_DATE}`,
+    group: 'Doanh thu và lãi', what: 'Tiền còn lại sau khi trừ giá nhập của hàng đã bán, phí sàn, ship shop chịu và ship chiều về. Gồm phí ship khách trả (đã trừ hoàn ship) và phí trả hàng thu được. Chưa trừ chi phí vận hành.',
+    formula: 'Doanh thu thuần + phí ship khách trả + phí trả hàng thu được − phí sàn − ship shop chịu − ship chiều về − giá vốn', source: `${COUNTED_TXT} ${BY_DATE}`,
     tip: 'Đây là số cho biết “bán hàng có lời không” trước khi tính tiền thuê, quảng cáo…', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('gross_margin_pct', 'Biên lợi nhuận gộp (%)', {
@@ -253,9 +262,15 @@ const LIST = [
     group: 'Tiền và công nợ', what: 'Tiền vào trừ tiền ra trong kỳ.', formula: 'Đã thu − đã chi', source: 'Cùng phạm vi với hai số trên. Không phải số dư quỹ.', tip: 'Âm nhiều kỳ liền: đang đốt tiền, xem chi phí và tiền nhập hàng.',
   }),
   M('customer_receivable', 'Khách còn nợ', {
-    group: 'Tiền và công nợ', time: 'today', what: 'Đơn bán trực tiếp/Facebook đã xác nhận mà khách chưa trả đủ.', formula: 'Σ (khách phải trả − hàng trả − đã thu)',
+    group: 'Tiền và công nợ', time: 'today', what: 'Đơn bán trực tiếp/Facebook đã xác nhận mà khách chưa trả đủ.', formula: 'Σ (khách phải trả − giảm do trả hàng − đã thu)',
     source: 'Đơn kênh không phải sàn, đã xác nhận trở đi, còn thiếu tiền. Tính đến hôm nay, không theo khoảng ngày; lọc shop thì chỉ đơn của shop đó.', tip: 'Xem tuổi nợ: nợ càng lâu càng khó đòi.', drill: () => '/orders?status=confirmed,shipping,completed',
     drillNote: 'Danh sách có cả đơn đã thu đủ; xem cột “Thu tiền”.',
+  }),
+  M('customer_refund_owed', 'Nợ phải trả khách (trả hàng)', {
+    group: 'Tiền và công nợ', time: 'today', what: 'Khách đã trả tiền, sau đó trả hàng, nhưng shop chưa hoàn đủ tiền.', formula: 'Σ max(0, đã thu − số phải thu sau trả hàng)',
+    source: 'Đơn kênh không phải sàn, đã xác nhận trở đi (kể cả đã trả toàn phần). Tính đến hôm nay; lọc shop thì chỉ đơn của shop đó. Đơn sàn không tính vì sàn tự hoàn tiền cho người mua. Bằng số dư Có của tài khoản 131 trong sổ kế toán.',
+    tip: 'Hoàn bằng nút “Hoàn tiền” ở đơn. Nếu shop giữ tiền, ghi phí trả hàng lúc lập phiếu trả để khoản này không còn là nợ.', drill: () => '/orders?status=completed,returned',
+    drillNote: 'Danh sách có cả đơn không nợ; mở từng đơn xem “Còn phải trả khách”.',
   }),
   M('marketplace_pending', 'Sàn đang treo', {
     group: 'Tiền và công nợ', time: 'today', what: 'Đơn trên sàn (Shopee, TikTok Shop…) đã hoàn thành nhưng chưa ghi nhận tiền sàn trả về.', formula: 'Σ (tiền shop thực nhận − hàng trả − đã nhận)',
@@ -292,8 +307,8 @@ const LIST = [
     source: 'Gần bằng Σ tồn × giá vốn bình quân; chênh vài đồng do làm tròn giá vốn bình quân về đồng nguyên.', tip: 'Chênh lớn: chạy kiểm tra sổ (npm run check-journal) và kiểm kê kho.', drill: () => '/stock',
   }),
   M('acc_net_revenue', 'Doanh thu thuần (KQKD)', {
-    group: 'Kế toán', what: 'Doanh thu bán hàng cộng phí ship khách trả, trừ hàng bán bị trả lại.', formula: '5111 + 5113 − 5212',
-    source: 'Từ sổ cái, đơn tính theo ngày đặt, cùng quy tắc với báo cáo. Phần hàng (5111 − 5212) bằng “Doanh thu thuần” ở Báo cáo; 5113 bằng phí ship khách trả.', tip: 'So với tab Doanh thu ở Báo cáo để đối chiếu.', drill: () => '/reports?tab=profit',
+    group: 'Kế toán', what: 'Doanh thu bán hàng cộng phí ship khách trả (đã trừ ship hoàn) và phí trả hàng thu được, trừ hàng bán bị trả lại.', formula: '5111 + 5113 + 5118 − 5212',
+    source: 'Từ sổ cái, đơn tính theo ngày đặt, cùng quy tắc với báo cáo. Phần hàng (5111 − 5212) bằng “Doanh thu thuần” ở Báo cáo; 5113 bằng phí ship khách trả; 5118 bằng “Phí trả hàng thu được”.', tip: 'So với tab Doanh thu ở Báo cáo để đối chiếu.', drill: () => '/reports?tab=profit',
   }),
   M('acc_cogs', 'Giá vốn hàng bán (KQKD)', {
     group: 'Kế toán', what: 'Giá vốn của hàng đã bán (tài khoản 632).', formula: 'Σ giá vốn đã chụp lúc xuất kho, trừ phần hàng trả được nhập lại', source: 'Từ sổ cái; bằng “Giá vốn” ở Báo cáo.', tip: 'Giá vốn sai thì lợi nhuận sai mà trông vẫn hợp lý.',
@@ -363,7 +378,7 @@ const GROUP_KEYS = [
   ['Doanh thu và lãi', ['net_revenue', 'gross_profit', 'gross_margin_pct', 'expenses_amount', 'net_profit_estimate', 'tax_estimate']],
   ['Đơn hàng và khách', ['aov', 'cancel_rate_pct', 'return_rate_pct', 'repeat_rate_pct']],
   ['Kho', ['stock_value', 'days_of_inventory', 'low_stock']],
-  ['Tiền và công nợ', ['fund_balance', 'customer_receivable', 'marketplace_pending', 'supplier_payable', 'aging_customer']],
+  ['Tiền và công nợ', ['fund_balance', 'customer_receivable', 'customer_refund_owed', 'marketplace_pending', 'supplier_payable', 'aging_customer']],
 ];
 // GLOSSARY giữ dạng cũ { name, key?, what, how, tip } để trang hướng dẫn và test cũ chạy nguyên; thêm source/scope.
 export const GLOSSARY = GROUP_KEYS.map(([group, keys]) => ({

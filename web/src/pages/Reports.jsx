@@ -132,7 +132,7 @@ function Body({ tab, d, elements }) {
     return (
       <>
         <Card title="Lợi nhuận"><div className="stack small">
-          <Row m="net_revenue" l="Doanh thu thuần" v={c.net_revenue} /><Row m="shipping_fee" l="Phí ship khách trả" v={c.shipping_fee} /><Row m="platform_fee" l="Phí sàn" v={c.platform_fee} neg /><Row m="seller_shipping" l="Ship shop chịu" v={c.seller_shipping} neg /><Row m="cogs" l="Giá vốn" v={c.cogs} neg />
+          <Row m="net_revenue" l="Doanh thu thuần" v={c.net_revenue} /><Row m="shipping_fee" l="Phí ship khách trả (sau hoàn ship)" v={c.shipping_fee} />{c.return_fee > 0 && <Row m="return_fee" l="Phí trả hàng thu được" v={c.return_fee} />}<Row m="platform_fee" l="Phí sàn" v={c.platform_fee} neg /><Row m="seller_shipping" l="Ship shop chịu" v={c.seller_shipping} neg />{c.return_shipping_cost > 0 && <Row m="return_shipping_cost" l="Phí ship chiều về (trả hàng)" v={c.return_shipping_cost} neg />}<Row m="cogs" l="Giá vốn" v={c.cogs} neg />
           <Row m="gross_profit" l="Lợi nhuận gộp" v={c.gross_profit} bold /><Row m="gross_margin_pct" l={`Biên lợi nhuận gộp: ${pct(c.gross_margin_pct)}`} v={null} /><Row m="expenses_amount" l="Chi phí (gồm phần chia từ chi phí chung)" v={c.expenses_amount} neg /><Row m="net_profit_estimate" l="Lợi nhuận ròng ước tính" v={c.net_profit_estimate} bold />
         </div><p className="small muted" style={{ marginTop: 8 }}>“Ước tính” vì chưa tính thuế và các khoản ngoài sổ.</p></Card>
         {ov.tax?.applicable && (
@@ -261,6 +261,7 @@ function CashTab({ cf, aging, accounts, meta }) {
       <div className="grid cols-3"><Kpi metric="cash_in" label="Đã thu trong kỳ" value={vnd(cf.cash_in)} /><Kpi metric="cash_out" label="Đã chi trong kỳ" value={vnd(cf.cash_out)} hint={`Gồm chi phí ${vnd(cf.cash_out_expenses)}`} /><Kpi metric="net_cash" label="Ròng trong kỳ" value={vnd(cf.net_cash)} /></div>
       {cf.shared_expenses_not_included > 0 && <div className="alert warn small">Đang lọc theo shop: chi phí chung {vnd(cf.shared_expenses_not_included)} không thuộc shop nào nên chưa tính vào số “Đã chi”.</div>}
       <div className="grid cols-3"><Kpi metric="customer_receivable" label="Khách còn nợ" value={vnd(cf.customer_receivable)} /><Kpi metric="marketplace_pending" label="Sàn đang treo" value={vnd(cf.marketplace_pending)} /><Kpi metric="supplier_payable" label="Nợ nhà cung cấp" value={vnd(cf.supplier_payable)} /></div>
+      {cf.customer_refund_owed > 0 && <div className="grid cols-3"><Kpi metric="customer_refund_owed" label="Nợ phải trả khách (trả hàng)" value={vnd(cf.customer_refund_owed)} hint={`${cf.customer_refund_owed_orders} đơn`} /></div>}
       {meta?.scope?.shop_filtered && <p className="small muted" style={{ margin: 0 }}>Đang lọc theo shop: nợ nhà cung cấp và số dư quỹ vẫn là của cả tài khoản vì phiếu nhập và quỹ tiền không thuộc riêng shop nào.</p>}
       <div className="grid cols-3"><AgingCard kind="customer" g={aging.customer} /><AgingCard kind="marketplace" g={aging.marketplace} /><AgingCard kind="supplier" g={aging.supplier} /></div>
     </>

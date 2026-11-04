@@ -144,10 +144,13 @@ r.post('/:id/returns', async (c) => {
       lines: z.array(z.object({ order_line_id: z.string(), qty, restock: z.boolean().default(true), warehouse_id: z.string().optional() })).min(1),
       reason: optionalText,
       refund: z.object({ amount: money, method: z.enum(PAYMENT_METHODS).default('cash') }).nullish(),
+      shipping_refund_amount: money.default(0),
+      return_fee_amount: money.default(0),
+      return_shipping_cost: money.default(0),
       returned_at: z.string().nullish(),
     }),
   );
-  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at }, c.get('actor'))) });
+  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at, shippingRefund: input.shipping_refund_amount, returnFee: input.return_fee_amount, returnShippingCost: input.return_shipping_cost }, c.get('actor'))) });
 });
 
 export default r;

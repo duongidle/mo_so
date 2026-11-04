@@ -57,10 +57,13 @@ export function getOrder(id) {
   o.returns = db()
     .prepare('SELECT * FROM order_returns WHERE order_id = ? ORDER BY created_at')
     .all(o.id)
-    .map((r) => ({ ...r, lines: JSON.parse(r.lines) }));
+    .map((r) => ({ ...r, lines: JSON.parse(r.lines), amount_due_to_customer: returnDueToCustomer(r, isMarketplace(o.channel_id)) }));
+  // Giá trị đã trả của từng dòng (từ các phiếu trả) để giao diện và máy chủ cùng tính phần còn lại theo luỹ kế
+  for (const l of o.lines) l.returned_value = o.returns.reduce((a, r) => a + r.lines.filter((x) => x.order_line_id === l.id).reduce((b, x) => b + x.value, 0), 0);
+  o.is_marketplace = isMarketplace(o.channel_id);
   o.amount_due = Math.max(0, dueAmount(o) - o.paid_amount);
   o.needs_refund = o.paid_amount > dueAmount(o);
-  o.gross_profit = o.status === 'cancelled' || o.status === 'draft' ? 0 : o.net_amount - o.returned_amount - o.cogs_amount;
+  o.gross_profit = orderGrossProfit(o);
   return o;
 }
 
@@ -71,6 +74,17 @@ export function getOrder(id) {
  */
 function isMarketplace(channelId) {
   return !!db().prepare('SELECT is_marketplace FROM channels WHERE id = ?').get(channelId)?.is_marketplace;
+}
+
+/** Lãi gộp một đơn: shop thực nhận − ship hoàn − hàng trả + phí trả hàng thu được − giá vốn − ship chiều về. Khớp báo cáo (finish) và sổ cái. */
+export function orderGrossProfit(o) {
+  if (o.status === 'cancelled' || o.status === 'draft') return 0;
+  return o.net_amount - o.returned_shipping_amount - o.returned_goods_amount + o.return_fee_amount - o.cogs_amount - o.return_shipping_cost;
+}
+
+/** Cần trả khách của một phiếu trả: hàng + ship hoàn − phí trả hàng. Đơn sàn: sàn tự hoàn tiền cho người mua nên shop không trả khách. */
+function returnDueToCustomer(r, marketplace) {
+  return marketplace ? 0 : r.goods_amount + r.shipping_refund_amount - r.return_fee_amount;
 }
 
 function dueAmount(o) {
@@ -169,12 +183,21 @@ function computeHeader(lines, f) {
 function refreshDerived(orderId) {
   const o = db().prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(orderId);
-  const returned = db().prepare('SELECT COALESCE(SUM(goods_amount),0) AS v FROM order_returns WHERE order_id = ?').get(orderId).v;
+  const rt = db()
+    .prepare(
+      `SELECT COALESCE(SUM(goods_amount),0) AS goods, COALESCE(SUM(shipping_refund_amount),0) AS ship, COALESCE(SUM(return_fee_amount),0) AS fee,
+              COALESCE(SUM(return_shipping_cost),0) AS cost FROM order_returns WHERE order_id = ?`,
+    )
+    .get(orderId);
+  // returned_amount = giảm số phải thu = hàng trả + ship hoàn − phí trả hàng (mọi công thức công nợ `total − returned_amount − paid` dùng số này)
+  const returned = rt.goods + rt.ship - rt.fee;
   const active = STOCK_OUT_STATUSES.has(o.status);
   const cogs = active ? lines.reduce((a, l) => a + l.cogs_amount, 0) : 0; // cogs_amount của dòng đã trừ phần nhập lại kho
-  const netRevenue = active ? o.goods_revenue - returned : 0;
+  const netRevenue = active ? o.goods_revenue - rt.goods : 0;
   const paid = netPaid('order', orderId);
   const due = dueAmount({ ...o, returned_amount: returned });
+  // Còn nợ khách: đã thu nhiều hơn phải thu. Chỉ đơn ngoài sàn đã xác nhận trở đi (đơn huỷ hoàn tiền theo luồng huỷ; đơn sàn: sàn hoàn người mua)
+  const refundOwed = !isMarketplace(o.channel_id) && ['confirmed', 'shipping', 'completed', 'returned'].includes(o.status) ? Math.max(0, paid - due) : 0;
   let paymentStatus = 'unpaid';
   if (paid > 0 && paid >= due) paymentStatus = 'paid';
   else if (paid > 0) paymentStatus = 'partial';
@@ -182,8 +205,11 @@ function refreshDerived(orderId) {
   if ((o.status === 'cancelled' || o.status === 'returned') && hadPayments && paid <= 0) paymentStatus = 'refunded';
   if (o.status !== 'cancelled' && due === 0 && paid === 0 && o.status !== 'draft' && hadPayments) paymentStatus = 'refunded';
   db()
-    .prepare('UPDATE orders SET returned_amount=?, net_revenue=?, cogs_amount=?, paid_amount=?, payment_status=?, updated_at=? WHERE id=?')
-    .run(returned, netRevenue, cogs, paid, paymentStatus, nowIso(), orderId);
+    .prepare(
+      `UPDATE orders SET returned_amount=?, returned_goods_amount=?, returned_shipping_amount=?, return_fee_amount=?, return_shipping_cost=?, refund_owed_amount=?,
+              net_revenue=?, cogs_amount=?, paid_amount=?, payment_status=?, updated_at=? WHERE id=?`,
+    )
+    .run(returned, rt.goods, rt.ship, rt.fee, rt.cost, refundOwed, netRevenue, cogs, paid, paymentStatus, nowIso(), orderId);
 }
 
 // ---------- Tồn kho theo trạng thái ----------
@@ -521,6 +547,9 @@ export function addOrderPayment(id, { amount, method, paidAt, note, direction = 
   const o = getOrder(id);
   if (direction === 'in' && o.status === 'cancelled') throw conflict('ORDER_CANCELLED', 'Đơn đã huỷ');
   if (direction === 'out' && amount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
+  if (direction === 'out' && o.status !== 'cancelled' && !o.is_marketplace && o.status !== 'draft' && amount > o.refund_owed_amount) {
+    throw badRequest('OVER_REFUND', `Chỉ còn nợ khách ${o.refund_owed_amount}; không hoàn nhiều hơn số đó`, { max: o.refund_owed_amount });
+  }
   const p = recordPayment({ direction, refType: 'order', refId: o.id, shopId: o.shop_id, amount, method, paidAt, note }, actor);
   refreshDerived(o.id);
   const after = getOrder(o.id);
@@ -530,13 +559,34 @@ export function addOrderPayment(id, { amount, method, paidAt, note, direction = 
 
 // ---------- Trả hàng ----------
 /**
+ * Giá trị hàng của một lần trả = giá trị luỹ kế sau lần này − tổng đã trả trước đó, với
+ * luỹ kế(n) = round((line_total − giảm giá đơn phân bổ) × n / SL dòng). Trả hết dòng thì tổng các lần bằng đúng tiền thực của dòng
+ * (không làm tròn riêng từng lần). `returned_value` là tổng giá trị đã ghi ở các phiếu trước (kể cả phiếu cũ làm tròn kiểu cũ).
+ */
+export function returnLineValue(l, qty) {
+  const net = l.line_total - l.allocated_order_discount;
+  const cum = l.returned_qty + qty >= l.qty ? net : Math.round((net * (l.returned_qty + qty)) / l.qty);
+  return cum - l.returned_value;
+}
+
+/**
  * lines: [{ order_line_id, qty, restock, warehouse_id? }] — restock=false nghĩa là hàng hỏng, không nhập lại kho (giá vốn không đổi);
  *   restock=true nhập lại theo LIFO về đúng kho đã xuất, hoặc `warehouse_id` nếu chọn kho nhận khác
- * refund: { amount, method } — tiền hoàn thực tế (có thể khác giá trị hàng)
+ * refund: { amount, method } — tiền trả khách ngay lúc lập phiếu
+ * shippingRefund: hoàn phí ship cho khách (tối đa phí ship còn lại của đơn); returnFee: phí trả hàng shop giữ lại (tối đa hàng + ship hoàn);
+ * returnShippingCost: phí ship chiều về shop chịu.
+ * Cần trả khách = hàng + ship hoàn − phí trả hàng; tiền trả ngay không vượt số đó và không vượt số khách đã trả.
+ * Kênh sàn: sàn tự hoàn tiền cho người mua → không có ship hoàn, phí trả hàng, tiền trả khách (chỉ ship chiều về nếu sàn tính cho shop).
  */
-export function createReturn(orderId, { lines, reason, refund, returnedAt }, actor) {
+export function createReturn(orderId, { lines, reason, refund, returnedAt, shippingRefund = 0, returnFee = 0, returnShippingCost = 0 }, actor) {
   const o = getOrder(orderId);
   if (!['completed', 'shipping', 'confirmed'].includes(o.status)) throw conflict('INVALID_STATUS', 'Chỉ trả hàng cho đơn đã xác nhận/giao/hoàn thành');
+  const refundAmount = refund?.amount ?? 0;
+  if (o.is_marketplace && (shippingRefund > 0 || returnFee > 0 || refundAmount > 0)) {
+    throw badRequest('MARKETPLACE_RETURN', 'Đơn sàn: sàn tự hoàn tiền cho người mua nên không có hoàn ship, phí trả hàng hay tiền trả khách');
+  }
+  const shipLeft = o.shipping_fee - o.returned_shipping_amount;
+  if (shippingRefund > shipLeft) throw badRequest('OVER_SHIPPING_REFUND', `Hoàn phí ship tối đa ${shipLeft}`, { max: shipLeft });
   const at = toIso(returnedAt) || nowIso();
   const id = newId('ret');
   const result = [];
@@ -545,8 +595,7 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt }, act
     const l = o.lines.find((x) => x.id === r.order_line_id);
     if (!l) throw badRequest('LINE_NOT_FOUND', 'Dòng đơn không tồn tại', r);
     if (r.qty > l.qty - l.returned_qty) throw badRequest('RETURN_QTY', `Dòng ${l.sku}: chỉ còn trả được ${l.qty - l.returned_qty}`);
-    // Giá trị hàng trả = phần doanh thu thực của dòng (sau giảm giá dòng + phân bổ giảm giá đơn) theo tỷ lệ SL
-    const value = Math.round(((l.line_total - l.allocated_order_discount) * r.qty) / l.qty);
+    const value = returnLineValue(l, r.qty);
     goods += value;
     let restoredCost = 0;
     if (r.restock) {
@@ -555,17 +604,21 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt }, act
     db()
       .prepare('UPDATE order_lines SET returned_qty = returned_qty + ?, restocked_qty = restocked_qty + ? WHERE id = ?')
       .run(r.qty, r.restock ? r.qty : 0, l.id);
+    l.returned_qty += r.qty;
+    l.returned_value += value;
     result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!r.restock, value, unit_cost: l.unit_cost, restored_cost: restoredCost });
   }
-  const refundAmount = refund?.amount ?? 0;
+  if (returnFee > goods + shippingRefund) throw badRequest('OVER_RETURN_FEE', `Phí trả hàng tối đa ${goods + shippingRefund} (hàng trả + ship hoàn)`, { max: goods + shippingRefund });
+  const dueToCustomer = goods + shippingRefund - returnFee;
+  if (refundAmount > dueToCustomer) throw badRequest('OVER_REFUND', `Tiền trả khách tối đa ${dueToCustomer} (cần trả khách của phiếu này)`, { max: dueToCustomer });
+  if (refundAmount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
   db()
     .prepare(
-      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, shipping_refund_amount, return_fee_amount, return_shipping_cost, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, dailyCode('TH', o.shop_code, at), o.id, o.shop_id, goods, refundAmount, reason ?? null, JSON.stringify(result), at, businessDate(at), actor?.id ?? null, nowIso());
+    .run(id, dailyCode('TH', o.shop_code, at), o.id, o.shop_id, goods, shippingRefund, returnFee, returnShippingCost, refundAmount, reason ?? null, JSON.stringify(result), at, businessDate(at), actor?.id ?? null, nowIso());
   if (refundAmount > 0) {
-    if (refundAmount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
     recordPayment({ direction: 'out', refType: 'order', refId: o.id, shopId: o.shop_id, amount: refundAmount, method: refund.method ?? 'cash', paidAt: at, note: `Hoàn tiền trả hàng` }, actor);
   }
   const fully = db().prepare('SELECT SUM(qty - returned_qty) AS left FROM order_lines WHERE order_id = ?').get(o.id).left === 0;
@@ -576,7 +629,7 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt }, act
   refreshDerived(o.id);
   if (o.customer_id) recalcCustomerStats(o.customer_id);
   const after = getOrder(o.id);
-  audit(actor, 'order.returned', 'order', o.id, null, { return_id: id, lines: result, goods, refundAmount });
-  emit('order.returned', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: id, goods_amount: goods, refund_amount: refundAmount, order: after } });
+  audit(actor, 'order.returned', 'order', o.id, null, { return_id: id, lines: result, goods, shippingRefund, returnFee, returnShippingCost, refundAmount });
+  emit('order.returned', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: id, goods_amount: goods, shipping_refund_amount: shippingRefund, return_fee_amount: returnFee, return_shipping_cost: returnShippingCost, refund_amount: refundAmount, order: after } });
   return after;
 }
