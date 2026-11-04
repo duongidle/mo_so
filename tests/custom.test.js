@@ -110,8 +110,8 @@ test('Danh mục biến: có nhãn, bỏ cột kỹ thuật/cột khách cũ, g�
 
   const vars = (await api.get(`/custom/variables?entity_type=customer&shop_id=${nh.id}`)).body.data;
   const keys = vars.map((v) => v.key);
-  for (const bad of ['id', 'birth_date', 'birth_year', 'element_override', 'gender', 'tags', 'created_at', 'updated_at', 'merged_into', 'archived_at']) assert.ok(!keys.includes(bad), `không có ${bad}`);
-  for (const good of ['name', 'phone', 'total_spent', 'shop_order_count', 'shop_total_spent', 'shop_last_order_at', 'custom.nam_sinh']) assert.ok(keys.includes(good), `có ${good}`);
+  for (const bad of ['id', 'element_override', 'gender', 'tags', 'created_at', 'updated_at', 'merged_into', 'archived_at']) assert.ok(!keys.includes(bad), `không có ${bad}`);
+  for (const good of ['name', 'phone', 'total_spent', 'shop_order_count', 'shop_total_spent', 'shop_last_order_at', 'custom.nam_sinh', 'birth_date', 'birth_year', 'age']) assert.ok(keys.includes(good), `có ${good}`);
   assert.ok(!keys.includes('custom.chi_o_pt'), 'trường của shop khác không lọt sang');
   const v = vars.find((x) => x.key === 'shop_order_count');
   assert.equal(v.ref, '{shop_order_count}');
@@ -204,18 +204,18 @@ test('Chỉ số báo cáo: biến lạ bị chặn kèm vị trí, danh mục b
 test('Vai trò của trường: đúng đối tượng, đúng kiểu, mỗi shop một trường mỗi vai trò, sửa được', async () => {
   const { api, nh } = await setup();
   const mk = (b) => api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, ...b });
-  const ok = await mk({ key: 'ns', label: 'Ngày sinh', type: 'date', role: 'birth_date' });
+  const ok = await mk({ key: 'menh', label: 'Mệnh', type: 'select', options: ['Kim', 'Mộc'], role: 'element' });
   assert.equal(ok.status, 201);
-  assert.equal(ok.body.data.role, 'birth_date', 'role không bị bỏ khi tạo');
-  assert.equal((await mk({ key: 'ns2', label: 'Ngày sinh 2', type: 'date', role: 'birth_date' })).body.error.code, 'DUPLICATE_ROLE');
-  assert.equal((await mk({ key: 'ns3', label: 'Sai kiểu', type: 'text', role: 'birth_year' })).body.error.code, 'ROLE_TYPE');
+  assert.equal(ok.body.data.role, 'element', 'role không bị bỏ khi tạo');
+  assert.equal((await mk({ key: 'menh2', label: 'Mệnh 2', type: 'select', options: ['Kim'], role: 'element' })).body.error.code, 'DUPLICATE_ROLE');
   assert.equal((await mk({ key: 'xx', label: 'Lạ', type: 'text', role: 'bay_bong' })).body.error.code, 'INVALID_ROLE');
-  const wrongEntity = await api.post('/custom/fields', { entity_type: 'order', key: 'r', label: 'R', type: 'date', role: 'birth_date' });
+  // Ngày sinh / năm sinh là thông tin chung của khách: không còn vai trò riêng
+  assert.equal((await mk({ key: 'ns', label: 'Ngày sinh', type: 'date', role: 'birth_date' })).body.error.code, 'ROLE_RETIRED');
+  const wrongEntity = await api.post('/custom/fields', { entity_type: 'order', key: 'r', label: 'R', type: 'date', role: 'element' });
   assert.equal(wrongEntity.body.error.code, 'ROLE_NOT_ALLOWED');
-  const other = await mk({ key: 'ny', label: 'Năm sinh', type: 'number' });
-  assert.equal((await api.patch(`/custom/fields/${other.body.data.id}`, { role: 'birth_year' })).body.data.role, 'birth_year');
-  assert.equal((await api.patch(`/custom/fields/${other.body.data.id}`, { role: null })).body.data.role, null, 'gỡ vai trò');
-  assert.equal((await api.patch(`/custom/fields/${other.body.data.id}`, { role: 'birth_date' })).body.error.code, 'ROLE_TYPE');
+  const other = await mk({ key: 'ny', label: 'Hành khác', type: 'text' });
+  assert.equal((await api.patch(`/custom/fields/${other.body.data.id}`, { role: 'birth_year' })).body.error.code, 'ROLE_RETIRED');
+  assert.equal((await api.patch(`/custom/fields/${ok.body.data.id}`, { role: null })).body.data.role, null, 'gỡ vai trò');
   // Sản phẩm: chỉ vai trò element
   const pe = await api.post('/custom/fields', { entity_type: 'product', key: 'hanh', label: 'Hành', type: 'multiselect', options: ['Kim', 'Mộc'], role: 'element' });
   assert.equal(pe.status, 201);
@@ -251,9 +251,9 @@ test('Sửa trường: lựa chọn, thứ tự, bắt buộc (có hiệu lực 
 
 test('Hiện lại trường đã ẩn: kiểm tra lại vai trò và khoá bị trùng', async () => {
   const { api, nh } = await setup();
-  const a = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'sinh', label: 'Ngày sinh', type: 'date', role: 'birth_date' })).body.data;
+  const a = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'menh_a', label: 'Mệnh A', type: 'select', options: ['Kim'], role: 'element' })).body.data;
   assert.equal((await api.patch(`/custom/fields/${a.id}`, { archived: true })).status, 200);
-  const b = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'sinh2', label: 'Sinh nhật', type: 'date', role: 'birth_date' })).body.data;
+  const b = (await api.post('/custom/fields', { entity_type: 'customer', shop_id: nh.id, key: 'menh_b', label: 'Mệnh B', type: 'select', options: ['Kim'], role: 'element' })).body.data;
   const role = await api.patch(`/custom/fields/${a.id}`, { archived: false });
   assert.equal(role.status, 409);
   assert.equal(role.body.error.code, 'DUPLICATE_ROLE');

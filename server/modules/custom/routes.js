@@ -22,6 +22,7 @@ const fieldInput = z.object({
   show_in_list: z.boolean().optional(),
   required: z.boolean().optional(),
   role: z.string().nullish(),
+  default_value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]).nullish(),
 });
 
 r.get('/fields', (c) => c.json({ data: svc.listFields(c.req.query('entity_type'), { shopId: c.req.query('shop_id'), archived: c.req.query('archived') === '1' }) }));
@@ -30,8 +31,15 @@ r.post('/fields', async (c) => {
   return c.json({ data: tx(() => svc.createField(input)) }, 201);
 });
 r.patch('/fields/:id', async (c) => {
-  const patch = await body(c, patchOf(fieldInput.pick({ label: true, options: true, formula: true, sort_order: true, show_in_list: true, required: true, role: true }).extend({ archived: z.boolean() })));
+  const patch = await body(c, patchOf(fieldInput.pick({ label: true, options: true, formula: true, sort_order: true, show_in_list: true, required: true, role: true, default_value: true }).extend({ archived: z.boolean() })));
   return c.json({ data: tx(() => svc.updateField(c.req.param('id'), patch)) });
+});
+
+// Xoá hẳn một trường. Có dữ liệu thì cần confirm (body hoặc ?confirm=1); xem svc.deleteField
+r.delete('/fields/:id', async (c) => {
+  const input = await body(c, z.object({ confirm: z.boolean().optional() }));
+  const confirm = input.confirm === true || c.req.query('confirm') === '1';
+  return c.json({ data: tx(() => svc.deleteField(c.req.param('id'), { confirm }, c.get('actor'))) });
 });
 
 r.get('/variables', (c) => {
@@ -49,7 +57,10 @@ r.post('/formula/preview', async (c) => {
 r.get('/values/:entity/:id', (c) => {
   const e = entity.safeParse(c.req.param('entity'));
   if (!e.success) throw badRequest('INVALID_ENTITY', 'entity phải là product | customer | order | purchase');
-  return c.json({ data: svc.getValues(e.data, c.req.param('id'), { shopId: c.req.query('shop_id') }) });
+  const shopId = c.req.query('shop_id');
+  // meta=1: kèm lý do công thức trống và mệnh hiệu lực (hồ sơ khách)
+  if (c.req.query('meta') === '1') return c.json({ data: svc.getValuesWithMeta(e.data, c.req.param('id'), { shopId }) });
+  return c.json({ data: svc.getValues(e.data, c.req.param('id'), { shopId }) });
 });
 r.put('/values/:entity/:id', async (c) => {
   const e = entity.safeParse(c.req.param('entity'));

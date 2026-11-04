@@ -61,6 +61,9 @@ export const ENTITY_VARIABLES = {
     T('email', 'Email', 'text', 'Thông tin chung'),
     T('facebook_url', 'Link Facebook', 'text', 'Thông tin chung'),
     T('address', 'Địa chỉ', 'text', 'Thông tin chung'),
+    T('birth_date', 'Ngày sinh', 'date', 'Thông tin chung'),
+    T('birth_year', 'Năm sinh', 'number', 'Thông tin chung'),
+    T('age', 'Tuổi (tính từ ngày sinh, hoặc năm sinh nếu chưa biết ngày)', 'number', 'Thông tin chung'),
     T('note', 'Ghi chú chung', 'text', 'Thông tin chung'),
     T('source_channel', 'Kênh đầu tiên mua hàng', 'text', 'Thông tin chung'),
     T('order_count', 'Số đơn (mọi shop)', 'number', 'Toàn hệ thống'),
@@ -77,6 +80,9 @@ export const CUSTOMER_SHOP_VARIABLES = [
   T('shop_last_order_at', 'Ngày mua gần nhất tại shop này', 'date', 'Tại shop này'),
 ];
 
+/** Mệnh hiệu lực (ghi đè nếu có, không thì tự tính từ ngày/năm sinh). Chỉ shop có tính năng feng_shui. */
+export const MENH_VARIABLE = T('menh', 'Mệnh (hiệu lực: ghi đè hoặc tự tính)', 'text', 'Tại shop này');
+
 const SHOP_VAR_KEYS = new Set(CUSTOMER_SHOP_VARIABLES.map((v) => v.key));
 export const isShopDerived = (name) => SHOP_VAR_KEYS.has(name);
 
@@ -92,6 +98,6 @@ export function shopDerivedValues(customerId, shopId) {
 }
 
 /** Biến cột (không gồm trường tuỳ chỉnh) của một đối tượng */
-export function columnVariables(entityType) {
-  return [...ENTITY_VARIABLES[entityType], ...(entityType === 'customer' ? CUSTOMER_SHOP_VARIABLES : [])];
+export function columnVariables(entityType, { menh = false } = {}) {
+  return [...ENTITY_VARIABLES[entityType], ...(entityType === 'customer' ? [...CUSTOMER_SHOP_VARIABLES, ...(menh ? [MENH_VARIABLE] : [])] : [])];
 }

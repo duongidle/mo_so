@@ -17,12 +17,12 @@ test('Ngành bán: chọn ngành tạo sẵn trường khách riêng cho shop, �
   assert.equal((await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' })).body.data.industry, 'phong_thuy');
   assert.equal((await api.patch(`/shops/${nh.id}`, { industry: 'nuoc_hoa_o_to' })).status, 200);
   assert.equal((await api.patch(`/shops/${nh.id}`, { industry: 'khong_co' })).status, 400);
-  assert.deepEqual(await fieldKeys(api, pt.id), ['ngay_sinh', 'nam_sinh', 'gioi_tinh', 'menh']);
-  assert.deepEqual(await fieldKeys(api, nh.id), ['nhom_huong', 'dong_xe', 'dip_dung', 'sinh_nhat']);
+  assert.deepEqual(await fieldKeys(api, pt.id), ['gioi_tinh', 'menh']);
+  assert.deepEqual(await fieldKeys(api, nh.id), ['nhom_huong', 'dong_xe', 'dip_dung']);
 
   // Đặt lại cùng ngành: không tạo trùng
   await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy', name: 'PT mới' });
-  assert.equal((await fieldKeys(api, pt.id)).length, 4);
+  assert.equal((await fieldKeys(api, pt.id)).length, 2);
 
   // Đổi ngành: trường và dữ liệu của ngành cũ vẫn còn
   const cust = (await api.post('/customers', { name: 'Anh Tài', phone: '0911000111' })).body.data;
@@ -39,12 +39,12 @@ test('Trường khách chỉ thuộc từng shop: cùng một khách, shop này 
   await api.patch(`/shops/${nh.id}`, { industry: 'nuoc_hoa_o_to' });
   const cust = (await api.post('/customers', { name: 'Chị Lan', phone: '0922000222' })).body.data;
 
-  await api.put(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`, { menh: 'Thuỷ', ngay_sinh: '1992-05-10' });
+  await api.put(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`, { menh: 'Thuỷ' });
   await api.put(`/custom/values/customer/${cust.id}?shop_id=${nh.id}`, { nhom_huong: ['Gỗ', 'Biển'], dong_xe: 'Mazda CX-5' });
 
   const vPt = (await api.get(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`)).body.data;
   const vNh = (await api.get(`/custom/values/customer/${cust.id}?shop_id=${nh.id}`)).body.data;
-  assert.deepEqual(Object.keys(vPt).sort(), ['menh', 'ngay_sinh']);
+  assert.deepEqual(Object.keys(vPt).sort(), ['menh']);
   assert.deepEqual(Object.keys(vNh).sort(), ['dong_xe', 'nhom_huong']);
   assert.equal(vNh.menh, undefined, 'mệnh của shop phong thuỷ không lọt sang shop nước hoa');
 
@@ -58,7 +58,7 @@ test('Trường khách chỉ thuộc từng shop: cùng một khách, shop này 
   const dNh = (await api.get(`/customers/${cust.id}?shop_id=${nh.id}`)).body.data;
   assert.equal(dPt.feng_shui.element, 'Thuỷ');
   assert.equal(dNh.feng_shui, null, 'shop nước hoa không có mệnh');
-  assert.deepEqual(dNh.shop_profile.fields.map((f) => f.key), ['nhom_huong', 'dong_xe', 'dip_dung', 'sinh_nhat']);
+  assert.deepEqual(dNh.shop_profile.fields.map((f) => f.key), ['nhom_huong', 'dong_xe', 'dip_dung']);
   assert.equal((await api.get(`/customers/${cust.id}`)).body.data.shop_profile, undefined, 'xem chung (không chọn shop) thì không có phần riêng');
 
   // Mệnh: danh sách khách chỉ lọc theo mệnh trong shop phong thuỷ
@@ -85,14 +85,14 @@ test('Ngành phong thuỷ: chép ngày sinh/mệnh cũ trên hồ sơ khách san
   const a = (await api.post('/customers', { name: 'A', phone: '0933000111' })).body.data;
   const b = (await api.post('/customers', { name: 'B', phone: '0933000222' })).body.data;
   // dữ liệu cũ từ trước khi có ngành (cột trên hồ sơ khách)
-  getDb().prepare("UPDATE customers SET birth_date = '1990-01-20', gender = 'female' WHERE id = ?").run(a.id);
+  getDb().prepare("UPDATE customers SET birth_date = '1990-01-20', gender = 'female' WHERE id = ?").run(a.id); // ngày sinh là thông tin chung, không chép sang trường shop
   getDb().prepare("UPDATE customers SET element_override = 'Hoả' WHERE id = ?").run(b.id);
   await api.post('/orders', { shop_id: pt.id, customer_id: a.id, lines: [{ sku: 'V1', qty: 1 }], status: 'completed' });
   // b chưa mua ở shop này → không chép
 
   await api.patch(`/shops/${pt.id}`, { industry: 'phong_thuy' });
   const va = (await api.get(`/custom/values/customer/${a.id}?shop_id=${pt.id}`)).body.data;
-  assert.equal(va.ngay_sinh, '1990-01-20');
+  assert.equal(va.ngay_sinh, undefined, 'ngày sinh không còn là trường của shop');
   assert.equal(va.gioi_tinh, 'Nữ');
   assert.equal((await api.get(`/customers/${a.id}?shop_id=${pt.id}`)).body.data.feng_shui.element, 'Mộc', 'sinh trước Tết 1990 → Kỷ Tỵ, Đại Lâm Mộc');
   assert.deepEqual((await api.get(`/custom/values/customer/${b.id}?shop_id=${pt.id}`)).body.data, {});
@@ -112,15 +112,14 @@ test('Nước hoa ô tô và Nước hoa là hai ngành riêng, mỗi ngành b�
   await api.patch(`/shops/${pt.id}`, { industry: 'nuoc_hoa' });
   const oto = await fieldList(api, nh.id);
   const nuocHoa = await fieldList(api, pt.id);
-  assert.deepEqual(oto.map((f) => f.key), ['nhom_huong', 'dong_xe', 'dip_dung', 'sinh_nhat']);
-  assert.deepEqual(nuocHoa.map((f) => f.key), ['nhom_huong', 'nong_do', 'thuong_hieu_yeu_thich', 'phong_cach', 'dip_su_dung', 'ngan_sach', 'sinh_nhat']);
+  assert.deepEqual(oto.map((f) => f.key), ['nhom_huong', 'dong_xe', 'dip_dung']);
+  assert.deepEqual(nuocHoa.map((f) => f.key), ['nhom_huong', 'nong_do', 'thuong_hieu_yeu_thich', 'phong_cach', 'dip_su_dung', 'ngan_sach']);
   assert.ok(!nuocHoa.some((f) => f.key === 'dong_xe'), 'nước hoa thông thường không hỏi dòng xe');
   assert.ok(!oto.some((f) => f.key === 'nong_do'), 'nước hoa ô tô không hỏi nồng độ');
   assert.deepEqual(nuocHoa.find((f) => f.key === 'nong_do').options, ['EDC', 'EDT', 'EDP', 'Parfum']);
   assert.equal(nuocHoa.find((f) => f.key === 'ngan_sach').type, 'money');
-  // Cả hai đều nhắc sinh nhật được
-  assert.equal(nuocHoa.find((f) => f.key === 'sinh_nhat').role, 'birth_date');
-  assert.equal(oto.find((f) => f.key === 'sinh_nhat').role, 'birth_date');
+  // Ngày sinh là thông tin chung của khách: không có trường sinh nhật riêng ở shop nào
+  assert.ok(!nuocHoa.some((f) => f.role === 'birth_date') && !oto.some((f) => f.role === 'birth_date'));
 });
 
 test('Migration 015: shop đang là "nuoc_hoa" (bộ trường nước hoa ô tô cũ) chuyển sang "nuoc_hoa_o_to", dữ liệu giữ nguyên', async () => {

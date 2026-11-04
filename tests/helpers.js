@@ -30,7 +30,7 @@ export function makeClient(app) {
     post: (p, d, h) => call('POST', p, d ?? {}, h),
     patch: (p, d) => call('PATCH', p, d),
     put: (p, d) => call('PUT', p, d),
-    delete: (p) => call('DELETE', p),
+    delete: (p, d) => call('DELETE', p, d),
     cookie: () => cookie,
   };
 }

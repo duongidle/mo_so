@@ -2,6 +2,7 @@ import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso, businessDate, addDays, daysBetween } from '../../lib/time.js';
 import { badRequest, notFound } from '../../lib/errors.js';
+import { asDay } from '../../lib/formula.js';
 import { getCustomer, fengShuiOf } from '../customers/service.js';
 import { roleValues } from '../custom/service.js';
 import { shopHasFeature } from '../shops/service.js';
@@ -120,31 +121,27 @@ export function actOnReminder({ customerId, productId, baseDate, action, snoozeD
 
 // ---------- Sinh nhật ----------
 /**
- * Sinh nhật sắp tới, đọc từ trường có vai trò birth_date của từng shop (shop nào không hỏi ngày sinh thì không có).
- * Có shopId: chỉ shop đó. Không có: gộp các shop, mỗi khách một dòng.
+ * Sinh nhật sắp tới, đọc từ ngày sinh CHUNG trên hồ sơ khách (customers.birth_date).
+ * Có shopId: chỉ khách còn là thành viên của shop đó. Không có: mọi khách có ngày sinh. Mỗi khách một dòng.
  */
 export function upcomingBirthdays({ withinDays = 7, today = businessDate(), shopId } = {}) {
   const rows = db()
     .prepare(
-      `SELECT c.id, c.code, c.name, c.phone, c.facebook_url, v.value_text AS birth_date, f.shop_id, s.name AS shop_name
-       FROM custom_values v JOIN custom_fields f ON f.id = v.field_id AND f.role = 'birth_date' AND f.archived_at IS NULL
-       JOIN shops s ON s.id = f.shop_id AND s.archived_at IS NULL
-       JOIN customers c ON c.id = v.entity_id AND c.merged_into IS NULL AND c.archived_at IS NULL
-       WHERE v.entity_type = 'customer' AND v.value_text IS NOT NULL ${shopId ? 'AND f.shop_id = ?' : ''}
-       ORDER BY f.shop_id`,
+      `SELECT c.id, c.code, c.name, c.phone, c.facebook_url, c.birth_date FROM customers c
+       WHERE c.merged_into IS NULL AND c.archived_at IS NULL AND c.birth_date IS NOT NULL
+       ${shopId ? 'AND EXISTS (SELECT 1 FROM customer_shops m WHERE m.customer_id = c.id AND m.shop_id = ? AND m.removed_at IS NULL)' : ''}`,
     )
     .all(...(shopId ? [shopId] : []));
-  const seen = new Set();
   const out = [];
+  // 29/2 rơi vào năm không nhuận thì mừng vào 28/2
+  const nextOn = (y, m, d) => (asDay(`${y}-${m}-${d}`) ? `${y}-${m}-${d}` : `${y}-${m}-28`);
   for (const c of rows) {
-    if (seen.has(c.id)) continue;
     const [, m, d] = c.birth_date.split('-');
-    let next = `${today.slice(0, 4)}-${m}-${d}`;
-    if (next < today) next = `${Number(today.slice(0, 4)) + 1}-${m}-${d}`;
+    let next = nextOn(today.slice(0, 4), m, d);
+    if (next < today) next = nextOn(Number(today.slice(0, 4)) + 1, m, d);
     const inDays = daysBetween(today, next);
     if (inDays <= withinDays) {
-      seen.add(c.id);
-      out.push({ ...c, next_birthday: next, in_days: inDays, turning: Number(next.slice(0, 4)) - Number(c.birth_date.slice(0, 4)) });
+      out.push({ ...c, shop_id: shopId ?? null, next_birthday: next, in_days: inDays, turning: Number(next.slice(0, 4)) - Number(c.birth_date.slice(0, 4)) });
     }
   }
   return out.sort((a, b) => a.in_days - b.in_days);

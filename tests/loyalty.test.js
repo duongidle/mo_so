@@ -14,8 +14,10 @@ test('M9: hạng theo chi tiêu 12 tháng, nhắc mua lại, sinh nhật, gợi 
   const today = businessDate();
   // Mệnh là thông tin riêng của shop phong thuỷ
   const cust = (await api.post('/customers', { name: 'Nguyễn Văn Tài', phone: '0911000111' })).body.data;
-  const setMenh = await api.put(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`, { menh: 'Mộc', ngay_sinh: `1990-${today.slice(5)}` });
+  const setMenh = await api.put(`/custom/values/customer/${cust.id}?shop_id=${pt.id}`, { menh: 'Mộc' });
   assert.equal(setMenh.status, 200, JSON.stringify(setMenh.body));
+  // Ngày sinh là thông tin chung trên hồ sơ khách
+  assert.equal((await api.patch(`/customers/${cust.id}`, { birth_date: `1990-${today.slice(5)}` })).status, 200);
 
   // 3 chai cách đây 50 ngày: chu kỳ 45 × 3 = 135 ngày → CHƯA đến hạn
   const ago = (n) => `${addDays(today, -n)}T05:00:00.000Z`;
@@ -54,6 +56,9 @@ test('M9: hạng theo chi tiêu 12 tháng, nhắc mua lại, sinh nhật, gợi 
   const bd = (await api.get('/loyalty/today')).body.data.birthdays;
   assert.equal(bd.length, 1);
   assert.equal(bd[0].in_days, 0);
+  assert.equal(bd[0].turning, Number(today.slice(0, 4)) - 1990);
+  assert.equal((await api.get(`/loyalty/today?shop_id=${pt.id}`)).body.data.birthdays.length, 1, 'khách là thành viên shop');
+  assert.equal((await api.get(`/loyalty/today?shop_id=${nh.id}`)).body.data.birthdays.length, 1, 'khách đã mua ở nh nên cũng là khách của nh');
 
   // Gợi ý theo mệnh Mộc: hợp Mộc + Thuỷ (sinh Mộc). Hoả không hợp. Bán chéo sang shop Phong thuỷ
   const sg = (await api.get(`/loyalty/customers/${cust.id}/suggestions?shop_id=${pt.id}`)).body;

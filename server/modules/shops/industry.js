@@ -5,6 +5,20 @@ import { createField } from '../custom/service.js';
 const GENDER = { male: 'Nam', female: 'Nữ', other: 'Khác' };
 
 /**
+ * Trường mẫu của ngành mà chủ shop đã XOÁ có chủ đích thì không tạo lại khi đổi ngành / áp lại ngành.
+ * Nhớ bằng nhật ký (audit_log, hành động custom_field.deleted ghi lúc xoá trường) nên không cần bảng riêng.
+ * Muốn có lại thì tự thêm trường cùng khoá ở Cài đặt.
+ */
+function wasDeleted(entityType, shopId, key) {
+  return !!getDb()
+    .prepare(
+      `SELECT 1 FROM audit_log WHERE action = 'custom_field.deleted' AND json_extract(before, '$.field.entity_type') = ?
+         AND json_extract(before, '$.field.shop_id') = ? AND json_extract(before, '$.field.key') = ? LIMIT 1`,
+    )
+    .get(entityType, shopId, key);
+}
+
+/**
  * Tạo sẵn các trường thông tin khách và thông tin sản phẩm của ngành cho shop. Chỉ THÊM, không xoá/đổi gì:
  *  - trường cùng khoá hoặc cùng vai trò đã có (kể cả do chủ shop tự tạo) thì bỏ qua;
  *  - trường của ngành cũ vẫn giữ nguyên cùng dữ liệu đã nhập (không mất dữ liệu khi đổi ngành).
@@ -20,7 +34,7 @@ export function applyIndustry(shopId) {
   const created = [];
   let order = existing.length;
   for (const def of ind.customer_fields) {
-    if (keys.has(def.key) || (def.role && roles.has(def.role))) continue;
+    if (keys.has(def.key) || (def.role && roles.has(def.role)) || wasDeleted('customer', shopId, def.key)) continue;
     createField({ entity_type: 'customer', shop_id: shopId, sort_order: order++, ...def });
     created.push(def.key);
   }
@@ -30,7 +44,7 @@ export function applyIndustry(shopId) {
   const pRoles = new Set(pExisting.map((f) => f.role).filter(Boolean));
   let pOrder = pExisting.length;
   for (const def of ind.product_fields ?? []) {
-    if (pKeys.has(def.key) || (def.role && pRoles.has(def.role))) continue;
+    if (pKeys.has(def.key) || (def.role && pRoles.has(def.role)) || wasDeleted('product', shopId, def.key)) continue;
     createField({ entity_type: 'product', shop_id: shopId, sort_order: pOrder++, ...def });
     created.push(`product.${def.key}`);
   }
@@ -39,8 +53,9 @@ export function applyIndustry(shopId) {
 }
 
 /**
- * Trước đây ngày sinh/mệnh lưu chung trên hồ sơ khách. Khi shop bật ngành phong thuỷ, chép các giá trị cũ
+ * Trước đây mệnh/giới tính lưu chung trên hồ sơ khách. Khi shop bật ngành phong thuỷ, chép các giá trị cũ
  * sang trường của shop cho những khách đã từng mua ở shop này (không ghi đè giá trị đã có).
+ * Ngày/năm sinh không chép: chúng là thông tin chung của khách (cột customers.birth_date, birth_year).
  */
 function backfillFromLegacy(shopId) {
   const db = getDb();
@@ -50,16 +65,13 @@ function backfillFromLegacy(shopId) {
   const gender = db.prepare(`SELECT id FROM custom_fields WHERE entity_type = 'customer' AND shop_id = ? AND key = 'gioi_tinh' AND archived_at IS NULL`).get(shopId);
   const customers = db
     .prepare(
-      `SELECT c.id, c.birth_date, c.birth_year, c.element_override, c.gender FROM customers c
-       WHERE c.merged_into IS NULL AND (c.birth_date IS NOT NULL OR c.birth_year IS NOT NULL OR c.element_override IS NOT NULL OR c.gender IS NOT NULL)
+      `SELECT c.id, c.element_override, c.gender FROM customers c
+       WHERE c.merged_into IS NULL AND (c.element_override IS NOT NULL OR c.gender IS NOT NULL)
          AND EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.shop_id = ?)`,
     )
     .all(shopId);
   const ins = db.prepare(`INSERT OR IGNORE INTO custom_values (entity_type, entity_id, field_id, value_text, value_num) VALUES ('customer', ?, ?, ?, ?)`);
   for (const c of customers) {
-    if (fields.birth_date && c.birth_date) ins.run(c.id, fields.birth_date.id, c.birth_date, null);
-    // Chỉ có năm sinh (không có ngày) mới cần trường năm sinh; có ngày thì năm đã suy ra từ ngày
-    if (fields.birth_year && c.birth_year && !c.birth_date) ins.run(c.id, fields.birth_year.id, null, c.birth_year);
     if (fields.element && c.element_override) ins.run(c.id, fields.element.id, c.element_override, null);
     if (gender && c.gender) ins.run(c.id, gender.id, GENDER[c.gender], null);
   }

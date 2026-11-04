@@ -7,7 +7,8 @@ import { ELEMENTS } from './lunar.js';
  *  - customer_fields: trường thông tin khách tạo sẵn cho shop khi chọn ngành này
  *  - product_fields: trường thông tin sản phẩm tạo sẵn (riêng của shop đó), vd Ngũ hành hợp của shop phong thuỷ
  * Thêm ngành mới = thêm một mục ở đây (và một theme CSS nếu muốn giao diện riêng).
- * `role` cho app biết ý nghĩa của trường: birth_date, birth_year, element.
+ * `role` cho app biết ý nghĩa của trường: element (mệnh ghi đè). Ngày sinh và năm sinh là thông tin CHUNG của khách (cột customers.birth_date,
+ * birth_year), không còn là trường của shop; hai vai trò birth_date/birth_year chỉ còn trên các trường cũ đã ẩn (migration 028).
  */
 export const INDUSTRIES = {
   general: {
@@ -22,14 +23,12 @@ export const INDUSTRIES = {
   phong_thuy: {
     id: 'phong_thuy',
     name: 'Phong thuỷ',
-    description: 'Vật phẩm phong thuỷ. Ghi mệnh và ngày sinh của khách, gợi ý vật phẩm theo ngũ hành, hiện âm lịch.',
+    description: 'Vật phẩm phong thuỷ. Tính mệnh từ ngày sinh của khách (ghi đè tay được), gợi ý vật phẩm theo ngũ hành, hiện âm lịch.',
     theme: 'phongthuy',
     features: ['feng_shui'],
     customer_fields: [
-      { key: 'ngay_sinh', label: 'Ngày sinh (dương lịch)', type: 'date', role: 'birth_date' },
-      { key: 'nam_sinh', label: 'Năm sinh (khi chưa biết ngày)', type: 'number', role: 'birth_year' },
       { key: 'gioi_tinh', label: 'Giới tính', type: 'select', options: ['Nam', 'Nữ', 'Khác'] },
-      { key: 'menh', label: 'Mệnh (để trống = tự tính)', type: 'select', options: ELEMENTS, role: 'element' },
+      { key: 'menh', label: 'Mệnh (ghi đè)', type: 'select', options: ELEMENTS, role: 'element' },
     ],
     product_fields: [{ key: 'ngu_hanh', label: 'Ngũ hành hợp', type: 'multiselect', options: ELEMENTS, role: 'element' }],
   },
@@ -43,7 +42,6 @@ export const INDUSTRIES = {
       { key: 'nhom_huong', label: 'Nhóm hương yêu thích', type: 'multiselect', options: ['Gỗ', 'Hoa cỏ', 'Cam chanh', 'Biển', 'Phương Đông', 'Ngọt'] },
       { key: 'dong_xe', label: 'Dòng xe', type: 'text' },
       { key: 'dip_dung', label: 'Mua cho', type: 'select', options: ['Xe cá nhân', 'Quà tặng', 'Xe dịch vụ'] },
-      { key: 'sinh_nhat', label: 'Sinh nhật', type: 'date', role: 'birth_date' },
     ],
     product_fields: [],
   },
@@ -60,7 +58,6 @@ export const INDUSTRIES = {
       { key: 'phong_cach', label: 'Phong cách', type: 'select', options: ['Nam tính', 'Nữ tính', 'Unisex'] },
       { key: 'dip_su_dung', label: 'Dịp sử dụng', type: 'select', options: ['Đi làm', 'Hẹn hò', 'Dự tiệc', 'Hằng ngày', 'Quà tặng'] },
       { key: 'ngan_sach', label: 'Ngân sách mỗi lần', type: 'money' },
-      { key: 'sinh_nhat', label: 'Sinh nhật', type: 'date', role: 'birth_date' },
     ],
     product_fields: [],
   },

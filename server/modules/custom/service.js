@@ -2,8 +2,11 @@ import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
-import { parse, refsOf, refList, evaluate, FormulaError } from '../../lib/formula.js';
-import { ROLES } from '../../lib/industries.js';
+import { parse, refsOf, refList, evaluate, evaluateExplain, inferType, ageOn, FormulaError } from '../../lib/formula.js';
+import { ROLES, hasFeature } from '../../lib/industries.js';
+import { elementOfBirth } from '../../lib/lunar.js';
+import { businessDate } from '../../lib/time.js';
+import { audit, emit } from '../../lib/events.js';
 import { REPORT_VARIABLES, overview } from '../reports/service.js';
 import { columnVariables, isShopDerived, shopDerivedValues } from './variables.js';
 
@@ -14,11 +17,18 @@ export const FIELD_TYPES = ['text', 'number', 'money', 'date', 'select', 'multis
 
 const ENTITY_LABEL = { product: 'sản phẩm', customer: 'khách hàng', order: 'đơn hàng', purchase: 'phiếu nhập' };
 const columnsOf = (entityType) => db().prepare(`PRAGMA table_info(${TABLES[entityType]})`).all().map((c) => c.name);
-const shape = (f) => f && { ...f, options: f.options ? JSON.parse(f.options) : null, show_in_list: !!f.show_in_list, required: !!f.required };
+const shape = (f) => f && { ...f, options: f.options ? JSON.parse(f.options) : null, default_value: f.default_value == null ? null : JSON.parse(f.default_value), show_in_list: !!f.show_in_list, required: !!f.required };
 
-/** Vai trò nào dùng được ở đối tượng nào (mệnh/sinh nhật của khách, ngũ hành của sản phẩm) */
-export const ROLE_ENTITIES = { birth_date: ['customer'], birth_year: ['customer'], element: ['customer', 'product'] };
-const ROLE_TYPES = { birth_date: ['date'], birth_year: ['number'] };
+/** Vai trò nào dùng được ở đối tượng nào (mệnh ghi đè của khách, ngũ hành của sản phẩm). Ngày/năm sinh nay là thông tin chung của khách, không còn vai trò. */
+export const ROLE_ENTITIES = { element: ['customer', 'product'] };
+const RETIRED_ROLES = ['birth_date', 'birth_year'];
+const ROLE_TYPES = {};
+
+const shopHasFengShui = (shopId) => {
+  if (!shopId) return false;
+  const s = db().prepare('SELECT industry FROM shops WHERE id = ?').get(shopId);
+  return !!s && hasFeature(s.industry, 'feng_shui');
+};
 export const MAX_LIST_COLUMNS = 4;
 
 /** Mỗi shop hiện tối đa vài cột trường khách ở danh sách khách: nhiều hơn thì bảng vỡ trên máy tính và vô dụng trên điện thoại */
@@ -64,14 +74,25 @@ export function parseOrThrow(formula) {
  * Kiểm tra công thức cho trường: chỉ nhận biến trong danh mục (variables.js) và trường tuỳ chỉnh của cùng đối tượng/shop.
  * Chỉ chạy khi tạo/sửa; công thức đã lưu trước đây dùng cột ngoài danh mục vẫn đọc được.
  */
+const KIND = { money: 'number', number: 'number', percent: 'number', boolean: 'number', date: 'date', text: 'text', select: 'text', multiselect: 'text' };
+
 function parseFormula(entityType, key, formula, shopId = null) {
   const tree = parseOrThrow(formula);
-  const cols = new Set(columnVariables(entityType).map((v) => v.key));
+  const colVars = columnVariables(entityType, { menh: entityType === 'customer' && shopHasFengShui(shopId) });
+  const cols = new Set(colVars.map((v) => v.key));
   const customs = new Map(listFields(entityType, { shopId }).map((f) => [f.key, f]));
   for (const { name: ref, pos } of refList(tree)) {
     if (ref.startsWith('custom.')) {
       if (!customs.has(ref.slice(7)) && ref.slice(7) !== key) throw formulaError(`Không có trường tuỳ chỉnh {${ref}}${entityType === 'customer' ? ' trong shop này' : ''}`, pos);
     } else if (!cols.has(ref)) throw formulaError(`Biến {${ref}} không dùng được trong công thức của ${ENTITY_LABEL[entityType]}`, pos);
+  }
+  // Kiểu: chặn phép sai (chữ − số, ngày × số...) ngay lúc lưu, kèm gợi ý cách đúng
+  const colType = new Map(colVars.map((v) => [v.key, KIND[v.type]]));
+  try {
+    inferType(tree, (name) => (name.startsWith('custom.') ? (customs.get(name.slice(7))?.type === 'formula' ? undefined : KIND[customs.get(name.slice(7))?.type]) : colType.get(name)));
+  } catch (e) {
+    if (e instanceof FormulaError) throw formulaError(`Công thức sai: ${e.message}`, e.position);
+    throw e;
   }
   // Chống vòng lặp: A dùng B, B dùng A
   const seen = new Set();
@@ -94,11 +115,21 @@ function nextSortOrder(entityType, shopId) {
 /** Vai trò: đúng đối tượng, đúng kiểu, mỗi vai trò chỉ một trường trong cùng phạm vi (shop) */
 function assertRole(role, { entity_type, type, shop_id }, exceptId = null) {
   if (!role) return;
+  if (RETIRED_ROLES.includes(role)) throw badRequest('ROLE_RETIRED', 'Ngày sinh và năm sinh nay là thông tin chung của khách (nhập ở hồ sơ khách), không cần trường riêng của shop');
   if (!ROLES.includes(role)) throw badRequest('INVALID_ROLE', `Vai trò không hợp lệ: ${role}`);
   if (!ROLE_ENTITIES[role].includes(entity_type)) throw badRequest('ROLE_NOT_ALLOWED', `Vai trò "${role}" không dùng cho ${ENTITY_LABEL[entity_type]}`);
   if (ROLE_TYPES[role] && !ROLE_TYPES[role].includes(type)) throw badRequest('ROLE_TYPE', `Vai trò "${role}" cần trường kiểu ${ROLE_TYPES[role].join('/')}`);
   const clash = db().prepare('SELECT label FROM custom_fields WHERE entity_type = ? AND role = ? AND shop_id IS ? AND archived_at IS NULL AND id IS NOT ?').get(entity_type, role, shop_id ?? null, exceptId);
   if (clash) throw conflict('DUPLICATE_ROLE', `Vai trò "${role}" đã gán cho trường "${clash.label}"`);
+}
+
+/** Giá trị mặc định: kiểm theo kiểu trường (cùng luật với nhập tay), lưu dạng JSON. Trường công thức không có mặc định. */
+function encodeDefault(f, value = f.default_value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (f.type === 'formula') throw badRequest('DEFAULT_FORMULA', 'Trường công thức tự tính nên không có giá trị mặc định');
+  const v = coerce({ ...f, options: f.options ?? [] }, value);
+  const out = f.type === 'multiselect' ? JSON.parse(v.text) : f.type === 'boolean' ? v.num === 1 : v.num ?? v.text;
+  return JSON.stringify(out);
 }
 
 export function createField(input) {
@@ -123,14 +154,15 @@ export function createField(input) {
   }
   if (['select', 'multiselect'].includes(input.type) && !input.options?.length) throw badRequest('OPTIONS_REQUIRED', 'Trường chọn cần có danh sách lựa chọn');
   if (columnsOf(input.entity_type).includes(input.key)) throw badRequest('KEY_RESERVED', `"${input.key}" trùng tên cột có sẵn`);
+  const defaultJson = encodeDefault(input);
   const id = newId('cf');
   const at = nowIso();
   db()
     .prepare(
-      `INSERT INTO custom_fields (id, entity_type, key, label, type, options, formula, shop_id, sort_order, role, show_in_list, required, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO custom_fields (id, entity_type, key, label, type, options, formula, shop_id, sort_order, role, show_in_list, required, default_value, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.entity_type, input.key, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.type === 'formula' ? input.formula : null, input.shop_id ?? null, input.sort_order ?? nextSortOrder(input.entity_type, input.shop_id ?? null), input.role ?? null, input.show_in_list ? 1 : 0, input.required ? 1 : 0, at, at);
+    .run(id, input.entity_type, input.key, input.label, input.type, input.options ? JSON.stringify(input.options) : null, input.type === 'formula' ? input.formula : null, input.shop_id ?? null, input.sort_order ?? nextSortOrder(input.entity_type, input.shop_id ?? null), input.role ?? null, input.show_in_list ? 1 : 0, input.required ? 1 : 0, defaultJson, at, at);
   return shape(db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id));
 }
 
@@ -159,8 +191,15 @@ export function updateField(id, patch) {
   if (required && f.type === 'formula') throw badRequest('REQUIRED_FORMULA', 'Trường công thức tự tính nên không đặt bắt buộc được');
   if (patch.options && !['select', 'multiselect'].includes(f.type)) throw badRequest('NOT_SELECT', 'Chỉ trường chọn mới có danh sách lựa chọn');
   if (patch.options && !patch.options.length) throw badRequest('OPTIONS_REQUIRED', 'Trường chọn cần có danh sách lựa chọn');
+  const opts = patch.options ?? (f.options ? JSON.parse(f.options) : null);
+  let defaultJson = patch.default_value === undefined ? f.default_value : encodeDefault({ ...f, options: opts }, patch.default_value);
+  // Sửa danh sách lựa chọn làm mặc định cũ không còn nằm trong đó: bỏ mặc định thay vì để form điền một giá trị sai
+  if (patch.default_value === undefined && patch.options && defaultJson) {
+    const cur = JSON.parse(defaultJson);
+    if ([].concat(cur).some((x) => !patch.options.includes(x))) defaultJson = null;
+  }
   db()
-    .prepare('UPDATE custom_fields SET label=?, options=?, formula=?, sort_order=?, archived_at=?, show_in_list=?, role=?, required=?, updated_at=? WHERE id=?')
+    .prepare('UPDATE custom_fields SET label=?, options=?, formula=?, sort_order=?, archived_at=?, show_in_list=?, role=?, required=?, default_value=?, updated_at=? WHERE id=?')
     .run(
       patch.label ?? f.label,
       patch.options ? JSON.stringify(patch.options) : f.options,
@@ -170,10 +209,55 @@ export function updateField(id, patch) {
       patch.show_in_list === undefined ? f.show_in_list : patch.show_in_list ? 1 : 0,
       role,
       required,
+      defaultJson,
       nowIso(),
       id,
     );
   return shape(db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id));
+}
+
+/**
+ * Xoá hẳn một trường tuỳ chỉnh. Khác "Ẩn" (giữ dữ liệu, hiện lại được), xoá bỏ cả định nghĩa lẫn giá trị:
+ *  - đang bị công thức khác dùng → 409 FIELD_REFERENCED;
+ *  - chưa có giá trị nào → xoá luôn (dữ liệu nháp chưa phát sinh gì);
+ *  - đã có giá trị → cần confirm; toàn bộ định nghĩa + giá trị được chép vào audit_log trước khi xoá để khôi phục tay.
+ * Khoá được giải phóng. Bản ghi audit cũng là cách applyIndustry biết trường mẫu đã bị xoá có chủ đích.
+ */
+export function deleteField(id, { confirm = false } = {}, actor = null) {
+  const f = db().prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
+  if (!f) throw notFound('Trường tuỳ chỉnh');
+  const users = db()
+    .prepare("SELECT id, key, label, formula FROM custom_fields WHERE entity_type = ? AND type = 'formula' AND archived_at IS NULL AND id != ? AND (shop_id IS ? OR shop_id IS NULL OR ? IS NULL)")
+    .all(f.entity_type, f.id, f.shop_id, f.shop_id)
+    .filter((x) => {
+      try { return refsOf(parse(x.formula)).has(`custom.${f.key}`); } catch { return false; }
+    })
+    .map(({ id: fid, key, label }) => ({ id: fid, key, label }));
+  if (users.length) {
+    throw conflict('FIELD_REFERENCED', `Không xoá được: trường này đang được công thức của ${users.map((x) => `“${x.label}”`).join(', ')} dùng. Sửa hoặc xoá các công thức đó trước (hoặc chọn Ẩn).`, { fields: users });
+  }
+  const values = db().prepare('SELECT entity_id, value_text, value_num FROM custom_values WHERE field_id = ?').all(f.id);
+  if (values.length && !confirm) {
+    throw conflict('CONFIRM_REQUIRED', `Trường “${f.label}” đang có dữ liệu ở ${values.length} bản ghi. Xoá sẽ bỏ hết. Gửi confirm: true để xác nhận, hoặc dùng Ẩn để giữ dữ liệu.`, { values_count: values.length });
+  }
+  audit(actor, 'custom_field.deleted', 'custom_field', f.id, { field: f, values }, null);
+  db().prepare('DELETE FROM custom_values WHERE field_id = ?').run(f.id);
+  db().prepare('DELETE FROM custom_fields WHERE id = ?').run(f.id);
+  emit('custom_field.deleted', { entityType: 'custom_field', entityId: f.id, shopId: f.shop_id, data: { id: f.id, entity_type: f.entity_type, key: f.key, label: f.label, values_removed: values.length } });
+  return { deleted: true, values_removed: values.length };
+}
+
+/**
+ * Điền giá trị mặc định của các trường (không phải công thức) vào MỘT bản ghi MỚI, chỉ cho ô chưa có giá trị.
+ * Không bao giờ chạy trên bản ghi cũ; form của bản bản ghi cũ chỉ điền sẵn trên màn hình, người dùng bấm Lưu mới ghi.
+ */
+export function applyFieldDefaults(entityType, entityId, { shopId = null } = {}) {
+  const fields = listFields(entityType, { shopId }).filter((f) => f.default_value !== null && f.type !== 'formula');
+  const ins = db().prepare('INSERT OR IGNORE INTO custom_values (entity_type, entity_id, field_id, value_text, value_num) VALUES (?,?,?,?,?)');
+  for (const f of fields) {
+    const v = coerce(f, f.default_value);
+    if (v.text !== null || v.num !== null) ins.run(entityType, entityId, f.id, v.text, v.num);
+  }
 }
 
 function coerce(field, raw) {
@@ -257,13 +341,41 @@ function rawValues(entityType, entityId, shopId) {
   return out;
 }
 
-/** Hàm tra giá trị biến cho một bản ghi: cột, biến dẫn xuất theo shop (khách), trường tuỳ chỉnh và công thức lồng nhau */
+/**
+ * Giá trị suy ra theo vai trò (chỗ chung để sau này thêm vai trò khác). Hiện có 'element' (mệnh):
+ * ghi đè tay nếu có, không thì tự tính từ ngày sinh (chính xác theo âm lịch), không có ngày thì ước tính theo năm sinh.
+ * Trả { value, source: 'override' | 'computed' | 'approximate', can_chi, nap_am } hoặc null.
+ */
+export function derivedValue(role, { birth_date = null, birth_year = null, override = null } = {}) {
+  if (role !== 'element') return null;
+  if (override) return { value: override, source: 'override', can_chi: null, nap_am: null };
+  const el = elementOfBirth({ birthDate: birth_date, birthYear: birth_year });
+  if (!el) return null;
+  return { value: el.element, source: el.approximate ? 'approximate' : 'computed', can_chi: el.can_chi, nap_am: el.nap_am };
+}
+
+/** Năm sinh hiệu lực: cột năm sinh, hoặc năm của ngày sinh */
+export const birthYearOf = (row) => row.birth_year ?? (row.birth_date ? Number(row.birth_date.slice(0, 4)) : null);
+
+/** Tuổi tròn theo giờ VN từ ngày sinh; chưa biết ngày thì lấy năm hiện tại trừ năm sinh. null nếu không có hoặc ngày ở tương lai. */
+export function ageOfCustomer(row, today = businessDate()) {
+  if (row.birth_date) return row.birth_date > today ? null : ageOn(row.birth_date, today);
+  return row.birth_year ? Number(today.slice(0, 4)) - row.birth_year : null;
+}
+
+/** Hàm tra giá trị biến cho một bản ghi: cột, biến dẫn xuất (khách), trường tuỳ chỉnh và công thức lồng nhau */
 function makeLookup(entityType, row, shopId, fields, stored) {
   const byKey = new Map(fields.map((f) => [f.key, f]));
   const cache = new Map();
   let derived = null;
+  const elementKey = fields.find((f) => f.role === 'element' && f.type !== 'formula')?.key;
   const lookup = (name) => {
-    if (entityType === 'customer' && isShopDerived(name)) return (derived ??= shopDerivedValues(row.id, shopId))[name];
+    if (entityType === 'customer') {
+      if (isShopDerived(name)) return (derived ??= shopDerivedValues(row.id, shopId))[name];
+      if (name === 'birth_year') return birthYearOf(row);
+      if (name === 'age') return ageOfCustomer(row);
+      if (name === 'menh') return shopHasFengShui(shopId) ? derivedValue('element', { ...row, override: elementKey ? stored[elementKey] : null })?.value ?? null : null;
+    }
     if (!name.startsWith('custom.')) return row[name];
     const key = name.slice(7);
     const f = byKey.get(key);
@@ -278,33 +390,64 @@ function makeLookup(entityType, row, shopId, fields, stored) {
   return lookup;
 }
 
-/** Giá trị nhập tay + giá trị công thức đã tính cho bản ghi. Với khách: chỉ của shop `shopId`. */
-export function getValues(entityType, entityId, { shopId = null } = {}) {
+const SUBJECT = { customer: 'Khách', order: 'Đơn', purchase: 'Phiếu nhập', product: 'Sản phẩm' };
+// Tuổi/Mệnh tính từ ngày sinh: khi trống thì thiếu "Ngày sinh", không phải thiếu chính biến đó
+const LABEL_OVERRIDE = { age: 'Ngày sinh', menh: 'Ngày sinh' };
+
+/** Tên dễ đọc của biến trong câu giải thích "chưa có …" */
+function labelResolver(entityType, fields) {
+  const cols = new Map(columnVariables(entityType, { menh: true }).map((v) => [v.key, v.label]));
+  const customs = new Map(fields.map((f) => [`custom.${f.key}`, f.label]));
+  return (name) => LABEL_OVERRIDE[name] ?? customs.get(name) ?? cols.get(name) ?? name;
+}
+
+/**
+ * Giá trị nhập tay + công thức đã tính, kèm `reasons` (vì sao công thức ra trống) và, với khách ở shop có tính năng feng_shui,
+ * `element` = mệnh hiệu lực { key, value, source, … } (key = khoá trường mệnh ghi đè nếu shop có).
+ */
+export function getValuesWithMeta(entityType, entityId, { shopId = null } = {}) {
   needShop(entityType, shopId);
   const row = entityRow(entityType, entityId);
   const stored = rawValues(entityType, entityId, shopId);
   const fields = listFields(entityType, { shopId });
   const lookup = makeLookup(entityType, row, shopId, fields, stored);
-  const out = { ...stored };
-  for (const f of fields) if (f.type === 'formula') out[f.key] = lookup(`custom.${f.key}`);
-  return out;
+  const labelOf = labelResolver(entityType, fields);
+  const values = { ...stored };
+  const reasons = {};
+  for (const f of fields) {
+    if (f.type !== 'formula') continue;
+    const r = evaluateExplain(parse(f.formula), lookup, { subject: SUBJECT[entityType], labelOf });
+    values[f.key] = r.value;
+    if (r.reason) reasons[f.key] = r.reason;
+  }
+  let element = null;
+  if (entityType === 'customer' && shopHasFengShui(shopId)) {
+    const ef = fields.find((f) => f.role === 'element' && f.type !== 'formula');
+    const d = derivedValue('element', { ...row, override: ef ? stored[ef.key] : null });
+    element = d && { key: ef?.key ?? null, ...d };
+  }
+  return { values, reasons, element };
+}
+
+/** Giá trị nhập tay + giá trị công thức đã tính cho bản ghi. Với khách: chỉ của shop `shopId`. */
+export function getValues(entityType, entityId, { shopId = null } = {}) {
+  return getValuesWithMeta(entityType, entityId, { shopId }).values;
 }
 
 /**
- * Giá trị theo vai trò (ngày sinh, năm sinh, mệnh ghi đè) của khách trong MỘT shop.
- * Trả Map(customerId → { birth_date, birth_year, element }). ids rỗng/undefined = mọi khách có giá trị.
+ * Dữ liệu theo vai trò của khách trong MỘT shop: ngày sinh, năm sinh (thông tin chung trên hồ sơ khách)
+ * và mệnh ghi đè (trường vai trò element của shop). Trả Map(customerId → { birth_date, birth_year, element }) cho mọi id trong `ids`.
  */
 export function roleValues(shopId, ids) {
-  const rows = db()
-    .prepare(`SELECT v.entity_id AS id, f.role, v.value_text, v.value_num FROM custom_values v JOIN custom_fields f ON f.id = v.field_id
-              WHERE v.entity_type = 'customer' AND f.shop_id = ? AND f.role IS NOT NULL AND f.archived_at IS NULL
-              ${ids?.length ? `AND v.entity_id IN (${ids.map(() => '?').join(',')})` : ''}`)
-    .all(shopId, ...(ids || []));
   const out = new Map();
-  for (const r of rows) {
-    if (!out.has(r.id)) out.set(r.id, {});
-    out.get(r.id)[r.role] = r.role === 'birth_year' ? r.value_num : r.value_text;
-  }
+  if (!ids?.length) return out;
+  const marks = ids.map(() => '?').join(',');
+  for (const r of db().prepare(`SELECT id, birth_date, birth_year FROM customers WHERE id IN (${marks})`).all(...ids)) out.set(r.id, { birth_date: r.birth_date, birth_year: r.birth_year, element: null });
+  const rows = db()
+    .prepare(`SELECT v.entity_id AS id, v.value_text FROM custom_values v JOIN custom_fields f ON f.id = v.field_id
+              WHERE v.entity_type = 'customer' AND f.shop_id = ? AND f.role = 'element' AND f.archived_at IS NULL AND v.entity_id IN (${marks})`)
+    .all(shopId, ...ids);
+  for (const r of rows) if (out.has(r.id)) out.get(r.id).element = r.value_text;
   return out;
 }
 
@@ -315,7 +458,7 @@ const withRef = (v) => ({ ...v, ref: `{${v.key}}` });
 /** Biến dùng được trong công thức của một đối tượng (cột có nhãn + trường tuỳ chỉnh đang dùng, của shop nếu có) */
 export function listVariables(entityType, { shopId = null } = {}) {
   needShop(entityType, shopId);
-  return [...columnVariables(entityType).map(withRef), ...listFields(entityType, { shopId }).map(customVar)];
+  return [...columnVariables(entityType, { menh: entityType === 'customer' && shopHasFengShui(shopId) }).map(withRef), ...listFields(entityType, { shopId }).map(customVar)];
 }
 
 export const listMetricVariables = () => REPORT_VARIABLES.map(withRef);
@@ -342,7 +485,9 @@ export function previewFormula({ entityType, shopId = null, formula, entityId = 
     return previewResult(() => {
       const tree = parseMetric(formula);
       const ov = overview({ shopIds: shopId ? shopId.split(',') : null }).current;
-      return { value: evaluate(tree, (n) => ov[n]), sample: { id: null, label: 'Số liệu tháng này' } };
+      const labels = new Map(REPORT_VARIABLES.map((v) => [v.key, v.label]));
+      const r = evaluateExplain(tree, (n) => ov[n], { subject: 'Số liệu', labelOf: (n) => labels.get(n) ?? n });
+      return { value: r.value, reason: r.reason, sample: { id: null, label: 'Số liệu tháng này' } };
     });
   }
   needShop(entityType, shopId);
@@ -357,9 +502,11 @@ export function previewFormula({ entityType, shopId = null, formula, entityId = 
         : ' WHERE id IN (SELECT v.product_id FROM shop_listings l JOIN variants v ON v.id = l.variant_id WHERE l.shop_id = ?)';
       row = db().prepare(`SELECT * FROM ${T}${where} ORDER BY id DESC LIMIT 1`).get(...(where ? [shopId] : []));
     }
-    if (!row) return { value: null, sample: null, note: 'Chưa có bản ghi nào để xem thử' };
-    const lookup = makeLookup(entityType, row, shopId, listFields(entityType, { shopId }), rawValues(entityType, row.id, shopId));
-    return { value: evaluate(tree, lookup), sample: { id: row.id, label: row[SAMPLE_LABEL[entityType]] || row.id } };
+    if (!row) return { value: null, reason: null, sample: null, note: 'Chưa có bản ghi nào để xem thử' };
+    const fields = listFields(entityType, { shopId });
+    const lookup = makeLookup(entityType, row, shopId, fields, rawValues(entityType, row.id, shopId));
+    const r = evaluateExplain(tree, lookup, { subject: SUBJECT[entityType], labelOf: labelResolver(entityType, fields) });
+    return { value: r.value, reason: r.reason, sample: { id: row.id, label: row[SAMPLE_LABEL[entityType]] || row.id } };
   });
 }
 

@@ -19,6 +19,8 @@ const customerInput = z.object({
   shopee_username: optionalText,
   address: optionalText,
   note: optionalText,
+  birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày sinh dạng YYYY-MM-DD').nullish().or(z.literal('')),
+  birth_year: z.number().int().nullish(),
   shop_id: z.string().nullish(), // thêm thẳng vào danh sách khách của shop này
 });
 

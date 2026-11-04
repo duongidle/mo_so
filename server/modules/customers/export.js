@@ -73,6 +73,10 @@ export function exportCustomers(filters = {}) {
     ['Facebook', (c) => c.facebook_url ?? ''],
     ['Tài khoản Shopee', (c) => c.shopee_username ?? ''],
     ['Địa chỉ', (c) => c.address ?? ''],
+    // Ngày sinh / năm sinh là thông tin chung của hồ sơ khách nên có ở cả hai kiểu file (có hay không chọn shop)
+    ['Ngày sinh', (c) => vnDay(c.birth_date)],
+    ['Năm sinh', (c) => c.birth_year ?? ''],
+    ['Tuổi', (c) => c.age ?? ''],
   ];
   let cols;
   if (shopId) {
