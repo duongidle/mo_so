@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Empty, ErrorBox, Field, Modal, Tabs, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, Empty, ErrorBox, Field, Modal, Tabs, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { Element } from '../components/Motif.jsx';
 import { fmtDate, vnd } from '../lib.js';
 import MoneyInput from '../components/MoneyInput.jsx';
@@ -189,8 +189,8 @@ export default function Loyalty() {
   const current = options.some(([v]) => v === tab) ? tab : 'today';
   return (
     <div className="page stack">
-      <div className="page-head"><div><h1>Loyalty & Campaign</h1><div className="muted small sub">Chăm sóc khách, hạng khách và chiến dịch. {isAll ? 'Đang xem tất cả shop.' : `Đang xem ${shop?.name}.`}</div></div></div>
-      <Tabs options={options} value={current} onChange={setTab} />
+      <PageHeader title="Loyalty & Campaign" sub={`Chăm sóc khách, hạng khách và chiến dịch. ${isAll ? 'Đang xem tất cả shop.' : `Đang xem ${shop?.name}.`}`} />
+      <Toolbar><Tabs options={options} value={current} onChange={setTab} /></Toolbar>
       {current === 'today' && <Today shopId={shopId} />}
       {current === 'menh' && (isAll ? <Empty>Gợi ý theo mệnh là của từng shop phong thuỷ. Chọn một shop ở góc trên.</Empty> : <ElementCampaign shopId={shopId} shopName={shop?.name} />)}
       {current === 'tiers' && <Tiers />}

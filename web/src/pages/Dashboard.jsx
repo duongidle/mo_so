@@ -30,8 +30,8 @@ export default function Dashboard({ progress, reopenGuide }) {
 
   return (
     <MetricFilters.Provider value={{ from: monthStart(), to: today(), today: today() }}>
-    <div className="page stack">
-      <div className="page-head"><div><div className="eyebrow">Sổ hôm nay</div><h1>{greeting(user.displayName)}</h1></div></div>
+    <div className="page stack is-home">
+      <div className="page-head deco"><div><div className="eyebrow">Sổ hôm nay</div><h1>{greeting(user.displayName)}</h1></div></div>
       {progress?.step && (
         <section className="card" aria-label="Hoàn tất thiết lập">
           <div className="card-head"><h3>Hoàn tất thiết lập</h3><button className="btn sm primary" onClick={reopenGuide}>Tiếp tục</button></div>

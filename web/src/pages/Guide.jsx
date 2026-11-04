@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, useAsync } from '../components/ui.jsx';
+import { Async, Card, useAsync, PageHeader } from '../components/ui.jsx';
 import { monthStart, today, fmtDate, pct } from '../lib.js';
 import { buildChecks, summarize, GLOSSARY, COLOR_MEANING } from '../guide.js';
 import { SCOPES } from '../metrics.js';
@@ -28,7 +28,7 @@ export default function Guide() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><div><h1>Cách đọc sức khoẻ kinh doanh</h1><div className="muted small sub">Đừng nhìn hết các con số. Mỗi sáng dành 5 phút, đi theo 5 câu hỏi dưới đây theo thứ tự.</div></div></div>
+      <PageHeader title="Cách đọc sức khoẻ kinh doanh" sub="Đừng nhìn hết các con số. Mỗi sáng dành 5 phút, đi theo 5 câu hỏi dưới đây theo thứ tự." />
 
       <Async state={state}>{(d) => {
         const checks = buildChecks(d);

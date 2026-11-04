@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, Tabs, DateRange, Empty, ErrorBox, Field, Fold, Kpi, Modal, Note, PageHeader, Section, Toolbar, useAction, useAsync } from '../components/ui.jsx';
 import { MetricFilters, MetricLabel } from '../components/MetricInfo.jsx';
 import Icon from '../components/Icon.jsx';
 import { vnd, fmtDate, monthStart, today } from '../lib.js';
@@ -48,15 +48,20 @@ export default function Accounting() {
   const groupTabs = GROUPS.find(([k]) => k === group)[2];
   const changeGroup = (g) => changeTab(GROUPS.find(([k]) => k === g)[2][0]);
   const ctx = { range, shopParam, isAll, report: setExportData, go: changeTab };
+  const scopeName = isAll ? 'Tất cả shop' : shop?.name;
+  const hasRange = !['overview', 'accounts', 'balance', 'recurring', 'assets', 'lock'].includes(tab);
+  const scopeText = ['journal', 'ledger', 'income', 'cashflow', 'vouchers'].includes(tab) ? `Shop: ${scopeName || 'một shop'}` : null;
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Sổ kế toán</h1><ExportButton tab={tab} data={exportData} range={range} shopName={tab === 'income' && !isAll ? shop?.name : null} /></div>
-      <div className="tabs group-tabs" role="tablist" aria-label="Nhóm">
-        {GROUPS.map(([k, label]) => <button key={k} className="tab" role="tab" aria-selected={group === k} onClick={() => changeGroup(k)}>{label}</button>)}
-      </div>
-      <Tabs wrap options={TABS.filter(([k]) => groupTabs.includes(k))} value={tab} onChange={changeTab} />
-      <p className="tab-intro">{INTRO[tab]}</p>
-      {!['overview', 'accounts', 'balance', 'recurring', 'assets', 'lock'].includes(tab) && <div className="row wrap"><DateRange {...range} onChange={setRange} /></div>}
+      <PageHeader title="Sổ kế toán" actions={<ExportButton tab={tab} data={exportData} range={range} shopName={tab === 'income' && !isAll ? shop?.name : null} />} />
+      <Toolbar>
+        <div className="tabs group-tabs" role="tablist" aria-label="Nhóm">
+          {GROUPS.map(([k, label]) => <button key={k} className="tab" role="tab" aria-selected={group === k} onClick={() => changeGroup(k)}>{label}</button>)}
+        </div>
+        <Tabs options={TABS.filter(([k]) => groupTabs.includes(k))} value={tab} onChange={changeTab} />
+        {hasRange && <DateRange {...range} onChange={setRange} />}
+      </Toolbar>
+      <Note>{[INTRO[tab], scopeText].filter(Boolean).join(' · ')}</Note>
       <MetricFilters.Provider value={{ from: range.from, to: range.to, today: today() }}>
         {tab === 'overview' && <Overview {...ctx} />}
         {tab === 'vouchers' && <Vouchers {...ctx} />}
@@ -110,7 +115,7 @@ function Overview({ go }) {
       {({ data: d }) => (
         <>
           {d.warnings.map((w) => <div key={w.code} className="alert warn" role="alert">{w.message}{w.code === 'LOCKED_PERIOD_CHANGED' && <> <button className="btn sm" onClick={() => go('lock')}>Xem chi tiết</button></>}</div>)}
-          {d.lock_date && <p className="muted small">Sổ đã khoá đến hết {fmtDate(d.lock_date)}.</p>}
+          {d.lock_date && <Note>Sổ đã khoá đến hết {fmtDate(d.lock_date)}.</Note>}
           <div className="grid cols-3">
             <Kpi label="Tiền (quỹ)" metric="acc_cash" value={signed(d.cash)} tone={d.cash < 0 ? 'red' : undefined} hint={d.cash < 0 ? <>Số dư quỹ âm: kiểm tra thu chi chưa ghi hoặc số dư đầu kỳ. <Link to="/expenses?tab=cash">Mở Quỹ tiền</Link></> : undefined} />
             <Kpi label="Phải thu khách" metric="acc_receivable" value={vnd(d.receivable_customers)} hint={`Sàn còn nợ: ${vnd(d.receivable_marketplace)}`} />
@@ -138,13 +143,13 @@ function Journal({ range, shopParam, report }) {
   const more = async () => { const r = await api.get('/accounting/journal', { ...base, cursor: next }); setRows((x) => { const all = [...x, ...r.data]; report({ data: all }); return all; }); setNext(r.next_cursor); };
   return (
     <>
-      <div className="row wrap"><select value={src} onChange={(e) => setSrc(e.target.value)} aria-label="Loại chứng từ" style={{ width: 200 }}><option value="">Mọi chứng từ</option>{Object.entries(SRC).filter(([k]) => k !== 'manual').map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+      <Toolbar><select value={src} onChange={(e) => setSrc(e.target.value)} aria-label="Loại chứng từ"><option value="">Mọi chứng từ</option>{Object.entries(SRC).filter(([k]) => k !== 'manual').map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Toolbar>
       <Async state={state}>
         {() => (!rows.length ? <Empty>Chưa có bút toán trong kỳ này.</Empty> : (
-          <Card flat><div className="table-wrap"><table>
+          <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Mã</th><th>Ngày</th><th>Diễn giải</th><th>Tài khoản</th><th className="num">Nợ</th><th className="num">Có</th></tr></thead>
             <tbody>{rows.map((e) => e.lines.map((l, i) => (
-              <tr key={l.id} style={i === 0 ? { borderTop: '1px solid var(--champagne)' } : undefined}>
+              <tr key={l.id} className={i === 0 ? 'je-first' : ''}>
                 <td>{i === 0 ? e.code : ''}</td><td>{i === 0 ? fmtDate(e.entry_date) : ''}</td>
                 <td className="small">{i === 0 ? <><Src row={e}>{e.description}</Src><div className="muted">{SRC[e.source_type] || e.source_type}</div></> : ''}</td>
                 <td style={{ paddingLeft: l.credit ? 28 : undefined }}>{l.account_code} <span className="muted small">{l.account_name}</span></td>
@@ -164,10 +169,10 @@ function Ledger({ range, shopParam, report }) {
   const state = useReport(() => api.get(`/accounting/ledger/${code}`, { from: range.from, to: range.to, shop_id: shopParam }), [code, range.from, range.to, shopParam], report);
   return (
     <>
-      <div className="row wrap"><select value={code} onChange={(e) => setCode(e.target.value)} aria-label="Tài khoản" style={{ maxWidth: 320 }}>{(accounts.data?.data || []).map((a) => <option key={a.code} value={a.code}>{a.code} – {a.name}</option>)}</select></div>
+      <Toolbar><select value={code} onChange={(e) => setCode(e.target.value)} aria-label="Tài khoản" style={{ maxWidth: 360 }}>{(accounts.data?.data || []).map((a) => <option key={a.code} value={a.code}>{a.code} – {a.name}</option>)}</select></Toolbar>
       <Async state={state}>
         {({ data: d }) => (
-          <Card flat><div className="table-wrap"><table>
+          <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Ngày</th><th>Mã</th><th>Diễn giải</th><th className="num">Nợ</th><th className="num">Có</th><th className="num">Số dư</th></tr></thead>
             <tbody>
               <tr><td colSpan={5}><b>Số dư đầu</b></td><td className="num"><b>{signed(d.opening_balance)}</b></td></tr>
@@ -190,10 +195,10 @@ function Trial({ range, report }) {
       {({ data: d }) => (
         <>
           <div className={`alert ${d.balanced ? 'ok' : 'err'}`} role="status">{d.balanced ? 'Cân: tổng Nợ bằng tổng Có ở cả ba cặp cột.' : 'KHÔNG CÂN: tổng Nợ khác tổng Có. Báo để kiểm tra sổ.'} Tính cho cả tài khoản (không lọc shop).</div>
-          <Card flat><div className="table-wrap"><table>
+          <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Tài khoản</th><Th m="acc_trial">Đầu kỳ Nợ</Th><th className="num">Đầu kỳ Có</th><th className="num">Phát sinh Nợ</th><th className="num">Phát sinh Có</th><th className="num">Cuối kỳ Nợ</th><th className="num">Cuối kỳ Có</th></tr></thead>
             <tbody>{d.data.map((r) => <tr key={r.code}><td>{r.code} <span className="muted small">{r.name}</span></td>{['opening_debit', 'opening_credit', 'debit', 'credit', 'closing_debit', 'closing_credit'].map((k) => <td key={k} className="num">{r[k] ? vnd(r[k]) : ''}</td>)}</tr>)}
-              <tr style={{ fontWeight: 700, borderTop: '1px solid var(--champagne)' }}><td>Tổng</td>{['opening_debit', 'opening_credit', 'debit', 'credit', 'closing_debit', 'closing_credit'].map((k) => <td key={k} className="num">{vnd(d.totals[k])}</td>)}</tr></tbody>
+              <tr className="fin-total-row"><td>Tổng</td>{['opening_debit', 'opening_credit', 'debit', 'credit', 'closing_debit', 'closing_credit'].map((k) => <td key={k} className="num">{vnd(d.totals[k])}</td>)}</tr></tbody>
           </table></div></Card>
         </>
       )}
@@ -201,7 +206,10 @@ function Trial({ range, report }) {
   );
 }
 
-const Line = ({ l, v, bold, m, indent }) => <div className="row between" style={{ ...(bold ? { fontWeight: 700, borderTop: '1px solid var(--champagne)', paddingTop: 6 } : {}), paddingLeft: indent ? 16 : 0 }}><MetricLabel metric={m}>{l}</MetricLabel><span className="num">{signed(v)}</span></div>;
+/** Một dòng báo cáo tài chính: cùng đệm trái/phải ở mọi dòng; dòng nhóm thụt vào, dòng tổng in đậm có kẻ trên */
+const Line = ({ l, v, bold, m, indent }) => (
+  <div className={`fin-row${bold ? ' total' : ''}${indent ? ' indent' : ''}`}><MetricLabel metric={m}>{l}</MetricLabel><span className="num">{signed(v)}</span></div>
+);
 
 function Income({ range, shopParam, report }) {
   const state = useReport(() => api.get('/accounting/income-statement', { from: range.from, to: range.to, shop_id: shopParam }), [range.from, range.to, shopParam], report);
@@ -209,9 +217,8 @@ function Income({ range, shopParam, report }) {
     <Async state={state}>
       {({ data: d }) => (
         <>
-          <div className="scope-strip" role="status">Đang xem: <b>{shopParam ? 'một shop' : 'Tất cả shop'}</b> · {fmtDate(range.from)} – {fmtDate(range.to)}{shopParam && <> · chi phí chung đã chia về shop như ở Báo cáo; chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên không có ở đây</>}</div>
-          <div className="scope-strip" role="note">Lợi nhuận ở đây gồm khấu hao/phân bổ tài sản và thu/chi khác (711, 811) mà tab Lợi nhuận của Báo cáo không có, nên có thể thấp hơn hoặc cao hơn Báo cáo. Dòng “Lãi thuần trước khấu hao” là số so sánh được với Báo cáo (chi phí định kỳ có ở cả hai vì là chi phí thật).</div>
-          <Card flat><div className="stack" style={{ gap: 6 }}>
+          <Fold title="Vì sao số này có thể khác tab Lợi nhuận của Báo cáo?"><p className="note">Lợi nhuận ở đây gồm khấu hao/phân bổ tài sản và thu/chi khác (711, 811) mà Báo cáo không có. Dòng “Lãi thuần trước khấu hao” so sánh được với Báo cáo (chi phí định kỳ có ở cả hai vì là chi phí thật).{shopParam ? ' Lọc theo shop: chi phí chung đã chia về shop như ở Báo cáo; chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên không có ở đây.' : ''}</p></Fold>
+          <Section flush className="fin"><div>
             <Line l="Doanh thu bán hàng (5111)" v={d.revenue_goods} indent />
             <Line l="Doanh thu phí vận chuyển (5113)" v={d.revenue_shipping} indent />
             <Line l="Hàng bán bị trả lại (5212)" v={-d.returns} indent />
@@ -230,7 +237,7 @@ function Income({ range, shopParam, report }) {
             <Line l="Thu nhập khác (711)" v={d.other_income} indent m="acc_other" />
             <Line l="Chi phí khác (811)" v={-d.other_expense} indent />
             <Line l="Lợi nhuận trước thuế" v={d.profit_before_tax} bold m="acc_profit" />
-          </div></Card>
+          </div></Section>
         </>
       )}
     </Async>
@@ -240,24 +247,24 @@ function Income({ range, shopParam, report }) {
 function Balance({ report }) {
   const [asOf, setAsOf] = useState(today());
   const state = useReport(() => api.get('/accounting/balance-sheet', { as_of: asOf }), [asOf], report);
-  const Section = ({ title, rows, total, m, extra }) => (
-    <Card title={title} flat><div className="stack" style={{ gap: 6 }}>
+  const Block = ({ title, rows, total, m, extra }) => (
+    <Section title={title} flush className="fin"><div>
       {rows.map((r) => <Line key={r.code} l={`${r.name} (${r.code})`} v={r.balance} indent />)}{extra}
       <Line l={`Tổng ${title.toLowerCase()}`} v={total} bold m={m} />
-    </div></Card>
+    </div></Section>
   );
   return (
     <>
-      <div className="row wrap"><Field label="Tính đến ngày"><input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ width: 160 }} /></Field></div>
+      <Toolbar><Field label="Tính đến ngày"><input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ width: 160 }} /></Field></Toolbar>
       <Async state={state}>
         {({ data: d }) => (
           <>
             <div className={`alert ${d.balanced ? 'ok' : 'err'}`} role="status">{d.balanced ? 'Cân: tài sản = nợ phải trả + vốn + lợi nhuận.' : `KHÔNG CÂN, lệch ${vnd(d.difference)}. Báo để kiểm tra sổ.`} Luôn tính cho cả tài khoản, không lọc shop.</div>
             <div className="grid cols-2 collapse">
-              <Section title="Tài sản" rows={d.assets} total={d.total_assets} m="acc_assets" />
+              <Block title="Tài sản" rows={d.assets} total={d.total_assets} m="acc_assets" />
               <div className="stack">
-                <Section title="Nợ phải trả" rows={d.liabilities} total={d.total_liabilities} />
-                <Section title="Vốn chủ sở hữu" rows={d.equity} total={d.total_equity} m="acc_equity" extra={<Line l="421 – Lợi nhuận kỳ này (chưa kết chuyển)" v={d.current_profit} indent />} />
+                <Block title="Nợ phải trả" rows={d.liabilities} total={d.total_liabilities} />
+                <Block title="Vốn chủ sở hữu" rows={d.equity} total={d.total_equity} m="acc_equity" extra={<Line l="421 – Lợi nhuận kỳ này (chưa kết chuyển)" v={d.current_profit} indent />} />
               </div>
             </div>
           </>
@@ -273,8 +280,8 @@ function CashFlow({ range, shopParam, report }) {
     <Async state={state}>
       {({ data: d }) => (
         <>
-          {d.scope.shop_filtered && <div className="scope-strip" role="status">Lọc theo shop: dòng tiền của shop; số dư đầu và cuối là của cả tài khoản.</div>}
-          <Card flat><div className="table-wrap"><table>
+          {d.scope.shop_filtered && <Note>Lọc theo shop: dòng tiền của shop; số dư đầu và cuối là của cả tài khoản.</Note>}
+          <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Khoản</th><th className="num">Thu</th><th className="num">Chi</th><th className="num"><MetricLabel metric="acc_cashflow">Ròng</MetricLabel></th></tr></thead>
             <tbody>
               <tr><td><b>Số dư đầu kỳ</b></td><td /><td /><td className="num"><b>{signed(d.opening_balance)}</b></td></tr>
@@ -296,10 +303,10 @@ function Accounts({ report }) {
   const save = () => run(async () => { await api.post('/accounting/accounts', { parent_code: form.parent_code, name: form.name }); setForm(null); state.reload(); });
   return (
     <>
-      <div className="row"><button className="btn primary" onClick={() => setForm({ parent_code: '6418', name: '' })}>+ Tài khoản con</button></div>
+      <Toolbar><button className="btn primary" onClick={() => setForm({ parent_code: '6418', name: '' })}>+ Tài khoản con</button></Toolbar>
       <Async state={state}>
         {({ data }) => (
-          <Card flat><div className="table-wrap"><table>
+          <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Mã</th><th>Tên</th><th>Loại</th><th>Bên</th><th className="num">Số dư</th></tr></thead>
             <tbody>{data.map((a) => <tr key={a.code}><td style={{ paddingLeft: a.parent_code ? 24 : undefined }}>{a.code}</td><td>{a.name}{a.is_system ? <span className="badge plain" style={{ marginLeft: 6 }}>Hệ thống</span> : null}</td><td className="small">{TYPES[a.type]}</td><td>{a.normal_side === 'debit' ? 'Nợ' : 'Có'}</td><td className="num">{signed(a.balance)}</td></tr>)}</tbody>
           </table></div></Card>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { vnd, fmtDate, monthStart, today } from '../lib.js';
 import CashAccounts from './CashAccounts.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
@@ -15,8 +15,8 @@ export default function Expenses() {
   const [tab, setTab] = useState(['expenses', 'cash'].includes(want) || (want === 'reconcile' && hasMarket) ? want : 'expenses');
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Chi phí & quỹ</h1></div>
-      <Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} />
+      <PageHeader title="Chi phí & quỹ" />
+      <Toolbar><Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} /></Toolbar>
       {tab === 'expenses' && <ExpenseList />}{tab === 'cash' && <CashAccounts />}{tab === 'reconcile' && hasMarket && <Reconcile />}
     </div>
   );

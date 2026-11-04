@@ -594,3 +594,17 @@ td.num b, td b { font-weight: 600; }
   table.stackable td.o2 b { font-size: 15px; }
   .list-card { border-radius: var(--radius); }
 }
+
+/* ===== Báo cáo tài chính (KQKD, cân đối): mọi dòng cùng đệm, tổng in đậm có kẻ trên ===== */
+.section.fin { overflow: hidden; }
+.fin-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 9px var(--card-pad); border-bottom: 1px solid var(--hair); }
+.fin-row.indent { padding-left: calc(var(--card-pad) + 18px); }
+.fin-row.total { font-weight: 700; border-top: 1px solid var(--field-border); background: var(--tint); }
+.fin-row:last-child { border-bottom: 0; }
+.fin-row > :first-child { min-width: 0; }
+.fin-row .num { font-variant-numeric: tabular-nums; }
+.section.fin > .section-head { padding-bottom: 8px; }
+tr.je-first td { border-top: 1px solid var(--field-border); }
+tr.je-first:first-child td { border-top: 0; }
+tr.fin-total-row td { font-weight: 700; border-top: 1px solid var(--field-border); background: var(--tint); }
+.scope-strip { padding: 8px 12px; border: 1px solid var(--rule); border-radius: 8px; font-size: var(--fs-sm); background: var(--paper); }

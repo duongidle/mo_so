@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Empty, ErrorBox, Field, Modal, StatusBadge, SearchBox, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Empty, ErrorBox, Field, Modal, StatusBadge, SearchBox, useAction, useAsync, useDebounced, PageHeader, Toolbar } from '../components/ui.jsx';
 import FieldInput, { fieldText } from '../components/FieldInput.jsx';
 import { vnd, fmtDate } from '../lib.js';
 import { Element, ELEMENT_ORDER } from '../components/Motif.jsx';
@@ -99,20 +99,17 @@ export function CustomerList() {
   const state = useAsync(() => api.get('/customers', { ...filters, sort, limit: 100 }), [dq, sort, element, shopId, showMenh, activeTag]);
   return (
     <div className="page stack">
-      <div className="page-head">
-        <div><h1>Khách hàng</h1><div className="muted small sub">{isAll ? 'Hồ sơ chung của mọi shop. Chọn một shop để xem thông tin riêng của shop đó.' : `Thông tin riêng đang hiển thị: ${shop?.name}`}</div></div>
-        <div className="row">
+      <PageHeader title="Khách hàng" sub={isAll ? 'Hồ sơ chung của mọi shop. Chọn một shop để xem thông tin riêng của shop đó.' : `Thông tin riêng đang hiển thị: ${shop?.name}`} actions={<>
           {dups.data?.data?.length > 0 && <button className="btn" onClick={() => setDupOpen(true)}>Khách trùng <span className="badge plain">{dups.data.data.length}</span></button>}
           {!isAll && <button className="btn" onClick={() => setFieldsOpen(true)}><Icon name="cog" />Thông tin khách của shop</button>}
           <button className="btn" onClick={() => setExportOpen(true)}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất file</button>
           <button className="btn primary" onClick={() => setForm({ name: '', phone: '' })}><Icon name="plus" />Khách</button>
-        </div>
-      </div>
-      <div className="row wrap">
+        </>} />
+      <Toolbar>
         <SearchBox value={q} onChange={setQ} placeholder="Tìm tên, SĐT, mã khách…" />
-        <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: 170 }} aria-label="Sắp xếp"><option value="recent">Mới tạo</option><option value="spent">Chi tiêu cao</option><option value="last_order">Mua gần đây</option><option value="name">Tên A–Z</option></select>
-        {showMenh && <select value={element} onChange={(e) => setElement(e.target.value)} style={{ width: 130 }} aria-label="Mệnh"><option value="">Mọi mệnh</option>{ELEMENT_ORDER.map((e) => <option key={e}>{e}</option>)}</select>}
-      </div>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sắp xếp"><option value="recent">Mới tạo</option><option value="spent">Chi tiêu cao</option><option value="last_order">Mua gần đây</option><option value="name">Tên A–Z</option></select>
+        {showMenh && <select value={element} onChange={(e) => setElement(e.target.value)} aria-label="Mệnh"><option value="">Mọi mệnh</option>{ELEMENT_ORDER.map((e) => <option key={e}>{e}</option>)}</select>}
+      </Toolbar>
       {shopId && (tags.data?.data || []).length > 0 && (
         <div className="row wrap" aria-label="Lọc theo nhãn">
           <span className="small muted">Nhãn:</span>
@@ -122,7 +119,7 @@ export function CustomerList() {
       )}
       <Async state={state}>
         {({ data, columns: cols }) => !data.length ? <Empty>{shopId ? 'Chưa có khách nào trong shop này khớp bộ lọc.' : 'Chưa có khách nào khớp.'}</Empty> : (
-          <Card flat><div className="table-wrap"><table className="stackable">
+          <Card flat className="list-card sticky-head"><div className="table-wrap"><table className="stackable">
             <thead><tr><th>Khách</th>{shopId && <th className="hide-sm">Nhãn</th>}{showMenh && <th>Mệnh</th>}{(cols || []).map((f) => <th key={f.id} className="hide-sm">{f.label}</th>)}<th className="num">Số đơn</th><th className="num">Chi tiêu</th><th>Mua gần nhất</th></tr></thead>
             <tbody>{data.map((c) => (
               <tr key={c.id} className="click" onClick={() => nav(`/customers/${c.id}`)}>

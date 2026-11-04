@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 import FieldsManager from '../components/FieldsManager.jsx';
 import FormulaEditor from '../components/FormulaEditor.jsx';
@@ -13,8 +13,8 @@ export default function Settings() {
   const [tab, setTab] = useState('shops');
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Cài đặt</h1></div>
-      <Tabs options={TABS} value={tab} onChange={setTab} />
+      <PageHeader title="Cài đặt" />
+      <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} /></Toolbar>
       {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
       {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>

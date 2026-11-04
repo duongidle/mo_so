@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced, PageHeader, Toolbar } from '../components/ui.jsx';
 import { vnd, num, fmtDate, MOVE_TYPES } from '../lib.js';
 import StockCounts from './StockCounts.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
@@ -27,23 +27,23 @@ export default function Stock() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Kho</h1><div className="row">{warehouses.length > 1 && <button className="btn" onClick={() => setTransfer(true)}>Chuyển kho</button>}<button className="btn" onClick={() => setAdj({ kind: 'adjust', lines: [] })}>Điều chỉnh nhanh</button></div></div>
-      <Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê']]} value={tab} onChange={setTab} />
+      <PageHeader title="Kho" actions={<>{warehouses.length > 1 && <button className="btn" onClick={() => setTransfer(true)}>Chuyển kho</button>}<button className="btn" onClick={() => setAdj({ kind: 'adjust', lines: [] })}>Điều chỉnh nhanh</button></>} />
+      <Toolbar><Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê']]} value={tab} onChange={setTab} /></Toolbar>
       {tab === 'counts' ? <StockCounts /> : <>
-      <div className="row wrap">
-        <select value={wh} onChange={(e) => setWh(e.target.value)} style={{ width: 200 }} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
-        {tab === 'stock' && <select value={cat} onChange={(e) => setCat(e.target.value)} style={{ width: 200 }} aria-label="Danh mục"><option value="">Mọi danh mục</option>{flattenTree(cats.data?.data || []).map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}</select>}
+      <Toolbar>
+        <select value={wh} onChange={(e) => setWh(e.target.value)} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
+        {tab === 'stock' && <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục"><option value="">Mọi danh mục</option>{flattenTree(cats.data?.data || []).map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}</select>}
         {tab === 'stock' && <input placeholder="Tìm SKU, tên…" value={q} onChange={(e) => setQ(e.target.value)} className="grow" aria-label="Tìm" />}
-      </div>
+      </Toolbar>
       {tab === 'stock' ? (
         <>
-          <Chips options={[['', 'Tất cả'], ['in_stock', 'Còn hàng'], ['low', 'Sắp hết'], ['slow', 'Bán chậm'], ['negative', 'Âm kho']]} value={filter} onChange={(v) => setSp(v ? { filter: v } : {})} />
+          <Toolbar><Chips options={[['', 'Tất cả'], ['in_stock', 'Còn hàng'], ['low', 'Sắp hết'], ['slow', 'Bán chậm'], ['negative', 'Âm kho']]} value={filter} onChange={(v) => setSp(v ? { filter: v } : {})} /></Toolbar>
           <Async state={state}>
             {(r) => (
               <>
                 <div className="grid cols-3"><Kpi label="Giá trị tồn" value={vnd(r.summary.total_value)} /><Kpi label="Sắp hết" value={r.summary.low} tone={r.summary.low ? 'yellow' : undefined} /><Kpi label="Bán chậm" value={r.summary.slow} /></div>
                 {!r.data.length ? <Empty>Không có mặt hàng nào.</Empty> : (
-                  <Card flat><div className="table-wrap"><table>
+                  <Card flat className="list-card sticky-head"><div className="table-wrap"><table>
                     <thead><tr><th>Sản phẩm</th><th className="num">Tồn</th><th className="num">Giá vốn BQ</th><th className="num">Giá trị</th><th className="num">Còn đủ</th></tr></thead>
                     <tbody>{r.data.map((i) => (
                       <tr key={i.variant_id} className="click" onClick={() => setHist(i)}>
@@ -60,7 +60,7 @@ export default function Stock() {
         </>
       ) : (
         <Async state={moves}>{(r) => r && (
-          <Card flat><div className="table-wrap"><table>
+          <Card flat className="list-card sticky-head"><div className="table-wrap"><table>
             <thead><tr><th>Thời gian</th><th>Sản phẩm</th><th>Loại</th><th className="num">SL</th><th className="num">Tồn sau</th></tr></thead>
             <tbody>{r.data.map((m) => <tr key={m.id}><td className="small">{fmtDate(m.created_at)}</td><td>{m.product_name}<div className="small muted">{m.sku}</div></td><td>{MOVE_TYPES[m.type] || m.type}</td><td className="num">{m.qty > 0 ? '+' : ''}{num(m.qty)}</td><td className="num">{num(m.balance_after)}</td></tr>)}</tbody>
           </table></div></Card>

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Bars, HBars, Async, Card, Chips, Tabs, DateRange, Empty, Kpi, Loading, useAsync } from '../components/ui.jsx';
+import { Bars, HBars, Async, Card, Chips, Tabs, DateRange, Empty, Kpi, Loading, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 import { vnd, num, pct, monthStart, today, fmtDate, addDays } from '../lib.js';
 import { reportTables, explainTable, sheetName } from '../reportTables.js';
@@ -31,15 +31,16 @@ const prevRange = ({ from, to }) => {
 };
 
 /** Dải phạm vi luôn hiện: đang xem shop nào, khoảng nào, kênh nào, so với kỳ nào */
-export function ScopeStrip({ shopName, range, channelName, category, tab }) {
+export function ScopeStrip({ shopName, range, channelName, category, tab, intro }) {
   const prev = prevRange(range);
   const oneDay = tab === 'inventory';
   return (
-    <div className="scope-strip" role="status">
+    <p className="note" role="status">
       Đang xem: <b>{shopName || 'Tất cả shop'}</b> · {oneDay ? 'tồn kho tính đến hôm nay' : `${fmtDate(range.from)} – ${fmtDate(range.to)}`} · {channelName || 'Tất cả kênh'}
       {!oneDay && <> · so với {fmtDate(prev.from)} – {fmtDate(prev.to)}</>}
       {category && <> · Danh mục: {category}</>}
-    </div>
+      {intro && <> — {intro}</>}
+    </p>
   );
 }
 
@@ -77,12 +78,11 @@ export default function Reports() {
 
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Báo cáo</h1><div className="row"><Link className="btn" to="/guide">Cách đọc các chỉ số</Link><ExportButton tab={tab} data={ready} range={range} shopName={isAll ? null : shop?.name} /></div></div>
-      <Tabs options={TABS} value={tab} onChange={setTab} />
-      <ScopeStrip shopName={isAll ? null : shop?.name} range={range} category={tab === 'products' && cat ? (cats.data?.data || []).find((c) => c.id === cat)?.name : null} tab={tab} />
-      <p className="tab-intro">{INTRO[tab]}</p>
-      <div className="row wrap"><DateRange {...range} onChange={setRange} />{PRESETS.map(([l, f]) => <button key={l} className="btn sm" onClick={() => { const [from, to] = f(); setRange({ from, to }); }}>{l}</button>)}
-        {tab === 'products' && <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục sản phẩm" style={{ width: 200 }}><option value="">Mọi danh mục</option>{(cats.data?.data || []).map((c) => <option key={c.id} value={c.id}>{c.parent_id ? '— ' : ''}{c.name}</option>)}</select>}</div>
+      <PageHeader title="Báo cáo" actions={<><Link className="btn" to="/guide">Cách đọc các chỉ số</Link><ExportButton tab={tab} data={ready} range={range} shopName={isAll ? null : shop?.name} /></>} />
+      <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} /></Toolbar>
+      <Toolbar><DateRange {...range} onChange={setRange} />{PRESETS.map(([l, f]) => <button key={l} className="btn sm" onClick={() => { const [from, to] = f(); setRange({ from, to }); }}>{l}</button>)}
+        {tab === 'products' && <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục sản phẩm"><option value="">Mọi danh mục</option>{(cats.data?.data || []).map((c) => <option key={c.id} value={c.id}>{c.parent_id ? '— ' : ''}{c.name}</option>)}</select>}</Toolbar>
+      <ScopeStrip shopName={isAll ? null : shop?.name} range={range} category={tab === 'products' && cat ? (cats.data?.data || []).find((c) => c.id === cat)?.name : null} tab={tab} intro={INTRO[tab]} />
       <MetricFilters.Provider value={filters}><Async state={state}>{() => (ready ? <Body tab={tab} d={ready} elements={has('feng_shui')} /> : <Loading />)}</Async></MetricFilters.Provider>
     </div>
   );
