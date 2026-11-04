@@ -275,6 +275,54 @@ const LIST = [
     group: 'Tiền và công nợ', scope: 'account', time: 'today', what: 'Nợ nhà cung cấp đã bao nhiêu ngày.', formula: 'Hôm nay − ngày nhận hàng', source: 'Phiếu nhập đã nhận còn nợ, toàn tài khoản (không lọc shop).', tip: 'Ưu tiên nhóm trên 30 ngày.', drill: () => '/purchases',
   }),
 
+  // ---------- Kế toán (sổ cái) ----------
+  M('acc_cash', 'Tiền (sổ cái)', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Tổng tiền đang có ở các quỹ (tiền mặt, ngân hàng, ví) theo sổ kế toán.', formula: 'Số dư Nợ − Có của các tài khoản 111x và 112x',
+    source: 'Sổ cái tự sinh từ thu chi, chi phí, chuyển quỹ, kiểm đếm. Luôn bằng tổng số dư các quỹ ở Chi phí & quỹ.', tip: 'Lệch với tiền thật: kiểm đếm quỹ để ghi phần chênh.', drill: () => '/expenses?tab=cash',
+  }),
+  M('acc_receivable', 'Phải thu (sổ cái)', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Khách và sàn còn nợ shop theo sổ kế toán (tài khoản 131 và 1388).', formula: 'Số dư Nợ − Có của 131 + 1388',
+    source: 'Mỗi đơn đã xác nhận ghi phải thu; thu tiền và hàng trả giảm đi. Khác “Khách còn nợ” ở Báo cáo: sổ cái giữ cả số dư có của từng đơn (đơn sàn trả toàn phần, sàn không hoàn phí).', tip: 'Số âm nghĩa là shop đang nợ lại khách hoặc sàn.',
+  }),
+  M('acc_payable', 'Phải trả người bán (sổ cái)', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Tiền còn nợ nhà cung cấp theo sổ kế toán (tài khoản 331).', formula: 'Số dư Có − Nợ của 331', source: 'Phiếu nhập đã nhận ghi nợ; trả NCC và NCC hoàn tiền giảm/tăng. Bằng “Nợ nhà cung cấp” ở Báo cáo.', tip: 'Ưu tiên trả khoản quá hạn.',
+  }),
+  M('acc_inventory', 'Hàng hoá (sổ cái)', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Giá trị hàng tồn theo sổ kế toán (tài khoản 156).', formula: 'Nhập hàng + tồn đầu + điều chỉnh tăng − giá vốn bán − hao hụt',
+    source: 'Gần bằng Σ tồn × giá vốn bình quân; chênh vài đồng do làm tròn giá vốn bình quân về đồng nguyên.', tip: 'Chênh lớn: chạy kiểm tra sổ (npm run check-journal) và kiểm kê kho.', drill: () => '/stock',
+  }),
+  M('acc_net_revenue', 'Doanh thu thuần (KQKD)', {
+    group: 'Kế toán', what: 'Doanh thu bán hàng cộng phí ship khách trả, trừ hàng bán bị trả lại.', formula: '5111 + 5113 − 5212',
+    source: 'Từ sổ cái, đơn tính theo ngày đặt, cùng quy tắc với báo cáo. Phần hàng (5111 − 5212) bằng “Doanh thu thuần” ở Báo cáo; 5113 bằng phí ship khách trả.', tip: 'So với tab Doanh thu ở Báo cáo để đối chiếu.', drill: () => '/reports?tab=profit',
+  }),
+  M('acc_cogs', 'Giá vốn hàng bán (KQKD)', {
+    group: 'Kế toán', what: 'Giá vốn của hàng đã bán (tài khoản 632).', formula: 'Σ giá vốn đã chụp lúc xuất kho, trừ phần hàng trả được nhập lại', source: 'Từ sổ cái; bằng “Giá vốn” ở Báo cáo.', tip: 'Giá vốn sai thì lợi nhuận sai mà trông vẫn hợp lý.',
+  }),
+  M('acc_gross_profit', 'Lãi gộp (KQKD)', {
+    group: 'Kế toán', what: 'Doanh thu thuần trừ giá vốn. Chưa trừ phí sàn, ship shop chịu và chi phí (các khoản này nằm ở chi phí bán hàng).', formula: 'Doanh thu thuần − 632',
+    source: 'Từ sổ cái. Khác “Lợi nhuận gộp” ở Báo cáo (báo cáo đã trừ phí sàn và ship shop chịu).', tip: 'Xem cùng chi phí bán hàng bên dưới.',
+  }),
+  M('acc_expenses', 'Chi phí bán hàng và quản lý (KQKD)', {
+    group: 'Kế toán', what: 'Phí sàn, vận chuyển, quảng cáo, bao bì, mặt bằng, chi phí khác (tài khoản 641x, 642x).', formula: 'Σ số dư Nợ các tài khoản 641x và 642x',
+    source: 'Từ phí sàn và ship shop chịu trên đơn, cộng chi phí đã ghi theo danh mục. Lọc shop: chi phí chung được chia về shop theo cùng quy tắc với báo cáo.', tip: 'Đổi tài khoản của một danh mục chi phí nếu muốn hạch toán khác.',
+  }),
+  M('acc_profit', 'Lợi nhuận trước thuế (KQKD)', {
+    group: 'Kế toán', what: 'Lãi thuần từ bán hàng cộng thu nhập khác trừ chi phí khác (hao hụt, tiền phạt, chênh lệch kiểm đếm).', formula: 'Lãi gộp − chi phí 641x/642x + 711 − 811',
+    source: 'Từ sổ cái. Chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên chỉ có khi xem tất cả shop. Trừ các khoản đó, bằng “Lợi nhuận ròng ước tính” ở Báo cáo.', tip: 'Âm nhiều kỳ: xem chi phí và giá vốn.', drill: () => '/reports?tab=profit',
+  }),
+  M('acc_assets', 'Tổng tài sản', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Tiền, phải thu, hàng tồn, tài sản cố định, chi phí trả trước.', formula: 'Σ số dư các tài khoản tài sản (đã trừ hao mòn)', source: 'Toàn tài khoản, không lọc shop, tính đến ngày chọn.', tip: 'Phải bằng nợ phải trả cộng vốn cộng lợi nhuận.',
+  }),
+  M('acc_equity', 'Vốn và lợi nhuận kỳ này', {
+    group: 'Kế toán', scope: 'account', time: 'today', what: 'Vốn chủ sở hữu (gồm số dư đầu các quỹ và tồn đầu kỳ) cộng lợi nhuận mọi kỳ đến ngày chọn, chưa kết chuyển.', formula: '411 + 421 + lợi nhuận lũy kế (hiện thành dòng “421 – lợi nhuận kỳ này”)', source: 'Toàn tài khoản; chưa có bút toán kết chuyển cuối kỳ nên lợi nhuận được cộng thẳng vào đây.', tip: 'Bảng cân đối không cân là lỗi: báo để kiểm tra sổ.',
+  }),
+  M('acc_trial', 'Cân đối phát sinh', {
+    group: 'Kế toán', scope: 'account', what: 'Số dư đầu, phát sinh Nợ/Có và số dư cuối của từng tài khoản trong kỳ.', formula: 'Tổng Nợ phải bằng tổng Có ở cả ba cặp cột', source: 'Toàn tài khoản (không lọc shop).', tip: 'Lệch giữa Nợ và Có là dấu hiệu sổ bị sửa ngoài luồng.',
+  }),
+  M('acc_cashflow', 'Lưu chuyển tiền trực tiếp', {
+    group: 'Kế toán', what: 'Tiền vào và ra trong kỳ, chia theo nguồn: thu khách, sàn trả về, trả NCC, chi phí, chênh lệch kiểm đếm, vốn.', formula: 'Số dư đầu + Σ (Nợ − Có) trên 111x/112x = số dư cuối', source: 'Từ các tài khoản tiền, phân loại theo tài khoản đối ứng. Chuyển quỹ nội bộ luôn bằng 0. Phương thức chưa gán quỹ (1131) không nằm trong tiền.', tip: 'Thu chi trước ngày mở sổ của một quỹ nằm trong số dư đầu (dòng “Vốn”).',
+  }),
+
   // ---------- Khác ----------
   M('custom_metric', 'Chỉ số tuỳ chỉnh', {
     group: 'Chỉ số tuỳ chỉnh', what: 'Chỉ số do bạn tự đặt bằng công thức trên các chỉ số tổng hợp.', formula: 'Công thức bạn viết ở Cài đặt, ví dụ {net_revenue} / {order_count}',

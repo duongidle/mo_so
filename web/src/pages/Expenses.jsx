@@ -14,7 +14,7 @@ export default function Expenses() {
   const [tab, setTab] = useState(['expenses', 'cash'].includes(want) || (want === 'reconcile' && hasMarket) ? want : 'expenses');
   return (
     <div className="page stack">
-      <div className="page-head"><h1>Chi phí & đối soát</h1></div>
+      <div className="page-head"><h1>Chi phí & quỹ</h1></div>
       <Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} />
       {tab === 'expenses' && <ExpenseList />}{tab === 'cash' && <CashAccounts />}{tab === 'reconcile' && hasMarket && <Reconcile />}
     </div>

@@ -19,7 +19,7 @@ Mục tiêu cốt lõi: **một nguồn dữ liệu thật duy nhất**. Mọi �
 5. **Đơn giản trước, mở rộng sau.** Chỉ làm tính năng khi đã có nhu cầu thật.
 
 ### Ngoài phạm vi (hiện tại)
-- Kế toán, sổ sách theo Thông tư 152/2025, kê khai thuế. Sẽ dùng phần mềm kế toán riêng, đồng bộ qua API/webhook.
+- Kê khai thuế và sổ sách nộp cơ quan thuế theo Thông tư 152/2025 (sổ kế toán nội bộ có từ mục 5.16, nhưng chưa phải sổ theo mẫu của Thông tư). Cần phần mềm kế toán riêng thì đồng bộ qua API/webhook.
 - Hoá đơn điện tử (HĐĐT). App chỉ tạo **phiếu bán hàng** (chứng từ nội bộ), không phải hoá đơn hợp lệ với cơ quan thuế.
 - Kéo đơn tự động từ Shopee API (để giai đoạn sau, cần Shopee duyệt).
 - Nhiều người dùng trong **cùng một tài khoản** (nhân viên, phân quyền). Hiện mỗi tài khoản là một chủ kinh doanh với dữ liệu riêng (mục 3A); thêm nhân viên vào một tài khoản chưa làm.
@@ -309,6 +309,27 @@ Một module gộp mọi việc chăm sóc khách (trước đây là trang Chă
 - Chủ shop tự thêm/sửa/ẩn trường khách của shop trong trang Khách hàng → "Thông tin khách của shop".
 - Chuyển shop ở bộ chọn shop thì giao diện, tính năng và trường khách đổi theo. "Tất cả shop" dùng giao diện chung, không có thông tin riêng của shop nào.
 
+### 5.16 Kế toán (sổ cái kép, Phase 8a)
+- **Sổ cái là dữ liệu dẫn xuất**, cùng mẫu với `daily_stats` (5.9): trigger SQLite trên `orders`, `order_lines`, `order_line_allocations`, `order_returns`, `purchases`, `payments`, `expenses`, `cash_entries`, `cash_accounts`, `stock_movements` (chỉ `adjust_in/out`, `damage_out`, `opening`) ghi `(source_type, source_id)` vào `journal_dirty`. `flushJournal()` chạy trước mọi lần đọc sổ kế toán: xoá bút toán tự động cũ của chứng từ bẩn rồi sinh lại từ trạng thái hiện tại bằng hàm thuần `postingsFor()` (`server/modules/accounting/posting.js`). Mã bút toán (`BT-…`) giữ nguyên khi sinh lại. Bút toán tay (`is_auto = 0`, `source_type = 'manual'`, làm ở 8b) không bao giờ bị sinh lại.
+- Mỗi bút toán phải cân (Σ Nợ = Σ Có): chặn khi sinh, kiểm lại ở `verifyJournal()`; `npm run check-journal [-- --fix]` (như `check-stats`) so sổ lưu với sổ dựng lại trong bộ nhớ, phát hiện thiếu/thừa/sai/không cân/mồ côi.
+- **Hệ thống tài khoản** (`accounts`): 111/112 (tiền mặt, ngân hàng/ví; mỗi quỹ một tài khoản con 111x/112x tạo tự động bằng trigger), 1131 tiền đang chuyển, 131, 1388, 156, 211, 214, 242, 331, 3388, 411, 421, 5111, 5113, 5212, 632, 6411–6418, 6422, 6428, 711, 811. Tài khoản hệ thống không đổi/xoá; thêm được tài khoản con. Danh mục chi phí gán tài khoản chi phí (`expense_categories.account_code`, mặc định theo bảng seed; danh mục mới chưa gán → 6428).
+- **Quy tắc hạch toán** khớp ĐÚNG cách báo cáo đếm (cùng trạng thái, cùng ngày):
+  | Chứng từ | Bút toán | Ngày |
+  |---|---|---|
+  | Đơn đã xác nhận trở đi, kênh thường | Nợ 131 total · Có 5111 hàng (sau giảm giá) · Có 5113 phí ship · Nợ 6411 phí sàn / Nợ 6412 ship shop chịu, Có 3388 · Nợ 632 / Có 156 giá vốn | ngày đơn |
+  | Đơn kênh sàn | Nợ 1388 net · Nợ 6411 · Nợ 6412 · Có 5111 · Có 5113 · giá vốn như trên | ngày đơn |
+  | Phiếu trả hàng | Nợ 5212 giá trị hàng trả / Có 131 hoặc 1388 · nhập lại kho: Nợ 156 / Có 632 theo giá vốn đã chụp. Phí sàn không hoàn | ngày của ĐƠN GỐC (như báo cáo) |
+  | Thanh toán | Thu: Nợ quỹ / Có 131 (hoặc 1388, 331 khi NCC hoàn); chi/hoàn: ngược lại. Quỹ = tài khoản con của quỹ chứa phương thức; chưa gán quỹ → 1131 (cảnh báo ở Tổng quan) | ngày thanh toán |
+  | Phiếu nhập đã nhận | Nợ 156 / Có 331 tổng phiếu. Huỷ/nháp: không có bút toán | ngày nhận |
+  | Chi phí | Nợ tài khoản danh mục (kèm shop) / Có quỹ theo phương thức, trống thì 3388. Chi phí chung giữ shop NULL | ngày chi phí |
+  | Kho | adjust_in: Nợ 156 / Có 711 · adjust_out, hỏng: Nợ 811 / Có 156 · tồn đầu: Nợ 156 / Có 411 · chuyển kho: không có | ngày biến động |
+  | Quỹ | Số dư đầu: Nợ quỹ / Có 411 · chuyển quỹ: Nợ đích / Có nguồn · kiểm đếm thừa: Nợ quỹ / Có 711, thiếu: Nợ 811 / Có quỹ | ngày dòng |
+  - Thu chi **trước ngày mở sổ** của một quỹ đã nằm trong số dư đầu (khớp `cash/balanceOf`), nên phía tiền được ghi vào 411 thay vì tài khoản quỹ.
+- **Báo cáo** (`/accounting`, giao diện "Kế toán → Sổ kế toán"): tổng quan, sổ nhật ký, sổ cái (bấm mở chứng từ gốc), cân đối phát sinh, KQKD (lọc kỳ và shop), cân đối kế toán (luôn toàn tài khoản; lợi nhuận lũy kế chưa kết chuyển hiện thành "421 – lợi nhuận kỳ này"), lưu chuyển tiền trực tiếp, hệ thống tài khoản; xuất Excel từng tab; ⓘ giải thích ở `metrics.js`.
+- **KQKD theo shop** dùng đúng hàm phân bổ chi phí chung của báo cáo (`expenseItems`), nên lợi nhuận từng shop = báo cáo. Điều chỉnh kho/kiểm đếm quỹ (711/811) không thuộc shop nào nên chỉ có khi xem tất cả shop; báo cáo không đếm chúng, nên KQKD tất cả shop = lợi nhuận báo cáo + các khoản đó.
+- **Chênh lệch có chủ đích với báo cáo**: (1) tài khoản 156 lệch vài đồng so với Σ tồn × giá vốn bình quân do làm tròn giá bình quân và giá nhập phân bổ về đồng nguyên (cận trên nêu trong test); (2) báo cáo cắt công nợ mỗi đơn ở 0, sổ cái giữ số dư có (đơn sàn trả toàn phần: sàn không hoàn phí nên shop nợ sàn phần phí); (3) phí sàn/ship shop chịu trên đơn kênh thường ghi phải trả khác (3388) vì chưa có dòng tiền.
+- 8b (chưa làm): chứng từ tay, chi phí định kỳ, tài sản/khấu hao, khoá sổ.
+
 ---
 
 ## 6. Lược đồ dữ liệu (SQLite)
@@ -341,7 +362,10 @@ Chi tiết cột nằm trong `server/db/migrations/*.sql` (nguồn sự thật).
 | `custom_fields`, `custom_values`, `report_metrics` | tuỳ chỉnh |
 | `loyalty_tiers`, `reminders`, `message_templates` | loyalty |
 | `daily_stats`, `daily_stats_dirty` | bảng đệm tổng hợp báo cáo + ô cần tính lại (trigger trên `orders`) |
-| `cash_accounts`, `cash_entries` | quỹ tiền; chuyển quỹ và điều chỉnh kiểm đếm |
+| `cash_accounts`, `cash_entries` | quỹ tiền; chuyển quỹ và điều chỉnh kiểm đếm. `cash_accounts.account_code` = tài khoản con 111x/112x |
+| `accounts` | hệ thống tài khoản kế toán (mục 5.16) |
+| `journal_entries`, `journal_lines` | sổ nhật ký/sổ cái kép, dẫn xuất từ chứng từ (migration 024) |
+| `journal_dirty` | chứng từ cần sinh lại bút toán (trigger trên chứng từ) |
 | `events`, `webhooks`, `webhook_deliveries` | sự kiện & webhook |
 | `audit_log` | ai sửa gì, khi nào, trước/sau |
 | `sequences` | bộ đếm sinh mã hiển thị |
@@ -475,6 +499,7 @@ Mỗi module = DB migration + service + routes + UI + test + cập nhật PROGRE
 | M11 | API key, webhook, tài liệu API | M0 | Trung bình |
 | M12 | Sao lưu tự động, xuất CSV, khôi phục | M0 | Cao |
 | M13 | Giao diện web đầy đủ (làm song song từng module) | — | Bắt buộc |
+| M14 | Kế toán kép: sổ cái dẫn xuất, báo cáo kế toán (8a); chứng từ tay, chi phí định kỳ, tài sản, khoá sổ (8b) | M5, M7, M8 | Cao |
 
 ---
 
@@ -575,3 +600,4 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-04 | Lưu trữ danh mục còn sản phẩm bị chặn, kèm tuỳ chọn chuyển sản phẩm sang danh mục khác trong cùng giao dịch | Lưu trữ lặng lẽ sẽ để sản phẩm trỏ vào danh mục ẩn; chọn danh mục đã lưu trữ làm cha/nhãn cũng bị chặn. |
 | 2026-11-04 | Trường tuỳ chỉnh: danh mục biến có nhãn thay cho cột thô, xem trước công thức, một trình quản lý trường dùng chung | Chủ shop không biết gõ biến nào. Cột thô từ `PRAGMA` lộ id, JSON và cột khách cũ; nay chỉ biến có nhãn, kiểm lúc tạo/sửa (công thức cũ vẫn đọc được). Xem trước báo lỗi đúng vị trí thay vì chỉ báo lỗi lúc lưu. Hai bản quản lý trường (Cài đặt, Khách hàng) hợp thành một để khỏi lệch nhau. |
 | 2026-11-04 | Từ điển chỉ số một nguồn `metrics.js` + ⓘ tại chỗ + dải phạm vi, thay vì chỉ trang hướng dẫn riêng | Chủ shop không biết số lấy ở đâu, tính cho shop nào hay cả hệ thống. Giải thích phải nằm ngay cạnh con số, và phạm vi phải nói rõ vì có số không theo bộ lọc (nợ NCC, số dư quỹ, thuế, tồn kho tính đến hôm nay). |
+| 2026-11-04 | Kế toán kép **dẫn xuất từ chứng từ bằng trigger + sinh lại**, không ghi bút toán trong code nghiệp vụ | Cùng mẫu với `daily_stats` đã chứng minh trong dự án: trigger bắt mọi đường thay đổi (kể cả SQL trực tiếp, import) nên không thể quên; sinh lại từ trạng thái hiện tại nên sửa/huỷ đơn không cần bút toán đảo; một bộ quy tắc duy nhất (`posting.js`) khớp cách báo cáo đếm, có `verifyJournal` và test đối chiếu KQKD, quỹ, tồn kho, công nợ với báo cáo. Đổi lại: bút toán không bất biến (phải khoá sổ ở 8b), sổ chỉ cập nhật khi đọc. |
