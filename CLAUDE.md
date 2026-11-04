@@ -422,7 +422,7 @@ Tỷ lệ là định hướng tổng thể, không áp dụng cứng cho từng
 ### Logo
 Thư mục `brand/`:
 - `logo-mark.svg`: biểu tượng vuông bo góc nền Walnut. Hai tờ sổ phẳng lệch nhau (tờ trái Terracotta ở phía bóng, tờ phải Linen đang được mở lên), dòng kẻ sổ là "dấu vết", gáy Champagne, một dấu niêm Oxblood đóng hơi lệch như đóng tay. Viền Champagne mảnh gợi ép kim trên hộp quà.
-- `logo-lockup.svg`: biểu tượng + chữ "Mở Sổ" (serif, Walnut) + dòng "DẤU VẾT CỦA THỜI GIAN" (Terracotta). Chữ đã chuyển thành đường nét (font Noto Serif SemiBold, giấy phép SIL OFL) nên hiển thị giống nhau trên mọi máy, không phụ thuộc font cài sẵn. Muốn đổi chữ thì phải tạo lại outline, không sửa trực tiếp.
+- `logo-lockup.svg`: biểu tượng + chữ "Mở Sổ" (serif, Walnut) + dòng "HÀNH TRÌNH PHƯƠNG ĐÔNG" (Terracotta). Chữ đã chuyển thành đường nét (font Noto Serif SemiBold, giấy phép SIL OFL) nên hiển thị giống nhau trên mọi máy, không phụ thuộc font cài sẵn. Muốn đổi chữ thì phải tạo lại outline, không sửa trực tiếp.
 - `favicon.svg`: bản rút gọn cho thanh tab và icon nhỏ (bỏ dòng kẻ và viền).
 - `tokens.css`: biến CSS màu và font cho giao diện.
 
@@ -536,3 +536,4 @@ Biến môi trường (`.env`, không bắt buộc): `PORT=3000`, `HOST=0.0.0.0`
 | 2026-11-03 | Lọc danh mục chỉ áp dụng cho báo cáo sản phẩm và ngũ hành | Doanh thu, phí ship, phí sàn, chi phí thuộc cả đơn chứ không thuộc từng dòng; chia theo danh mục phải bịa tỷ lệ. |
 | 2026-11-03 | Route PATCH dùng `patchOf`; huỷ phiếu nhập đã trả tiền phải kèm NCC hoàn tiền | `.partial()` của zod 4 áp `.default()` làm sửa đơn nháp xoá phí ship/phí sàn/giảm giá và sửa đơn đã chốt luôn bị 409. Huỷ phiếu nhập đã trả để tiền đã chi nằm đó không hàng, không công nợ. |
 | 2026-11-03 | Trang "Cách đọc số liệu" chỉ dùng ngưỡng người dùng đã đặt và quy tắc tự nhiên | Chủ shop nhìn nhiều chỉ số không biết xem gì. Ngưỡng bịa thêm sẽ gây báo động giả; quỹ âm hoặc đang lỗ thì đúng với mọi shop. |
+| 2026-11-04 | Đổi slogan "Dấu vết của thời gian" → **"Hành Trình Phương Đông"** (thanh bên, trang đăng nhập, `logo-lockup.svg`) | Slogan mới nói hành trình làm ăn trên mảnh đất phương đông. Tên concept thiết kế "Dấu vết thời gian" (mục 7A) giữ nguyên vì là ngôn ngữ thiết kế, không phải slogan. Chữ trong lockup tạo lại outline bằng Noto Serif SemiBold. |
