@@ -36,6 +36,35 @@ function categoryClause(f) {
   return categoryClauseOf(f.categoryId);
 }
 
+/**
+ * Biến dùng được trong chỉ số báo cáo tuỳ chỉnh (công thức chạy trên `overview().current`).
+ * Một nguồn duy nhất: createMetric kiểm tra theo đây và giao diện gợi ý cũng lấy từ đây.
+ */
+export const REPORT_VARIABLES = [
+  { key: 'order_count', label: 'Số đơn (đã xác nhận trở đi)', type: 'number', group: 'Đơn' },
+  { key: 'cancelled_count', label: 'Số đơn huỷ', type: 'number', group: 'Đơn' },
+  { key: 'returned_count', label: 'Số đơn có trả hàng', type: 'number', group: 'Đơn' },
+  { key: 'aov', label: 'Giá trị đơn trung bình', type: 'money', group: 'Đơn' },
+  { key: 'cancel_rate_pct', label: 'Tỷ lệ huỷ (%)', type: 'number', group: 'Đơn' },
+  { key: 'return_rate_pct', label: 'Tỷ lệ hoàn trả (%)', type: 'number', group: 'Đơn' },
+  { key: 'subtotal', label: 'Tổng tiền hàng (trước giảm giá)', type: 'money', group: 'Doanh thu' },
+  { key: 'gross_revenue', label: 'Doanh thu gộp', type: 'money', group: 'Doanh thu' },
+  { key: 'discount_amount', label: 'Giảm giá', type: 'money', group: 'Doanh thu' },
+  { key: 'goods_revenue', label: 'Tiền hàng sau giảm giá', type: 'money', group: 'Doanh thu' },
+  { key: 'returned_amount', label: 'Tiền hàng đã trả', type: 'money', group: 'Doanh thu' },
+  { key: 'net_revenue', label: 'Doanh thu thuần', type: 'money', group: 'Doanh thu' },
+  { key: 'shipping_fee', label: 'Phí ship khách trả', type: 'money', group: 'Doanh thu' },
+  { key: 'platform_fee', label: 'Phí sàn', type: 'money', group: 'Chi phí' },
+  { key: 'seller_shipping', label: 'Phí ship shop chịu', type: 'money', group: 'Chi phí' },
+  { key: 'cogs', label: 'Giá vốn hàng bán', type: 'money', group: 'Chi phí' },
+  { key: 'expenses_amount', label: 'Chi phí (đã gồm phần chung chia về)', type: 'money', group: 'Chi phí' },
+  { key: 'gross_profit', label: 'Lợi nhuận gộp', type: 'money', group: 'Lợi nhuận' },
+  { key: 'gross_margin_pct', label: 'Biên lợi nhuận gộp (%)', type: 'number', group: 'Lợi nhuận' },
+  { key: 'net_profit_estimate', label: 'Lợi nhuận ròng ước tính', type: 'money', group: 'Lợi nhuận' },
+  { key: 'tax_estimate_amount', label: 'Thuế ước tính (chỉ có khi bật thuế, xem cả hộ)', type: 'money', group: 'Lợi nhuận' },
+  { key: 'profit_after_tax_estimate', label: 'Lợi nhuận sau thuế ước tính (như trên)', type: 'money', group: 'Lợi nhuận' },
+];
+
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
 
 const finish = (r) => {

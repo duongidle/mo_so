@@ -3,6 +3,8 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
+import FieldsManager from '../components/FieldsManager.jsx';
+import FormulaEditor from '../components/FormulaEditor.jsx';
 
 const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng bán hàng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế (ước tính)'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
@@ -213,43 +215,12 @@ function Tax() {
   );
 }
 
-const ENT = { product: 'Sản phẩm', order: 'Đơn hàng', purchase: 'Phiếu nhập' }; // trường của khách cài trong trang Khách hàng, theo từng shop
-const FT = { text: 'Văn bản', number: 'Số', money: 'Tiền', date: 'Ngày', select: 'Chọn một', multiselect: 'Chọn nhiều', boolean: 'Có/Không', formula: 'Công thức' };
 function Fields() {
-  const { shops } = useSession();
-  const state = useAsync(() => api.get('/custom/fields'), []);
-  const [f, setF] = useState(null);
-  const { busy, error, run } = useAction();
+  const { shops, shop, isAll } = useSession();
   return (
-    <>
-      <Card title="Trường tuỳ chỉnh" actions={<button className="btn sm" onClick={() => setF({ entity_type: 'order', key: '', label: '', type: 'text', options: '', formula: '', shop_id: '' })}>+ Trường</button>}>
-        <p className="small muted" style={{ marginTop: 0 }}>Dành cho sản phẩm, đơn hàng, phiếu nhập. Thông tin khách (mệnh, mùi yêu thích…) là của từng shop: cài trong trang <b>Khách hàng</b> → “Thông tin khách của shop”.</p>
-        <Async state={state}>{({ data }) => !data.length ? <Empty>Chưa có trường nào.</Empty> : data.map((x) => (
-          <div key={x.id} className="row between" style={{ padding: '8px 0', borderBottom: '1px solid var(--hairline)' }}>
-            <span><b>{x.label}</b> <code className="small">{`{custom.${x.key}}`}</code><div className="small muted">{ENT[x.entity_type]} · {FT[x.type]}{x.formula && ` = ${x.formula}`}{x.shop_id && ` · riêng ${shops.find((s) => s.id === x.shop_id)?.name}`}</div></span>
-            <button className="btn sm" onClick={() => confirm('Ẩn trường này? Giá trị đã nhập vẫn được giữ.') && run(async () => { await api.patch(`/custom/fields/${x.id}`, { archived: true }); state.reload(); })}>Ẩn</button>
-          </div>
-        ))}</Async>
-        <ErrorBox error={error} />
-      </Card>
-      {f && (
-        <Modal title="Thêm trường tuỳ chỉnh" onClose={() => setF(null)} footer={<button className="btn primary" disabled={busy} onClick={() => run(async () => {
-          await api.post('/custom/fields', { entity_type: f.entity_type, key: f.key, label: f.label, type: f.type, shop_id: f.shop_id || null, ...(f.type === 'formula' ? { formula: f.formula } : {}), ...(['select', 'multiselect'].includes(f.type) ? { options: f.options.split(',').map((x) => x.trim()).filter(Boolean) } : {}) });
-          setF(null); state.reload();
-        })}>Lưu</button>}>
-          <div className="grid cols-2">
-            <Field label="Áp dụng cho"><select value={f.entity_type} onChange={(e) => setF({ ...f, entity_type: e.target.value })}>{Object.entries(ENT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-            <Field label="Kiểu"><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{Object.entries(FT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-            <Field label="Nhãn hiển thị"><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></Field>
-            <Field label="Khoá (a-z, 0-9, _)" hint="Dùng trong công thức"><input value={f.key} onChange={(e) => setF({ ...f, key: e.target.value })} /></Field>
-          </div>
-          {['select', 'multiselect'].includes(f.type) && <Field label="Các lựa chọn, ngăn bằng dấu phẩy"><input value={f.options} onChange={(e) => setF({ ...f, options: e.target.value })} /></Field>}
-          {f.type === 'formula' && <Field label="Công thức" hint="Ví dụ: {total_amount} - {cogs_amount} - {custom.phi_dong_goi}. Hàm: IF, ROUND, MIN, MAX, ABS, DAYS_BETWEEN, TODAY"><input value={f.formula} onChange={(e) => setF({ ...f, formula: e.target.value })} /></Field>}
-          <Field label="Phạm vi" hint="Toàn hệ thống để cộng gộp được giữa các shop"><select value={f.shop_id} onChange={(e) => setF({ ...f, shop_id: e.target.value })}><option value="">Toàn hệ thống</option>{shops.map((s) => <option key={s.id} value={s.id}>Chỉ {s.name}</option>)}</select></Field>
-          <ErrorBox error={error} />
-        </Modal>
-      )}
-    </>
+    <Card title="Trường tuỳ chỉnh">
+      <FieldsManager shop={isAll ? null : shop} shops={shops} />
+    </Card>
   );
 }
 
@@ -261,16 +232,16 @@ function Metrics() {
   return (
     <>
       <Card title="Chỉ số báo cáo tuỳ chỉnh" actions={<button className="btn sm" onClick={() => setF({ key: '', name: '', formula: '', format: 'number', shop_id: '' })}>+ Chỉ số</button>}>
-        <p className="small muted">Công thức trên số liệu tổng hợp của kỳ báo cáo: {'{net_revenue}'}, {'{gross_profit}'}, {'{order_count}'}, {'{cogs}'}, {'{platform_fee}'}, {'{expenses_amount}'}, {'{net_profit_estimate}'}, {'{aov}'}…</p>
+        <p className="small muted">Công thức trên số liệu tổng hợp của kỳ báo cáo. Gõ {'{'} để chọn biến, ví dụ {'{net_revenue} / {order_count}'}.</p>
         <Async state={state}>{({ data }) => !data.length ? <Empty>Chưa có chỉ số.</Empty> : data.map((m) => (
           <div key={m.id} className="row between" style={{ padding: '8px 0', borderBottom: '1px solid var(--hairline)' }}><span><b>{m.name}</b><div className="small muted"><code>{m.formula}</code>{m.shop_id && ` · ${shops.find((s) => s.id === m.shop_id)?.name}`}</div></span>
             <button className="btn sm" onClick={() => run(async () => { await api.del(`/custom/metrics/${m.id}`); state.reload(); })}>Xoá</button></div>
         ))}</Async>
       </Card>
       {f && (
-        <Modal title="Thêm chỉ số" onClose={() => setF(null)} footer={<button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post('/custom/metrics', { ...f, shop_id: f.shop_id || null }); setF(null); state.reload(); })}>Lưu</button>}>
+        <Modal wide title="Thêm chỉ số" onClose={() => setF(null)} footer={<button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post('/custom/metrics', { ...f, shop_id: f.shop_id || null }); setF(null); state.reload(); })}>Lưu</button>}>
           <div className="grid cols-2"><Field label="Tên"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field><Field label="Khoá"><input value={f.key} onChange={(e) => setF({ ...f, key: e.target.value })} /></Field></div>
-          <Field label="Công thức"><input value={f.formula} onChange={(e) => setF({ ...f, formula: e.target.value })} placeholder="{net_revenue} / {order_count}" /></Field>
+          <FormulaEditor entity="metric" shopId={f.shop_id || null} value={f.formula} onChange={(formula) => setF({ ...f, formula })} />
           <div className="grid cols-2">
             <Field label="Định dạng"><select value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })}><option value="number">Số</option><option value="money">Tiền</option><option value="percent">Phần trăm</option></select></Field>
             <Field label="Áp dụng cho"><select value={f.shop_id} onChange={(e) => setF({ ...f, shop_id: e.target.value })}><option value="">Mọi shop</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>

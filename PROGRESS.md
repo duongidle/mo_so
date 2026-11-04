@@ -27,6 +27,16 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, Phase 6: hoàn thiện trường tuỳ chỉnh
+
+- Server: `custom/variables.js` là danh mục biến duy nhất (nhãn tiếng Việt, kiểu, nhóm; không có id, thời điểm nội bộ, JSON, cột khách cũ). `GET /custom/variables`, `GET /custom/metric-variables`, `GET /custom/functions`, `POST /custom/formula/preview` (bản ghi mẫu gần nhất hoặc `entity_id`; `metric` tính trên tháng này). `parseFormula` và `createMetric` chỉ nhận biến trong danh mục, lỗi kèm `details.position`. Công thức đã lưu từ trước dùng cột ngoài danh mục vẫn đọc được (chỉ kiểm khi tạo/sửa).
+- Biến dẫn xuất của khách theo shop: `shop_order_count`, `shop_total_spent`, `shop_last_order_at` (tính trong `getValues`, cùng cách tính với `by_shop` của hồ sơ khách). `REPORT_VARIABLES` ở `reports/service.js`.
+- `formula.js`: thêm CONCAT, YEAR, MONTH, COALESCE; `FormulaError.position`; `FUNCTION_DOCS` cho giao diện.
+- Trường: `role` nhận khi tạo (kiểm đối tượng, kiểu, mỗi shop một trường mỗi vai trò), PATCH sửa được `options`, `required`, `role`; `required` (migration 023) có hiệu lực khi `PUT /custom/values` (chỉ khi lưu qua API này, đơn nhập từ file không đi qua). `GET /custom/fields?archived=1` liệt kê trường đã ẩn.
+- Giao diện: `FormulaEditor` (gợi ý biến khi gõ `{`, gợi ý hàm, bảng Biến/Hàm, mẫu, xem trước 400ms, tô vị trí lỗi), `FieldsManager` dùng chung cho Cài đặt → Trường tuỳ chỉnh (gồm Khách hàng) và Khách hàng → "Thông tin khách của shop" (sửa, thứ tự, ẩn/hiện lại, lựa chọn dạng thẻ). Chỉ số báo cáo dùng FormulaEditor.
+- Test: API 118, web 163. Không có e2e mới.
+- Chưa làm: thử trên iPhone thật; trường bắt buộc chưa chặn lúc tạo khách/đơn bằng API (chỉ khi lưu giá trị trường).
+
 ### 2026-11-04 — Đợt nâng cấp, Phase 5: form tạo đơn mới + chọn khách có sẵn
 
 - `web/src/components/CustomerPicker.jsx` (dùng chung, có chế độ `compact` cho POS): tìm theo tên/SĐT/mã (khách của shop trước, "khách ở shop khác" sau), mỗi dòng có hạng, số đơn, đơn gần nhất; phím mũi tên/Enter/Esc; thẻ khách đã chọn (Đổi), hạng + % giảm gợi ý có nút áp dụng; "+ Khách mới" tạo qua `POST /customers` rồi chọn, SĐT trùng khách có sẵn thì chặn tạo và gợi ý chọn khách đó. Luôn trả khách có id.

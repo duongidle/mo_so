@@ -462,3 +462,14 @@ body { background-image: var(--fibre); background-size: 320px; }
 .cust-card.compact { padding: 10px 12px; }
 .cust-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cust-tier { margin: 0; }
+
+/* ===== Soạn công thức ===== */
+.formula-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); max-height: 260px; overflow-y: auto; }
+.formula-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer; min-height: 44px; align-items: center; }
+.formula-list li.on, .formula-list li:hover { background: color-mix(in srgb, var(--champagne) 24%, transparent); }
+.formula-panel { border: 1px solid var(--rule); border-radius: 12px; padding: 12px; max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.formula-fn { display: flex; flex-direction: column; gap: 2px; text-align: left; border: 0; background: transparent; padding: 8px; border-radius: 8px; cursor: pointer; min-height: 44px; }
+.formula-fn:hover { background: color-mix(in srgb, var(--champagne) 24%, transparent); }
+.formula-spot { margin: 6px 0 0; font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
+.formula-spot mark { background: color-mix(in srgb, var(--st-cancelled) 22%, transparent); color: inherit; text-decoration: underline wavy var(--st-cancelled); }
+@media (max-width: 600px) { .formula-list li { flex-direction: column; align-items: flex-start; gap: 2px; } }
