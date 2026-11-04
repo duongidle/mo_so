@@ -1,7 +1,9 @@
 import { solarToLunar, elementOfLunarYear } from '../../server/lib/lunar.js';
 
-export const vnd = (n) => (n === null || n === undefined ? '—' : `${new Intl.NumberFormat('vi-VN').format(Math.round(n))} ₫`);
-export const num = (n) => (n === null || n === undefined ? '—' : new Intl.NumberFormat('vi-VN').format(n));
+/** Số 0 (kể cả -0 và số âm làm tròn về 0) luôn hiện "0", không bao giờ "-0" */
+const noNegZero = (n) => (Object.is(n, -0) || n === 0 ? 0 : n);
+export const vnd = (n) => (n === null || n === undefined ? '—' : `${new Intl.NumberFormat('vi-VN').format(noNegZero(Math.round(n)))} ₫`);
+export const num = (n) => (n === null || n === undefined ? '—' : new Intl.NumberFormat('vi-VN').format(noNegZero(n)));
 export const pct = (n) => (n === null || n === undefined ? '—' : `${String(n).replace('.', ',')}%`);
 
 export function fmtDate(iso) {

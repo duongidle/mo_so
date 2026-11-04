@@ -83,6 +83,12 @@ r.get('/', (c) => {
   return c.json(svc.listOrders({ ...toFilter(q), limit: q.limit, cursor: q.cursor }));
 });
 
+/** Số đơn theo từng trạng thái (cho tab trạng thái). Phải đặt trước /:id */
+r.get('/status-counts', (c) => {
+  const q = query(c, z.object(filterShape));
+  return c.json({ data: svc.countOrdersByStatus(toFilter(q)) });
+});
+
 /**
  * Xuất đơn theo đúng bộ lọc của danh sách. layout=orders (mỗi đơn một dòng) | lines (mỗi sản phẩm một dòng).
  * format=csv (mặc định, tải về) | json (để giao diện tự dựng file Excel) | count (chỉ đếm, để báo trước số dòng).

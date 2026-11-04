@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Routes, Route, NavLink, Navigate, Link, useLocation } from 'react-router-dom';
 import { api } from './api.js';
 import { SessionProvider, useSession } from './session.jsx';
-import { Loading } from './components/ui.jsx';
+import { Loading, PageHeader } from './components/ui.jsx';
 import Icon from './components/Icon.jsx';
 import { lunarInfo } from './lib.js';
 import Auth from './pages/Auth.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import Pos from './pages/Pos.jsx';
 import OrderForm from './pages/OrderForm.jsx';
 import { OrderList, OrderDetail } from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
@@ -23,13 +22,15 @@ import Settings from './pages/Settings.jsx';
 import Onboarding, { GettingStarted, useSetupProgress, readDismissed, DISMISS_KEY } from './pages/Onboarding.jsx';
 
 const NAV = [
-  { group: null, items: [['/', 'Tổng quan', 'home', true], ['/pos', 'Bán nhanh', 'bag'], ['/orders', 'Đơn hàng', 'receipt']] },
+  { group: null, items: [['/', 'Tổng quan', 'home', true], ['/orders', 'Đơn hàng', 'receipt']] },
   { group: 'Hàng hoá', items: [['/products', 'Sản phẩm', 'tag'], ['/stock', 'Kho', 'box'], ['/purchases', 'Nhập hàng', 'truck']] },
   { group: 'Khách', items: [['/customers', 'Khách hàng', 'users'], ['/loyalty', 'Loyalty & Campaign', 'heart']] },
   { group: 'Kế toán', items: [['/expenses', 'Chi phí & quỹ', 'wallet'], ['/accounting', 'Sổ kế toán', 'book']] },
   { group: 'Sổ sách', items: [['/reports', 'Báo cáo', 'chart'], ['/guide', 'Cách đọc số liệu', 'book'], ['/settings', 'Cài đặt', 'cog']] },
 ];
-const PRIMARY = ['/', '/pos', '/orders', '/stock'];
+/** Trang form đầy đủ có thanh lưu dính đáy: không hiện nút nổi "+ Đơn" */
+const FORM_PAGE = /^\/(products\/(new|combo|[^/]+)|purchases\/(new|[^/]+))$/;
+const PRIMARY = ['/', '/orders/new', '/orders', '/stock'];
 
 /** Bộ chọn shop: nút hiện shop đang làm việc, bấm ra danh sách (thay cho thẻ select mặc định) */
 function ShopSwitcher() {
@@ -79,9 +80,10 @@ function Shell({ progress, reopenGuide }) {
   const lunar = lunarInfo();
   const dateText = new Intl.DateTimeFormat('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
   const blurOnClick = (e) => { if (e.detail > 0) e.currentTarget.blur(); }; // click chuột không giữ focus; trình duyệt cũ thiếu :has
-  const tab = (to, label, icon) => (
-    <NavLink to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'active' : '')}><Icon name={icon} />{label}</NavLink>
-  );
+  const tab = (to, label, icon) => {
+    const on = to === '/' ? pathname === '/' : to === '/orders' ? pathname.startsWith('/orders') && !pathname.startsWith('/orders/new') : pathname.startsWith(to);
+    return <NavLink to={to} className={on ? 'active' : ''}><Icon name={icon} />{label}</NavLink>;
+  };
   return (
     <div className="shell">
       <div className={`rail-space ${pinned ? 'pinned' : ''}`} aria-hidden="true" />
@@ -91,7 +93,7 @@ function Shell({ progress, reopenGuide }) {
           <div key={i}>
             {i > 0 && <div className="nav-sep" />}
             {g.items.map(([to, label, icon, end]) => (
-              <NavLink key={to} to={to} end={end} title={label} onClick={blurOnClick} className={({ isActive }) => `nav ${isActive ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
+              <NavLink key={to} to={to} end={end} title={label} onClick={blurOnClick} className={({ isActive }) => `nav ${isActive && !(to === '/orders' && pathname.startsWith('/orders/new')) ? 'active' : ''}`}><Icon name={icon} /><span className="lbl">{label}</span></NavLink>
             ))}
           </div>
         ))}
@@ -103,11 +105,11 @@ function Shell({ progress, reopenGuide }) {
       <div className="main">
         <header className="topbar">
           <div className="row"><span className="mark-wrap"><img className="mark" src="/logo-mark.svg" alt="Mở Sổ" /></span><ShopSwitcher /></div>
-          <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span>{has('feng_shui') && <><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></>}</span>{pathname !== '/pos' && <Link to="/pos" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
+          <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span>{has('feng_shui') && <><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></>}</span>{!pathname.startsWith('/orders/new') && <Link to="/orders/new" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
         </header>
         <Routes>
           <Route path="/" element={<Dashboard progress={progress} reopenGuide={reopenGuide} />} />
-          <Route path="/pos" element={<Pos />} />
+          <Route path="/pos" element={<Navigate to="/orders/new" replace />} />
           <Route path="/orders" element={<OrderList />} />
           <Route path="/orders/new" element={<OrderForm />} />
           <Route path="/orders/:id/edit" element={<OrderForm />} />
@@ -129,10 +131,10 @@ function Shell({ progress, reopenGuide }) {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
-      {!['/pos', '/orders'].includes(pathname) && !pathname.startsWith('/orders/new') && !pathname.endsWith('/edit') && <Link to="/pos" className="fab"><Icon name="plus" />Đơn</Link>}
+      {pathname !== '/orders' && !pathname.startsWith('/orders/new') && !pathname.endsWith('/edit') && !FORM_PAGE.test(pathname) && <Link to="/orders/new" className="fab"><Icon name="plus" />Đơn</Link>}
       <nav className="tabbar" aria-label="Thanh tab">
         {tab('/', 'Tổng quan', 'home')}
-        {tab('/pos', 'Bán hàng', 'bag')}
+        {tab('/orders/new', 'Tạo đơn', 'bag')}
         {tab('/orders', 'Đơn', 'receipt')}
         {tab('/stock', 'Kho', 'box')}
         {tab('/more', 'Thêm', 'more')}
@@ -146,7 +148,7 @@ function More() {
   const { onLogout } = useSession();
   return (
     <div className="page stack">
-      <h1>Thêm</h1>
+      <PageHeader title="Thêm" />
       {NAV.map((g, i) => {
         const items = g.items.filter(([to]) => !PRIMARY.includes(to));
         return items.length > 0 && (

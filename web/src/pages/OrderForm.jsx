@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Empty, ErrorBox, Field, useAction, useAsync, useDebounced } from '../components/ui.jsx';
+import { Async, Empty, ErrorBox, Field, Fold, PageHeader, Section, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 import Icon from '../components/Icon.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
@@ -167,24 +167,22 @@ function Form({ order }) {
   const itemCount = lines.reduce((a, l) => a + l.qty, 0);
   const lineWarn = (l) => (l.on_hand_total !== null && l.on_hand_total !== undefined && l.qty > l.on_hand_total ? `Tồn chỉ còn ${num(l.on_hand_total)}` : null);
 
+  const showAlloc = lines.length > 0 && (previewErr || (preview && (preview.warehouses.length > 1 || notes.short.length > 0 || notes.elsewhere.length > 0)));
+
   return (
-    <div className="page of">
-      <div className="page-head">
-        <div>
-          <h1>{isEdit ? `Sửa đơn ${order.code}` : 'Đơn mới'}</h1>
-          <div className="muted small">Shop {shop.name}{isEdit ? ' · đơn nháp' : ''}</div>
-        </div>
-      </div>
+    <div className="page of stack">
+      <PageHeader title={isEdit ? `Sửa đơn ${order.code}` : 'Đơn mới'} sub={`Shop ${shop.name}${isEdit ? ' · đơn nháp' : ''}`} />
 
       <div className="of-grid">
         <div className="stack of-main">
-          <Card title={`Sản phẩm${itemCount ? ` (${itemCount})` : ''}`}>
+          <Section title={`Sản phẩm${itemCount ? ` (${itemCount})` : ''}`}>
             <div className="stack">
               <div className="of-search">
                 <div className="searchbox">
                   <Icon name="search" />
                   <input
                     value={q}
+                    autoFocus={!isEdit}
                     onChange={(e) => { setQ(e.target.value); setOpenSearch(true); }}
                     onFocus={() => setOpenSearch(true)}
                     onBlur={() => setTimeout(() => setOpenSearch(false), 150)}
@@ -246,35 +244,43 @@ function Form({ order }) {
                 </div>
               )}
             </div>
-          </Card>
+          </Section>
 
-          <Card title="Ghi chú">
-            <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú cho đơn (khách dặn gì, giao giờ nào…)" aria-label="Ghi chú đơn" style={{ minHeight: 70 }} />
-          </Card>
+          {showAlloc && (
+            <Section title="Lấy hàng từ kho">
+              <AllocationPanel
+                lines={lines} edits={edits} setEdits={setEdits} preview={preview} previewErr={previewErr} notes={notes}
+                manualOpen={manualOpen} setManualOpen={setManualOpen}
+              />
+            </Section>
+          )}
+
+          <Section className="of-more">
+            <Fold title="Thêm tuỳ chọn (mã đơn kênh, địa chỉ, ghi chú)">
+              <div className="grid cols-2 collapse">
+                <Field label="Mã đơn trên kênh (nếu có)">
+                  <input value={externalId} onChange={(e) => setExternalId(e.target.value)} disabled={isEdit} aria-label="Mã đơn kênh" />
+                </Field>
+                <Field label="Địa chỉ giao hàng"><textarea value={address} onChange={(e) => setAddress(e.target.value)} style={{ minHeight: 44 }} aria-label="Địa chỉ giao hàng" /></Field>
+              </div>
+              <Field label="Ghi chú"><textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Khách dặn gì, giao giờ nào…" aria-label="Ghi chú đơn" style={{ minHeight: 56 }} /></Field>
+            </Fold>
+          </Section>
         </div>
 
         <div className="stack of-side">
-          <Card title="Bán qua">
-            <div className="grid cols-2 collapse">
-              <Field label="Kênh">
+          <Section title="Khách hàng">
+            <div className="stack">
+              <Field label="Bán qua kênh">
                 <select value={channelId} onChange={(e) => setChannelId(e.target.value)} disabled={isEdit} aria-label="Kênh">
                   {(isEdit ? allChannels : channels).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </Field>
-              <Field label="Mã đơn trên kênh (nếu có)">
-                <input value={externalId} onChange={(e) => setExternalId(e.target.value)} disabled={isEdit} aria-label="Mã đơn kênh" />
-              </Field>
-            </div>
-          </Card>
-
-          <Card title="Khách hàng">
-            <div className="stack">
               <CustomerPicker shopId={shopId} value={customer} onChange={onCustomer} subtotal={totals.afterLines} onApplyDiscount={(v) => setDiscount(v)} />
-              <Field label="Địa chỉ giao hàng"><textarea value={address} onChange={(e) => setAddress(e.target.value)} style={{ minHeight: 64 }} aria-label="Địa chỉ giao hàng" /></Field>
             </div>
-          </Card>
+          </Section>
 
-          <Card title="Tiền">
+          <Section title="Tiền">
             <div className="stack">
               <div className="grid cols-2 collapse">
                 <Field label="Giảm giá đơn"><MoneyInput value={discount} onChange={(e) => setDiscount(toMoney(e.target.value))} aria-label="Giảm giá đơn" /></Field>
@@ -291,18 +297,9 @@ function Form({ order }) {
                 <div className="ledger-line small muted"><span>Lãi gộp (ước tính)</span><span className="num" data-testid="profit">{totals.profit === null ? '—' : vnd(totals.profit)}</span></div>
               </div>
             </div>
-          </Card>
+          </Section>
 
-          {lines.length > 0 && (
-            <Card title="Lấy hàng từ kho">
-              <AllocationPanel
-                lines={lines} edits={edits} setEdits={setEdits} preview={preview} previewErr={previewErr} notes={notes}
-                manualOpen={manualOpen} setManualOpen={setManualOpen}
-              />
-            </Card>
-          )}
-
-          <Card title="Thanh toán">
+          <Section title="Thanh toán">
             <div className="grid cols-2 collapse">
               <Field label="Số tiền thu" hint="Để trống: Bán xong thu đủ, Xác nhận không thu">
                 <MoneyInput value={paid} placeholder={String(totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
@@ -311,7 +308,7 @@ function Form({ order }) {
                 <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Phương thức thanh toán">{methodList(method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
               </Field>
             </div>
-          </Card>
+          </Section>
         </div>
       </div>
 

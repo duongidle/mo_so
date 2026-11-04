@@ -133,14 +133,14 @@ test('chuyển shop đổi giao diện, tính năng và trường khách đúng 
   await ctx.close();
 });
 
-test('POS: bán combo trừ kho từng thành phần và chốt đơn', { skip }, async () => {
+test('Tạo đơn nhanh (/orders/new): bán combo trừ kho từng thành phần và chốt đơn', { skip }, async () => {
   const { page, errors, ctx } = await login({ width: 390, height: 800 });
   await pickShop(page, 'Nước hoa');
-  await page.goto(`${base}/pos`);
-  await page.waitForSelector('.pick');
+  await page.goto(`${base}/pos`); // đường cũ chuyển sang /orders/new
+  await page.waitForSelector('input[aria-label="Tìm sản phẩm"]');
   await page.fill('input[aria-label="Tìm sản phẩm"]', 'CB-1');
-  await page.click('.pick >> nth=0');
-  await page.click('text=Bán ngay');
+  await page.click('[role=option] >> nth=0');
+  await page.click('button:has-text("Bán xong")');
   await page.waitForSelector('text=ĐÃ CHỐT');
   assert.equal(await stock('TD-1'), 18, 'combo gồm 2 tinh dầu');
   assert.equal(await stock('MT-1'), 9);

@@ -111,6 +111,16 @@ export function orderFilter(f) {
   return { where, params };
 }
 
+/** Số đơn theo trạng thái, cùng bộ lọc với danh sách (bỏ lọc trạng thái để các tab hiện đủ số) */
+export function countOrdersByStatus(f) {
+  const { where, params } = orderFilter({ ...f, status: null });
+  const rows = db()
+    .prepare(`SELECT o.status, COUNT(*) AS n FROM orders o ${where.length ? 'WHERE ' + where.join(' AND ') : ''} GROUP BY o.status`)
+    .all(...params);
+  const counts = Object.fromEntries(rows.map((r) => [r.status, r.n]));
+  return { ...counts, all: rows.reduce((a, r) => a + r.n, 0) };
+}
+
 export function listOrders(f) {
   const { where, params } = orderFilter(f);
   if (f.cursor) (where.push('o.id < ?'), params.push(f.cursor));

@@ -73,19 +73,55 @@ export const Field = ({ label, children, hint }) => (
 
 export const StatusBadge = ({ status }) => <span className={`badge st-${status}`}>{STATUS[status] || status}</span>;
 
-/** Tab gạch chân cho các mục lớn của một trang */
+/** Tab dạng segmented gọn cho các mục của một trang. Mỗi mục: [giá trị, nhãn, số đếm (tuỳ chọn)] */
 export function Tabs({ options, value, onChange, wrap }) {
   return (
     <div className={`tabs${wrap ? ' wrap' : ''}`} role="tablist">
-      {options.map(([v, label]) => (
-        <button key={v} className="tab" role="tab" aria-selected={value === v} onClick={() => onChange(v)}>{label}</button>
+      {options.map(([v, label, count]) => (
+        <button key={v} className="tab" role="tab" aria-selected={value === v} onClick={() => onChange(v)}>{label}{count !== undefined && count !== null && <span className="count">{count}</span>}</button>
       ))}
     </div>
   );
 }
 
+/** Đầu trang: tiêu đề, mô tả ngắn (tuỳ chọn), nút hành động bên phải. `deco` chỉ dùng ở Tổng quan (đường diềm theo ngành). */
+export function PageHeader({ title, sub, actions, deco }) {
+  return (
+    <div className={`page-head${deco ? ' deco' : ''}`}>
+      <div><h1>{title}</h1>{sub && <p className="sub muted small">{sub}</p>}</div>
+      {actions && <div className="actions">{actions}</div>}
+    </div>
+  );
+}
+
+/** Thanh công cụ một hàng: tab/segmented, ô tìm, bộ lọc, nút phụ. Tự xuống dòng gọn trên điện thoại. */
+export const Toolbar = ({ children, className = '' }) => <div className={`toolbar ${className}`}>{children}</div>;
+
+/** Một dòng chữ nhỏ muted dưới thanh công cụ: mỗi vùng chỉ một ghi chú */
+export const Note = ({ children }) => (children ? <p className="note">{children}</p> : null);
+
+/** Khối nội dung có tiêu đề nhỏ, đệm thống nhất. `flush` bỏ đệm (cho bảng). */
+export function Section({ title, actions, children, flush, className = '', id }) {
+  return (
+    <section className={`section${flush ? ' flush' : ''} ${className}`} id={id}>
+      {(title || actions) && <div className="section-head">{title && <h3>{title}</h3>}{actions && <div className="row">{actions}</div>}</div>}
+      <div className="section-body">{children}</div>
+    </section>
+  );
+}
+
+/** Phần thu gọn cho tuỳ chọn ít dùng */
+export function Fold({ title, children, open }) {
+  return <details className="fold" open={open}><summary>{title}</summary><div className="stack">{children}</div></details>;
+}
+
+/** Thanh lưu dính đáy của form dạng trang */
+export function SaveBar({ children, note }) {
+  return <div className="save-bar no-print"><div className="save-bar-in">{note && <span className="small muted grow">{note}</span>}{children}</div></div>;
+}
+
 export const SearchBox = ({ value, onChange, placeholder, ...rest }) => (
-  <div className="searchbox grow" style={{ minWidth: 220 }}>
+  <div className="searchbox grow">
     <Icon name="search" />
     <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} {...rest} />
   </div>
@@ -130,9 +166,9 @@ export function Modal({ title, onClose, children, footer, wide }) {
 export function Chips({ options, value, onChange }) {
   return (
     <div className="chips" role="tablist">
-      {options.map(([v, label]) => (
+      {options.map(([v, label, count]) => (
         <button key={v} className={`chip ${value === v ? 'on' : ''}`} onClick={() => onChange(v)} role="tab" aria-selected={value === v}>
-          {label}
+          {label}{count !== undefined && count !== null && <span className="count">{count}</span>}
         </button>
       ))}
     </div>
@@ -140,6 +176,7 @@ export function Chips({ options, value, onChange }) {
 }
 
 export const Money = ({ v, strong }) => <span className="num" style={strong ? { fontWeight: 600 } : undefined}>{vnd(v)}</span>;
+export const Badge = ({ children, tone }) => <span className={`badge ${tone || 'plain'}`}>{children}</span>;
 
 /** Nút chạy hành động bất đồng bộ, tự khoá khi đang chạy và hiện lỗi */
 export function useAction() {
