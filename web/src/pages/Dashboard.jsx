@@ -3,6 +3,8 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, AreaChart, Card, Empty, Kpi, StatusBadge, useAsync } from '../components/ui.jsx';
 import { vnd, num, pct, today, addDays, monthStart } from '../lib.js';
+import MetricInfo, { MetricFilters, MetricLabel } from '../components/MetricInfo.jsx';
+import { METRICS } from '../metrics.js';
 import { Compass, Ripple, Gauge, Element, ELEMENT_ORDER } from '../components/Motif.jsx';
 
 const MONTH = () => `tháng ${Number(today().slice(5, 7))}`;
@@ -27,6 +29,7 @@ export default function Dashboard({ progress, reopenGuide }) {
   }, [shopId, theme]);
 
   return (
+    <MetricFilters.Provider value={{ from: monthStart(), to: today(), today: today() }}>
     <div className="page stack">
       <div className="page-head"><div><div className="eyebrow">Sổ hôm nay</div><h1>{greeting(user.displayName)}</h1></div></div>
       {progress?.step && (
@@ -52,17 +55,17 @@ export default function Dashboard({ progress, reopenGuide }) {
                 <div className={`hero-body ${theme === 'phongthuy' ? 'with-vert' : ''}`}>
                 {theme === 'phongthuy' && <div className="hero-vert">Sổ hôm nay · {MONTH()}</div>}
                 <div>
-                <div className="eyebrow">Doanh thu {MONTH()}</div>
+                <div className="eyebrow">Doanh thu thuần {MONTH()} <MetricInfo metric="net_revenue" /></div>
                 <div className="big">{vnd(cur.net_revenue)}</div>
                 <div className="delta">
-                  {d.period.change_pct.net_revenue === null ? 'Chưa có kỳ trước để so sánh' : `${d.period.change_pct.net_revenue >= 0 ? '▲' : '▼'} ${Math.abs(d.period.change_pct.net_revenue).toString().replace('.', ',')}% so với kỳ trước`} · hôm nay {vnd(d.today.net_revenue)} ({d.today.order_count} đơn)
+                  {d.period.change_pct.net_revenue === null ? 'Chưa có kỳ trước để so sánh' : `${d.period.change_pct.net_revenue >= 0 ? '▲' : '▼'} ${Math.abs(d.period.change_pct.net_revenue).toString().replace('.', ',')}% so với kỳ trước`} · hôm nay {vnd(d.today.net_revenue)} ({d.today.order_count} đơn) <MetricInfo metric="today_revenue" />
                 </div>
                 <AreaChart data={series.map((s) => ({ value: s.net_revenue }))} />
                 <div className="row between small" style={{ color: 'color-mix(in srgb, var(--linen) 65%, transparent)', marginTop: 6 }}><span>30 ngày gần nhất</span><span>hôm nay</span></div>
                 <div className="stats">
-                  <div><b>{vnd(cur.gross_profit)}</b><span>Lợi nhuận gộp · biên {pct(cur.gross_margin_pct)}</span></div>
-                  <div><b>{vnd(cur.net_profit_estimate)}</b><span>Lãi ròng ước tính</span></div>
-                  <div><b>{num(cur.order_count)}</b><span>Đơn · TB {vnd(cur.aov)}</span></div>
+                  <div><b>{vnd(cur.gross_profit)}</b><span><MetricLabel metric="gross_profit">Lợi nhuận gộp</MetricLabel> · <MetricLabel metric="gross_margin_pct">biên {pct(cur.gross_margin_pct)}</MetricLabel></span></div>
+                  <div><b>{vnd(cur.net_profit_estimate)}</b><span><MetricLabel metric="net_profit_estimate">Lãi ròng ước tính</MetricLabel></span></div>
+                  <div><b>{num(cur.order_count)}</b><span><MetricLabel metric="order_count">Đơn</MetricLabel> · <MetricLabel metric="aov">TB {vnd(cur.aov)}</MetricLabel></span></div>
                 </div>
                 </div>
                 </div>
@@ -83,24 +86,24 @@ export default function Dashboard({ progress, reopenGuide }) {
                     {flagged.length === 0 ? <span className="muted">Mọi chỉ số đang trong ngưỡng an toàn.</span> : flagged.map((h) => (
                       <div key={h.key} className="meter">
                         <span className={`dot h-${h.status}`} />
-                        <span className="grow">{h.label}</span>
+                        <span className="grow"><MetricLabel metric={METRICS[h.key] ? h.key : 'health_status'}>{h.label}</MetricLabel></span>
                         <b className={`h-${h.status}`}>{h.value === null ? '—' : String(h.value).replace('.', ',')}</b>
                       </div>
                     ))}
                   </Card>
                   <Card title="Tiền" actions={<Link to="/expenses" className="small">Đối soát</Link>}>
-                    <div className="ledger-line"><span>Đã thu trong tháng</span><b className="num">{vnd(d.cashflow.cash_in)}</b></div>
-                    <div className="ledger-line"><span>Khách còn nợ <span className="muted small">({d.cashflow.customer_receivable_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.customer_receivable)}</b></div>
-                    <div className="ledger-line"><span>Tiền sàn đang treo <span className="muted small">({d.cashflow.marketplace_pending_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.marketplace_pending)}</b></div>
+                    <div className="ledger-line"><MetricLabel metric="cash_in">Đã thu trong tháng</MetricLabel><b className="num">{vnd(d.cashflow.cash_in)}</b></div>
+                    <div className="ledger-line"><span><MetricLabel metric="customer_receivable">Khách còn nợ</MetricLabel> <span className="muted small">({d.cashflow.customer_receivable_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.customer_receivable)}</b></div>
+                    <div className="ledger-line"><span><MetricLabel metric="marketplace_pending">Tiền sàn đang treo</MetricLabel> <span className="muted small">({d.cashflow.marketplace_pending_orders} đơn)</span></span><b className="num">{vnd(d.cashflow.marketplace_pending)}</b></div>
                     {(d.cashflow.marketplace_by_channel || []).length > 1 && d.cashflow.marketplace_by_channel.map((c) => (
                       <div key={c.channel_id} className="ledger-line small muted" style={{ paddingLeft: 12 }}><span>{c.channel_name} <span>({c.orders} đơn)</span></span><b className="num">{vnd(c.pending)}</b></div>
                     ))}
-                    <div className="ledger-line"><span>Nợ nhà cung cấp</span><b className="num">{vnd(d.cashflow.supplier_payable)}</b></div>
+                    <div className="ledger-line"><MetricLabel metric="supplier_payable">Nợ nhà cung cấp</MetricLabel><b className="num">{vnd(d.cashflow.supplier_payable)}</b></div>
                   </Card>
                 </div>
               </div>
 
-              {has('feng_shui') && <Card title="Bán theo ngũ hành" actions={<Link to="/reports" className="small">Báo cáo</Link>}>
+              {has('feng_shui') && <Card title={<MetricLabel metric="element_revenue">Bán theo ngũ hành</MetricLabel>} actions={<Link to="/reports" className="small">Báo cáo</Link>}>
                 {(() => {
                   const total = elements.reduce((a, e) => a + e.revenue, 0);
                   const by = Object.fromEntries(elements.map((e) => [e.element, e.revenue]));
@@ -118,12 +121,12 @@ export default function Dashboard({ progress, reopenGuide }) {
               </Card>}
 
               <div className="grid split-57 collapse">
-                <Card title="Đang chờ xử lý" actions={<Link to="/orders" className="small">Xem đơn</Link>}>
+                <Card title={<MetricLabel metric="pending_orders">Đang chờ xử lý</MetricLabel>} actions={<Link to="/orders" className="small">Xem đơn</Link>}>
                   {Object.keys(d.pending_orders).length === 0 ? <span className="muted">Không có đơn nào đang chờ.</span> : Object.entries(d.pending_orders).map(([st, n]) => (
                     <Link key={st} to={`/orders?status=${st}`} className="ledger-line" style={{ color: 'inherit' }}><StatusBadge status={st} /><b>{n}</b></Link>
                   ))}
                 </Card>
-                <Card title="Hàng sắp hết" actions={<Link to="/stock?filter=low" className="small">Xem kho</Link>}>
+                <Card title={<MetricLabel metric="low_stock">Hàng sắp hết</MetricLabel>} actions={<Link to="/stock?filter=low" className="small">Xem kho</Link>}>
                   {d.low_stock.length === 0 ? <span className="muted">Chưa có mặt hàng nào dưới mức tối thiểu.</span> : d.low_stock.slice(0, 6).map((i) => (
                     <div key={i.variant_id} className="ledger-line"><span>{i.product_name} <span className="muted small">{i.sku}</span></span><b className="num h-yellow">còn {num(i.on_hand)}</b></div>
                   ))}
@@ -134,5 +137,6 @@ export default function Dashboard({ progress, reopenGuide }) {
         }}
       </Async>
     </div>
+    </MetricFilters.Provider>
   );
 }

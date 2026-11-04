@@ -4,6 +4,7 @@ import { useSession } from '../session.jsx';
 import { Async, Card, useAsync } from '../components/ui.jsx';
 import { monthStart, today, fmtDate, pct } from '../lib.js';
 import { buildChecks, summarize, GLOSSARY, COLOR_MEANING } from '../guide.js';
+import { SCOPES } from '../metrics.js';
 
 const DOT = { green: 'Xanh', yellow: 'Vàng', red: 'Đỏ' };
 const Dot = ({ status }) => <b className={status ? `h-${status}` : 'muted'}>● {status ? DOT[status] : 'Chưa có dữ liệu'}</b>;
@@ -80,6 +81,8 @@ export default function Guide() {
                       <div className="stack small" style={{ gap: 6, marginTop: 8 }}>
                         <div><b>Là gì: </b>{it.what}</div>
                         <div><b>Cách tính: </b>{it.how}</div>
+                        {it.source && <div><b>Lấy từ đâu: </b>{it.source}</div>}
+                        {it.scope && <div><b>Phạm vi: </b>{SCOPES[it.scope]}</div>}
                         <div><b>Nên làm: </b>{it.tip}</div>
                       </div>
                     </details>

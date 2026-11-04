@@ -1,3 +1,5 @@
+import { METRICS, SCOPES, TIME_LABEL } from './metrics.js';
+
 // Chuyển dữ liệu một tab báo cáo thành các bảng để xuất Excel. Hàm thuần: đúng cái đang thấy trên màn hình.
 // Tiền là số nguyên đồng, tỷ lệ là số (không chuỗi) để Excel cộng trừ được.
 const dmy = (d) => (d ? d.split('-').reverse().join('/') : '');
@@ -73,3 +75,23 @@ export function reportTables(tab, d, { range, shopName } = {}) {
 
 /** Tên sheet Excel: tối đa 31 ký tự, không chứa : \ / ? * [ ] */
 export const sheetName = (s) => s.replace(/[:\\/?*[\]]/g, ' ').slice(0, 31);
+
+// Chỉ số của từng tab, để sheet "Giải thích" liệt kê đúng những gì file đang chứa
+export const TAB_METRICS = {
+  revenue: ['gross_revenue', 'discount_amount', 'returned_amount', 'net_revenue', 'order_count', 'aov', 'cancel_rate_pct', 'return_rate_pct'],
+  profit: ['net_revenue', 'shipping_fee', 'platform_fee', 'seller_shipping', 'cogs', 'gross_profit', 'gross_margin_pct', 'expenses_amount', 'net_profit_estimate', 'tax_estimate', 'profit_after_tax_estimate'],
+  expenses: ['expenses_total', 'expense_ratio_pct', 'expenses_direct', 'expenses_shared', 'expense_share_pct', 'expense_change_pct', 'expense_largest'],
+  channels: ['channel_table', 'order_count', 'net_revenue', 'platform_fee', 'gross_profit', 'gross_margin_pct', 'cancel_rate_pct'],
+  products: ['qty_sold', 'qty_in_combos', 'product_revenue', 'product_cogs', 'product_gross_profit', 'product_margin_pct', 'element_revenue'],
+  customers: ['buyers', 'new_customers', 'returning_customers', 'repeat_rate_pct', 'top_customers'],
+  inventory: ['stock_value', 'days_of_inventory', 'sku_count', 'low_stock', 'slow_moving'],
+  cash: ['fund_balance', 'cash_in', 'cash_out', 'net_cash', 'customer_receivable', 'marketplace_pending', 'supplier_payable', 'aging_customer', 'aging_marketplace', 'aging_supplier'],
+  custom: ['custom_metric'],
+  health: ['gross_margin_pct', 'cancel_rate_pct', 'return_rate_pct', 'days_of_inventory', 'repeat_rate_pct', 'health_status'],
+};
+
+/** Sheet "Giải thích": nghĩa, cách tính, nguồn và phạm vi của các chỉ số trong tab */
+export function explainTable(tab) {
+  const rows = (TAB_METRICS[tab] || []).map((k) => METRICS[k]).filter(Boolean).map((m) => [m.name, m.what, m.formula, m.source, [SCOPES[m.scope], m.time === 'today' ? TIME_LABEL.today : null].filter(Boolean).join(' · ')]);
+  return { name: 'Giải thích', headers: ['Chỉ số', 'Là gì', 'Cách tính', 'Lấy từ đâu', 'Phạm vi'], rows };
+}

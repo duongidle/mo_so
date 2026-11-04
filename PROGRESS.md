@@ -27,6 +27,16 @@
 
 ## Nhật ký
 
+### 2026-11-04 — Đợt nâng cấp, Phase 7: báo cáo dễ hiểu
+
+- `web/src/metrics.js`: từ điển 62 chỉ số (nghĩa, cách tính, lấy từ đâu, phạm vi, nên làm gì, link dữ liệu gốc). `GLOSSARY` của trang Cách đọc số liệu dựng từ đây; `guide.js` chỉ re-export.
+- `MetricInfo` (nút ⓘ, khung giải thích đóng bằng Esc/bấm ngoài, điện thoại là bảng trượt từ đáy) và nhãn phạm vi. `Kpi` nhận `metric`. Áp dụng cho mọi KPI, dòng, tiêu đề cột ở Báo cáo và Tổng quan.
+- Báo cáo: dải "Đang xem: shop · khoảng ngày · kênh · so với kỳ trước" luôn hiện, mỗi tab có một câu nói tab trả lời câu hỏi gì, tab Tiền & công nợ có ghi chú nợ NCC/quỹ là toàn tài khoản khi lọc shop.
+- Server: `meta.scope` ở overview, cashflow, aging, health, inventory (chỉ thêm, số không đổi).
+- Trang Đơn hàng đọc `from`, `to`, `channel` trên URL để link "Xem dữ liệu gốc" mở đúng khoảng ngày.
+- Excel: thêm sheet "Giải thích" cho tab đang xuất.
+- Test: API 119, vitest 171.
+
 ### 2026-11-04 — Đợt nâng cấp, Phase 6: hoàn thiện trường tuỳ chỉnh
 
 - Server: `custom/variables.js` là danh mục biến duy nhất (nhãn tiếng Việt, kiểu, nhóm; không có id, thời điểm nội bộ, JSON, cột khách cũ). `GET /custom/variables`, `GET /custom/metric-variables`, `GET /custom/functions`, `POST /custom/formula/preview` (bản ghi mẫu gần nhất hoặc `entity_id`; `metric` tính trên tháng này). `parseFormula` và `createMetric` chỉ nhận biến trong danh mục, lỗi kèm `details.position`. Công thức đã lưu từ trước dùng cột ngoài danh mục vẫn đọc được (chỉ kiểm khi tạo/sửa).
