@@ -1,20 +1,23 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
+import RemoveWarehouse from '../components/RemoveWarehouse.jsx';
+import ShopColors from '../components/ShopColors.jsx';
+import { colorProblem } from '../lib/colors.js';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 import FieldsManager from '../components/FieldsManager.jsx';
 import FormulaEditor from '../components/FormulaEditor.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 
-const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng bán hàng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế (ước tính)'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
 export default function Settings() {
   const [tab, setTab] = useState('shops');
   return (
     <div className="page stack">
       <PageHeader title="Cài đặt" />
-      <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} /></Toolbar>
+      <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} wrap="lg" /></Toolbar>
       {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
       {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>
@@ -24,11 +27,13 @@ export default function Settings() {
 function Shops() {
   const { shops, warehouses, industries, reload } = useSession();
   const [f, setF] = useState(null);
+  const [rm, setRm] = useState(null); // kho đang được gỡ
+  const [notice, setNotice] = useState('');
   const { busy, error, run } = useAction();
   const save = () => run(async () => {
     const isShop = f.type === 'shop';
     const base = isShop ? '/shops' : '/warehouses';
-    const payload = isShop ? { code: f.code, name: f.name, industry: f.industry || 'general', receipt_footer: f.receipt_footer || null, phone: f.phone || null, address: f.address || null } : { code: f.code, name: f.name, address: f.address || null };
+    const payload = isShop ? { code: f.code, name: f.name, industry: f.industry || 'general', receipt_footer: f.receipt_footer || null, phone: f.phone || null, address: f.address || null, ...(f.id ? { ui_colors: f.ui_colors || null } : {}) } : { code: f.code, name: f.name, address: f.address || null };
     const saved = f.id ? await api.patch(`${base}/${f.id}`, payload) : await api.post(base, payload);
     // Danh sách kho của shop (thứ tự = ưu tiên lấy hàng), kho đầu là kho chính
     if (isShop) await api.put(`/shops/${saved.data.id}/warehouses`, { warehouse_ids: f.warehouse_ids || [] });
@@ -39,11 +44,13 @@ function Shops() {
       <Card title="Shop" actions={<button className="btn sm" onClick={() => setF({ type: 'shop', code: '', name: '', warehouse_ids: warehouses[0] ? [warehouses[0].id] : [] })}>+ Shop</button>}>
         {shops.map((s) => <div key={s.id} className="pick" onClick={() => setF({ type: 'shop', ...s, warehouse_ids: s.warehouse_ids || [] })}><span><b>{s.name}</b> <span className="muted small">{s.code}</span></span><span className="row"><span className="badge plain">{industries.find((i) => i.id === s.industry)?.name || 'Bán lẻ chung'}</span><span className="muted small">Kho: {(s.warehouse_ids || []).map((id) => warehouses.find((w) => w.id === id)?.name).filter(Boolean).join(' → ') || '—'}</span></span></div>)}
       </Card>
+      {notice && <div className="alert ok small" role="status">{notice}</div>}
       <Card title="Kho" actions={<button className="btn sm" onClick={() => setF({ type: 'wh', code: '', name: '' })}>+ Kho</button>}>
         {warehouses.map((w) => <div key={w.id} className="pick" onClick={() => setF({ type: 'wh', ...w })}><span><b>{w.name}</b> <span className="muted small">{w.code}</span></span></div>)}
       </Card>
+      {rm && <RemoveWarehouse warehouse={rm} warehouses={warehouses} onClose={() => setRm(null)} onDone={(r) => { setRm(null); reload(); setNotice(r.mode === 'deleted' ? `Đã xoá kho ${r.name}.` : r.transferred ? `Đã chuyển ${r.transferred.lines} mặt hàng sang kho khác và đóng kho ${r.name}. Lịch sử cũ được giữ nguyên.` : `Đã đóng kho ${r.name}. Lịch sử cũ được giữ nguyên.`); }} />}
       {f && (
-        <Modal title={`${f.id ? 'Sửa' : 'Thêm'} ${f.type === 'shop' ? 'shop' : 'kho'}`} onClose={() => setF(null)} footer={<button className="btn primary" disabled={busy} onClick={save}>Lưu</button>}>
+        <Modal title={`${f.id ? 'Sửa' : 'Thêm'} ${f.type === 'shop' ? 'shop' : 'kho'}`} onClose={() => setF(null)} footer={<>{f.type === 'wh' && f.id && <button type="button" className="btn danger" style={{ marginRight: 'auto' }} onClick={() => { setRm(f); setF(null); }}>Gỡ kho…</button>}<button className="btn primary" disabled={busy || (f.type === 'shop' && !!colorProblem(f.ui_colors || {}))} onClick={save}>Lưu</button></>}>
           <div className="grid cols-2"><Field label="Tên"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field><Field label="Mã (dùng trong mã chứng từ)"><input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })} /></Field></div>
           {f.type === 'shop' && <>
             <Field label="Ngành bán" hint={industries.find((i) => i.id === (f.industry || 'general'))?.description}>
@@ -52,7 +59,8 @@ function Shops() {
             {f.id && f.industry && f.industry !== shops.find((x) => x.id === f.id)?.industry && <div className="alert warn small">Đổi ngành sẽ đổi giao diện của shop{industries.find((i) => i.id === f.industry)?.customer_field_labels.length ? ` và thêm các trường thông tin khách: ${industries.find((i) => i.id === f.industry).customer_field_labels.join(', ')}` : ''}. Trường và dữ liệu khách đã có của shop vẫn được giữ nguyên.</div>}
             <WarehouseOrder ids={f.warehouse_ids || []} warehouses={warehouses} onChange={(ids) => setF({ ...f, warehouse_ids: ids })} />
             <Field label="Điện thoại in trên phiếu"><input value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} /></Field>
-            <Field label="Dòng cuối phiếu bán hàng"><input value={f.receipt_footer || ''} onChange={(e) => setF({ ...f, receipt_footer: e.target.value })} /></Field></>}
+            <Field label="Dòng cuối phiếu bán hàng"><input value={f.receipt_footer || ''} onChange={(e) => setF({ ...f, receipt_footer: e.target.value })} /></Field>
+            {f.id && <ShopColors value={f.ui_colors || null} themeName={industries.find((i) => i.id === (f.industry || 'general'))?.name} onChange={(ui_colors) => setF({ ...f, ui_colors })} />}</>}
           <ErrorBox error={error} />
         </Modal>
       )}
@@ -66,7 +74,7 @@ function WarehouseOrder({ ids, warehouses, onChange }) {
   const free = warehouses.filter((w) => !ids.includes(w.id));
   return (
     <Field label="Kho lấy hàng khi bán" hint="Đơn lấy từ kho trên cùng trước; thiếu thì lấy tiếp kho kế tiếp. Kho đầu là kho chính.">
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         {ids.length === 0 && <span className="muted small">Chưa có kho nào, shop chưa bán được hàng.</span>}
         {ids.map((id, i) => (
           <div key={id} className="row between">
@@ -167,7 +175,7 @@ function Thresholds() {
           const fixed = s.expense_allocation_fixed || {};
           const total = shops.reduce((a, x) => a + (Number(fixed[x.id]) || 0), 0);
           return (
-            <div className="stack" style={{ gap: 6 }}>
+            <div className="stack" style={{ gap: 8 }}>
               {shops.map((x) => <div key={x.id} className="row between"><span>{x.name}</span><span className="row"><input type="number" min="0" max="100" style={{ width: 90 }} aria-label={`Tỷ lệ ${x.name}`} value={fixed[x.id] ?? ''} onChange={(e) => setS({ ...s, expense_allocation_fixed: { ...fixed, [x.id]: e.target.value === '' ? 0 : Number(e.target.value) } })} /><span className="muted">%</span></span></div>)}
               <div className={`small ${total === 100 ? 'h-green' : 'h-yellow'}`}>Tổng {total}%{total === 100 ? '' : total === 0 ? ' (chưa đặt: app sẽ chia đều)' : ' (không cộng đủ 100% cũng được, app chia theo tỷ lệ tương đối)'}</div>
             </div>
@@ -197,11 +205,11 @@ function Tax() {
         <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); setSaved(false); }} />Hiện ước tính thuế trong báo cáo Lợi nhuận</label>
         {rules.map((r, i) => (
           <div key={i} className="card flat stack" style={{ gap: 8 }}>
-            <div className="grid cols-2">
+            <div className="grid cols-2 collapse">
               <Field label="Tên khoản thuế"><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} placeholder="VD: Thuế GTGT" /></Field>
               <Field label="Tỷ lệ (%)"><input type="number" min="0" max="100" step="0.01" value={r.rate_pct} onChange={(e) => set(i, 'rate_pct', Number(e.target.value))} /></Field>
             </div>
-            <div className="grid cols-2">
+            <div className="grid cols-2 collapse">
               <Field label="Tính trên"><select value={r.base} onChange={(e) => set(i, 'base', e.target.value)}>{Object.entries(TAX_BASE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
               <Field label="Ngưỡng miễn thuế cả năm (₫)" hint="Chỉ phần vượt ngưỡng (cộng dồn từ đầu năm) mới chịu thuế. 0 = không có ngưỡng"><MoneyInput value={r.exempt_threshold_year ?? 0} onChange={(e) => set(i, 'exempt_threshold_year', Number(e.target.value))} /></Field>
             </div>
@@ -298,7 +306,7 @@ function ApiAndHooks() {
       {deliv && <Modal title={`Nhật ký — ${deliv.hook.name}`} onClose={() => setDeliv(null)}>
         {!deliv.rows.length ? <Empty>Chưa gửi lần nào.</Empty> : deliv.rows.map((d) => (
           <div key={d.id} className="row between small"><span>{fmtDate(d.created_at)} · {d.event_type}</span><span className={d.status === 'success' ? 'h-green' : d.status === 'dead' ? 'h-red' : 'h-yellow'}>{d.status} ({d.attempts}){d.last_error && ` — ${d.last_error}`}
-            {d.status !== 'success' && <button className="btn sm" style={{ marginLeft: 6 }} onClick={async () => { await api.post(`/system/webhook-deliveries/${d.id}/retry`); setDeliv({ ...deliv, rows: (await api.get(`/system/webhooks/${deliv.hook.id}/deliveries`)).data }); }}>Gửi lại</button>}</span></div>
+            {d.status !== 'success' && <button className="btn sm" style={{ marginLeft: 8 }} onClick={async () => { await api.post(`/system/webhook-deliveries/${d.id}/retry`); setDeliv({ ...deliv, rows: (await api.get(`/system/webhooks/${deliv.hook.id}/deliveries`)).data }); }}>Gửi lại</button>}</span></div>
         ))}
       </Modal>}
     </>
@@ -314,7 +322,7 @@ function Backup() {
       <Card title="Sao lưu" actions={<><a className="btn sm" href="/api/v1/system/backup/download">Tải bản mới nhất</a><button className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api.post('/system/backups'); list.reload(); })}>Sao lưu ngay</button></>}>
         <p className="small muted">Tự động mỗi ngày, giữ 14 bản ngày và 8 bản tuần trong thư mục <code>data/backups</code>. Nhớ copy thư mục này lên Google Drive / iCloud — mất máy là mất cả bản sao lưu nếu chỉ để trong máy.</p>
         <ErrorBox error={error} />
-        <Async state={list}>{({ data }) => !data.length ? <Empty>Chưa có bản sao lưu.</Empty> : data.slice(0, 10).map((b) => <div key={b.name} className="row between small" style={{ padding: '6px 0' }}><a href={`/api/v1/system/backups/${b.name}`}>{b.name}</a><span className="muted">{Math.round(b.size / 1024)} KB · {fmtDate(b.created_at)}</span></div>)}</Async>
+        <Async state={list}>{({ data }) => !data.length ? <Empty>Chưa có bản sao lưu.</Empty> : data.slice(0, 10).map((b) => <div key={b.name} className="row between small" style={{ padding: '8px 0' }}><a href={`/api/v1/system/backups/${b.name}`}>{b.name}</a><span className="muted">{Math.round(b.size / 1024)} KB · {fmtDate(b.created_at)}</span></div>)}</Async>
       </Card>
       <Card title="Xuất CSV"><div className="row wrap"><Async state={exp}>{({ data }) => data.map((t) => <a key={t} className="btn sm" href={`/api/v1/system/export/${t}.csv`}>{t}</a>)}</Async></div></Card>
     </>

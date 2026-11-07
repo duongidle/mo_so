@@ -19,6 +19,7 @@ import Expenses from './pages/Expenses.jsx';
 import Reports from './pages/Reports.jsx';
 import Accounting from './pages/Accounting.jsx';
 import Guide from './pages/Guide.jsx';
+import { allowsAllShops } from './lib/routes.js';
 import Settings from './pages/Settings.jsx';
 import Onboarding, { GettingStarted, useSetupProgress, readDismissed, DISMISS_KEY } from './pages/Onboarding.jsx';
 
@@ -27,7 +28,7 @@ const NAV = [
   { group: 'Hàng hoá', items: [['/products', 'Sản phẩm', 'tag'], ['/stock', 'Kho', 'box'], ['/purchases', 'Nhập hàng', 'truck']] },
   { group: 'Khách', items: [['/customers', 'Khách hàng', 'users'], ['/loyalty', 'Loyalty & Campaign', 'heart']] },
   { group: 'Kế toán', items: [['/expenses', 'Chi phí & quỹ', 'wallet'], ['/accounting', 'Sổ kế toán', 'book']] },
-  { group: 'Sổ sách', items: [['/reports', 'Báo cáo', 'chart'], ['/guide', 'Cách đọc số liệu', 'book'], ['/settings', 'Cài đặt', 'cog']] },
+  { group: 'Sổ sách', items: [['/reports', 'Báo cáo', 'chart'], ['/guide', 'Hướng dẫn', 'book'], ['/settings', 'Cài đặt', 'cog']] },
 ];
 /** Trang form đầy đủ có thanh lưu dính đáy: không hiện nút nổi "+ Đơn" */
 const FORM_PAGE = /^\/(products\/(new|combo|[^/]+)|purchases\/(new|[^/]+))$/;
@@ -40,7 +41,7 @@ function ShopSwitcher() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   // "Tất cả shop" chỉ có ở Báo cáo, Khách hàng, Kho, Tổng quan, Đơn, Loyalty & Campaign (CLAUDE.md mục 7)
-  const allowAll = ['/', '/reports', '/customers', '/stock', '/orders', '/loyalty', '/guide', '/accounting'].some((p) => (p === '/' ? pathname === '/' : pathname.startsWith(p)));
+  const allowAll = allowsAllShops(pathname);
   const current = shopId === 'all' && !allowAll ? shops[0]?.id : shopId;
   const shop = shops.find((s) => s.id === current);
   useEffect(() => {
@@ -128,6 +129,7 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/loyalty" element={<Loyalty />} />
           <Route path="/guide" element={<Guide />} />
+          <Route path="/guide/:id" element={<Guide />} />
           <Route path="/care" element={<Navigate to="/loyalty" replace />} />
           <Route path="/expenses" element={<Expenses />} />
           <Route path="/reports" element={<Reports />} />

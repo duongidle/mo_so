@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { STATUS, vnd } from '../lib.js';
 import Icon, { OpenBook } from './Icon.jsx';
 import { Dongson, Ripple, Gauge } from './Motif.jsx';
 import { useSession } from '../session.jsx';
 import MetricInfo, { ScopeBadge } from './MetricInfo.jsx';
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog.jsx';
 
 export function useAsync(fn, deps = []) {
   const [state, setState] = useState({ loading: true, data: null, error: null });
@@ -74,9 +75,34 @@ export const Field = ({ label, children, hint }) => (
 export const StatusBadge = ({ status }) => <span className={`badge st-${status}`}>{STATUS[status] || status}</span>;
 
 /** Tab dạng segmented gọn cho các mục của một trang. Mỗi mục: [giá trị, nhãn, số đếm (tuỳ chọn)] */
+/** Nền trượt dưới tab/chip đang chọn: đo vị trí nút được chọn rồi đặt biến CSS cho khung. */
+export function useSlider(dep) {
+  const ref = useRef(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const place = () => {
+      const on = el.querySelector('[aria-selected=true], [aria-pressed=true]');
+      if (!on) { el.style.setProperty('--ind-w', '0px'); return; }
+      el.style.setProperty('--ind-x', `${on.offsetLeft}px`);
+      el.style.setProperty('--ind-y', `${on.offsetTop}px`);
+      el.style.setProperty('--ind-w', `${on.offsetWidth}px`);
+      el.style.setProperty('--ind-h', `${on.offsetHeight}px`);
+      if (!el.dataset.ready) requestAnimationFrame(() => { el.dataset.ready = '1'; });
+    };
+    place();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [dep]);
+  return ref;
+}
+
 export function Tabs({ options, value, onChange, wrap }) {
+  const ref = useSlider(`${value}|${options.map((o) => `${o[1]}${o[2] ?? ''}`).join()}`);
   return (
-    <div className={`tabs${wrap ? ' wrap' : ''}`} role="tablist">
+    <div ref={ref} className={`tabs${wrap === 'lg' ? ' wrap-lg' : wrap ? ' wrap' : ''}`} role="tablist">
       {options.map(([v, label, count]) => (
         <button key={v} className="tab" role="tab" aria-selected={value === v} onClick={() => onChange(v)}>{label}{count !== undefined && count !== null && <span className="count">{count}</span>}</button>
       ))}
@@ -144,28 +170,28 @@ export function Kpi({ label, value, delta, hint, tone, metric }) {
 }
 
 export function Modal({ title, onClose, children, footer, wide }) {
-  useEffect(() => {
-    const h = (e) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
+  // Dựng trên shadcn/ui Dialog (Radix): khoá focus, khoá cuộn nền, Esc/bấm ra ngoài để đóng.
+  // Radix chỉ tự trả focus về DialogTrigger; app mở hộp thoại bằng nút thường nên tự nhớ nút đang focus lúc mở và trả lại khi đóng.
+  const opener = useRef(typeof document !== 'undefined' ? document.activeElement : null);
+  const restoreFocus = (e) => { e.preventDefault(); const el = opener.current; if (el && el.isConnected && el !== document.body) el.focus(); };
   return (
-    <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="row between" style={{ marginBottom: 12 }}>
-          <h2>{title}</h2>
-          <button className="btn sm" onClick={onClose} aria-label="Đóng">✕</button>
-        </div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent wide={wide} aria-describedby={undefined} onCloseAutoFocus={restoreFocus}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogClose asChild><button type="button" className="btn sm" aria-label="Đóng">✕</button></DialogClose>
+        </DialogHeader>
         <div className="stack">{children}</div>
-        {footer && <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>{footer}</div>}
-      </div>
-    </div>
+        {footer && <DialogFooter>{footer}</DialogFooter>}
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function Chips({ options, value, onChange }) {
+  const ref = useSlider(`${value}|${options.map((o) => `${o[1]}${o[2] ?? ''}`).join()}`);
   return (
-    <div className="chips" role="tablist">
+    <div ref={ref} className="chips" role="tablist">
       {options.map(([v, label, count]) => (
         <button key={v} className={`chip ${value === v ? 'on' : ''}`} onClick={() => onChange(v)} role="tab" aria-selected={value === v}>
           {label}{count !== undefined && count !== null && <span className="count">{count}</span>}

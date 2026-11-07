@@ -31,7 +31,8 @@ const customerInline = z.object({
   shopee_username: optionalText,
 });
 
-const paymentInput = z.object({ amount: money, method: z.enum(PAYMENT_METHODS).default('cash'), paid_at: z.string().nullish(), note: optionalText });
+const orderPaymentMethod = z.enum([...PAYMENT_METHODS, 'customer_credit']);
+const paymentInput = z.object({ amount: money, method: orderPaymentMethod.default('cash'), paid_at: z.string().nullish(), note: optionalText });
 
 export const orderInput = z.object({
   shop_id: z.string(),
@@ -149,14 +150,28 @@ r.post('/:id/returns', async (c) => {
     z.object({
       lines: z.array(z.object({ order_line_id: z.string(), qty, restock: z.boolean().default(true), warehouse_id: z.string().optional() })).min(1),
       reason: optionalText,
-      refund: z.object({ amount: money, method: z.enum(PAYMENT_METHODS).default('cash') }).nullish(),
+      refund: z.object({ amount: money, method: orderPaymentMethod.default('cash'), to_credit: z.boolean().default(false) }).nullish(),
       shipping_refund_amount: money.default(0),
       return_fee_amount: money.default(0),
       return_shipping_cost: money.default(0),
       returned_at: z.string().nullish(),
+      awaiting_goods: z.boolean().default(false),
     }),
   );
-  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at, shippingRefund: input.shipping_refund_amount, returnFee: input.return_fee_amount, returnShippingCost: input.return_shipping_cost }, c.get('actor'))) });
+  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at, shippingRefund: input.shipping_refund_amount, returnFee: input.return_fee_amount, returnShippingCost: input.return_shipping_cost, awaitingGoods: input.awaiting_goods }, c.get('actor'))) });
+});
+
+r.post('/:id/returns/:returnId/receive', (c) => c.json({ data: tx(() => svc.receiveMarketplaceReturn(c.req.param('id'), c.req.param('returnId'), { actor: c.get('actor') })) }));
+
+r.post('/:id/exchange', async (c) => {
+  const input = await body(c, z.object({
+    return_lines: z.array(z.object({ order_line_id: z.string(), qty, restock: z.boolean().default(true) })).min(1),
+    new_lines: z.array(lineInput).min(1),
+    reason: optionalText,
+    shipping_fee: money.default(0),
+    payment_method: z.enum(PAYMENT_METHODS).default('cash'),
+  }));
+  return c.json({ data: tx(() => svc.exchangeOrder(c.req.param('id'), { returnLines: input.return_lines, newLines: input.new_lines, reason: input.reason, shippingFee: input.shipping_fee, paymentMethod: input.payment_method }, c.get('actor'))) }, 201);
 });
 
 export default r;

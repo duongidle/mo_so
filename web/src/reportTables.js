@@ -23,7 +23,7 @@ export function reportTables(tab, d, { range, shopName } = {}) {
     const c = ov.current;
     const out = [
       info,
-      T('Lợi nhuận', ['Khoản', 'Số tiền'], [['Doanh thu thuần', c.net_revenue], ['Phí ship khách trả (sau hoàn ship)', c.shipping_fee], ['Phí trả hàng thu được', c.return_fee], ['Phí sàn', -c.platform_fee], ['Ship shop chịu', -c.seller_shipping], ['Phí ship chiều về (trả hàng)', -c.return_shipping_cost], ['Giá vốn', -c.cogs], ['Lợi nhuận gộp', c.gross_profit], ['Biên lợi nhuận gộp (%)', c.gross_margin_pct], ['Chi phí', -c.expenses_amount], ['Lợi nhuận ròng ước tính (trước thuế)', c.net_profit_estimate]]),
+      T('Lợi nhuận', ['Khoản', 'Số tiền'], [['Doanh thu thuần', c.net_revenue], ['Phí ship khách trả (sau hoàn ship)', c.shipping_fee], ['Phí trả hàng thu được', c.return_fee], ['Phí sàn', -c.platform_fee], ['Ship shop chịu', -c.seller_shipping], ['Phí ship chiều về (trả hàng)', -c.return_shipping_cost], ['Giá vốn', -c.cogs], ['Lợi nhuận gộp', c.gross_profit], ['Biên lợi nhuận gộp (%)', c.gross_margin_pct], ['Chi phí', -c.expenses_amount], ...(c.other_profit_adjustment ? [['Điều chỉnh kho và kiểm đếm quỹ', c.other_profit_adjustment]] : []), ['Lợi nhuận ròng ước tính (trước thuế)', c.net_profit_estimate]]),
       T('Theo shop', ['Shop', 'Doanh thu thuần', 'Lợi nhuận gộp', 'Chi phí', 'Lợi nhuận ròng ước tính'], shops.data.map((s) => [s.shop_name, s.net_revenue, s.gross_profit, s.expenses_amount, s.net_profit_estimate])),
     ];
     if (ov.tax?.applicable) out.push(T('Ước tính thuế', ['Khoản thuế', 'Tỷ lệ (%)', 'Cơ sở tính', 'Ngưỡng miễn thuế cả năm', 'Số tiền chịu thuế trong kỳ', 'Thuế ước tính'], ov.tax.items.map((i) => [i.name, i.rate_pct, i.base_label, i.exempt_threshold_year, i.taxable_amount, i.tax])));

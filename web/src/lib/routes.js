@@ -1,0 +1,3 @@
+// "Tất cả shop" chỉ có ở các trang này (CLAUDE.md mục 7). Ở trang khác, giao diện phải làm việc với một shop cụ thể.
+const ALL_SHOPS_PAGES = ['/reports', '/customers', '/stock', '/orders', '/loyalty', '/guide', '/accounting'];
+export const allowsAllShops = (pathname) => pathname === '/' || ALL_SHOPS_PAGES.some((p) => pathname.startsWith(p));

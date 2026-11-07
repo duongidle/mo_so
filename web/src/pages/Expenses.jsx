@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, DateRange, Empty, ErrorBox, Field, Kpi, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { vnd, fmtDate, monthStart, today } from '../lib.js';
 import CashAccounts from './CashAccounts.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
+import FormPage from '../components/FormPage.jsx';
 
 export default function Expenses() {
   const [params] = useSearchParams();
@@ -33,6 +34,17 @@ function ExpenseList() {
     await api.post('/expenses', { category_id: form.category_id, shop_id: form.shop_id || null, amount: Number(form.amount), expense_date: form.expense_date, method: form.method || 'cash', payee: form.payee || null, note: form.note || null });
     setForm(null); state.reload();
   });
+  if (form) return (
+    <FormPage embedded title="Thêm chi phí" sub="Ghi khoản chi và quỹ đã dùng." onBack={() => setForm(null)} error={<ErrorBox error={error} />} footer={<><button type="button" className="btn" onClick={() => setForm(null)}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !(Number(form.amount) > 0)} onClick={save}>Lưu chi phí</button></>}>
+      <Card title="Khoản chi"><Field label="Danh mục"><select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>{cats.data?.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+        <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} autoFocus /></Field>
+        <div className="grid cols-2"><Field label="Ngày"><input type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} /></Field>
+          <Field label="Thuộc shop" hint="Chi phí chung được chia khi xem báo cáo"><select value={form.shop_id} onChange={(e) => setForm({ ...form, shop_id: e.target.value })}><option value="">Chung (phân bổ)</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field></div>
+      </Card>
+      <Card title="Thanh toán"><Field label="Trả bằng" hint="Chọn quỹ tiền đã chi"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+        <Field label="Ghi chú"><input value={form.note || ''} onChange={(e) => setForm({ ...form, note: e.target.value })} /></Field></Card>
+    </FormPage>
+  );
   return (
     <>
       <div className="row wrap between"><DateRange {...range} onChange={setRange} /><button className="btn primary" onClick={() => setForm({ category_id: 'ecat_ads', shop_id: isAll ? '' : shopId, amount: '', expense_date: today(), method: 'cash' })}>+ Chi phí</button></div>
@@ -53,19 +65,6 @@ function ExpenseList() {
         )}
       </Async>
       <ErrorBox error={error} />
-      {form && (
-        <Modal title="Thêm chi phí" onClose={() => setForm(null)} footer={<button className="btn primary" disabled={busy || !form.amount} onClick={save}>Lưu</button>}>
-          <Field label="Danh mục"><select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>{cats.data?.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-          <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} autoFocus /></Field>
-          <div className="grid cols-2">
-            <Field label="Ngày"><input type="date" value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} /></Field>
-            <Field label="Thuộc shop" hint="“Chung” sẽ được chia về các shop khi xem báo cáo"><select value={form.shop_id} onChange={(e) => setForm({ ...form, shop_id: e.target.value })}><option value="">Chung (phân bổ)</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-          </div>
-          <Field label="Trả bằng" hint="Quyết định tiền chi ra khỏi quỹ nào"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-          <Field label="Ghi chú"><input value={form.note || ''} onChange={(e) => setForm({ ...form, note: e.target.value })} /></Field>
-          <ErrorBox error={error} />
-        </Modal>
-      )}
     </>
   );
 }

@@ -40,6 +40,6 @@ describe('Reports: đổi tab không được sập dù dữ liệu tab cũ còn
   it('có nút xuất Excel và liên kết tới trang hướng dẫn', async () => {
     render(<MemoryRouter><Reports /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('button', { name: /Xuất Excel/ }).disabled).toBe(false));
-    expect(screen.getByRole('link', { name: 'Cách đọc các chỉ số' }).getAttribute('href')).toBe('/guide');
+    expect(screen.getByRole('link', { name: 'Cách đọc các chỉ số' }).getAttribute('href')).toBe('/guide/suc-khoe-kinh-doanh');
   });
 });

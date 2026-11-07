@@ -4,6 +4,7 @@ import { useSession } from '../../session.jsx';
 import { ErrorBox, Field, Fold, Modal, Section, useAction, useAsync } from '../../components/ui.jsx';
 import { useDirty } from '../../components/useDirty.js';
 import FormPage from '../../components/FormPage.jsx';
+import { RemoveProductButton } from '../../components/RemoveProduct.jsx';
 import ImageGallery from '../../components/ImageGallery.jsx';
 import ProductThumb from '../../components/ProductThumb.jsx';
 import FieldInput from '../../components/FieldInput.jsx';
@@ -16,12 +17,12 @@ const blankRow = () => ({ sku: '', default_price: 0, opening_cost: '', opening_q
 
 /** Dữ liệu ban đầu của form từ một sản phẩm đã có (GET /products/:id) hoặc sản phẩm trống */
 export function initialForm(p, shopId, isAll) {
-  if (!p) return { name: '', category_id: '', brand: '', unit: 'cái', description: '', consumption_days: '', images: [], shop_ids: isAll ? [] : [shopId], mode: 'single', options: [{ name: '', values: [] }], rows: [blankRow()], removed: [], opening_warehouse_id: '', custom: {}, renames: [] };
+  if (!p) return { name: '', item_type: 'product', default_supplier_id: '', category_id: '', brand: '', unit: 'cái', description: '', consumption_days: '', images: [], shop_ids: isAll ? [] : [shopId], mode: 'single', options: [{ name: '', values: [] }], rows: [blankRow()], removed: [], opening_warehouse_id: '', custom: {}, renames: [] };
   const hasOptions = (p.options || []).length > 0;
   // Ma trận: chỉ các biến thể còn khớp thuộc tính hiện tại (biến thể đã lưu trữ do bỏ giá trị không hiện lại)
   const live = hasOptions ? p.variants.filter((v) => p.options.every((o) => o.values.includes(v.option_values?.[o.name]))) : p.variants;
   const form = {
-    id: p.id, existing: true, name: p.name, category_id: p.category_id || '', brand: p.brand || '', unit: p.unit || 'cái', description: p.description || '',
+    id: p.id, existing: true, name: p.name, item_type: p.item_type || 'product', default_supplier_id: p.default_supplier_id || '', category_id: p.category_id || '', brand: p.brand || '', unit: p.unit || 'cái', description: p.description || '',
     consumption_days: p.consumption_days ?? '', images: (p.images || []).map((i) => ({ id: i.id, url: i.url })),
     shop_ids: [...new Set(p.variants.flatMap((v) => (v.listings || []).map((l) => l.shop_id)))],
     mode: hasOptions ? 'matrix' : p.variants.length > 1 ? 'list' : 'single',
@@ -48,7 +49,7 @@ export function buildPayload(f, { customShopId } = {}) {
   });
   const rows = f.mode === 'single' ? f.rows.slice(0, 1) : f.rows;
   const payload = {
-    name: f.name.trim(), unit: f.unit || 'cái', category_id: f.category_id || null, brand: f.brand || null, description: f.description || null,
+    name: f.name.trim(), item_type: f.item_type || 'product', default_supplier_id: f.default_supplier_id || null, unit: f.unit || 'cái', category_id: f.category_id || null, brand: f.brand || null, description: f.description || null,
     consumption_days: f.consumption_days ? Number(f.consumption_days) : null,
     images: f.images.map(({ id }) => ({ id })),
     variants: [...rows.map(variant), ...f.removed.filter((r) => r.id).map((r) => ({ id: r.id, remove: true }))],
@@ -61,13 +62,15 @@ export function buildPayload(f, { customShopId } = {}) {
   return payload;
 }
 
-export default function ProductForm({ init, onClose, onSaved, onDirty }) {
+export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved }) {
   const { shops, shopId, isAll, warehouses } = useSession();
   const [f, setF] = useState(init);
   useDirty(f, onDirty);
   const { busy, error, run } = useAction();
   const [confirm, setConfirm] = useState(null);
   const cats = useAsync(() => api.get('/categories'), []);
+  const suppliers = useAsync(() => api.get('/suppliers'), []);
+  const supplierRows = Array.isArray(suppliers.data?.data) ? suppliers.data.data : [];
   const catList = useMemo(() => flattenTree(cats.data?.data || []), [cats.data]);
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
   const fieldShop = !isAll ? shopId : f.shop_ids[0];
@@ -152,12 +155,13 @@ export default function ProductForm({ init, onClose, onSaved, onDirty }) {
       title={f.existing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'}
       sub={f.existing ? f.name : 'Điền tên và giá là đủ để bán. Phần còn lại có thể bổ sung sau.'}
       onBack={onClose}
-      footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={!canSave} onClick={save}>Lưu</button></>}
+      footer={<>{f.existing && f.id && <RemoveProductButton product={{ id: f.id, name: f.name }} onRemoved={(r) => { onDirty?.(false); (onRemoved || onClose)(r); }} />}<button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={!canSave} onClick={save}>Lưu</button></>}
       error={<ErrorBox error={error} />}
       side={<>
         <Section title="Ảnh"><ImageGallery images={f.images} onChange={(images) => set({ images })} /></Section>
         <Section title="Phân loại">
           <div className="stack">
+            <Field label="Loại mặt hàng"><select value={f.item_type || 'product'} onChange={(e) => set({ item_type: e.target.value, ...(e.target.value === 'product' ? {} : { shop_ids: [] }) })}><option value="product">Hàng hóa bán</option><option value="packaging">Vật liệu đóng gói</option><option value="supply">Vật tư vận hành</option></select></Field>
             <Field label="Danh mục">
               <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
                 <option value="">Chưa phân loại</option>
@@ -166,12 +170,14 @@ export default function ProductForm({ init, onClose, onSaved, onDirty }) {
             </Field>
             <Field label="Thương hiệu"><input value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Field>
             <Field label="Đơn vị"><input value={f.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
+            <Field label="Nhà cung cấp mặc định"><select value={f.default_supplier_id || ''} onChange={(e) => set({ default_supplier_id: e.target.value })}><option value="">Chưa chọn</option>{supplierRows.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
             <Fold title="Nhắc mua lại">
               <Field label="Chu kỳ dùng hết (ngày)" hint="Để nhắc khách mua lại"><input type="number" min="1" value={f.consumption_days} onChange={(e) => set({ consumption_days: e.target.value })} /></Field>
             </Fold>
           </div>
         </Section>
-        {!f.existing && (
+        {f.existing && f.item_type === 'product' && <PackagingSpec productId={f.id} />}
+        {!f.existing && f.item_type === 'product' && (
           <Section title="Bán ở shop">
             <div className="stack" style={{ gap: 8 }}>{shops.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.shop_ids.includes(s.id)} onChange={() => set({ shop_ids: toggle(f.shop_ids, s.id) })} />{s.name}</label>)}</div>
           </Section>
@@ -259,6 +265,21 @@ export default function ProductForm({ init, onClose, onSaved, onDirty }) {
   );
 }
 
+function PackagingSpec({ productId }) {
+  const available = useAsync(() => api.get('/products', { item_type: 'packaging', unlisted: '1', limit: 200 }), []);
+  const state = useAsync(() => api.get(`/packaging-specs/${productId}`), [productId]);
+  const [lines, setLines] = useState([]);
+  const { busy, error, run } = useAction();
+  useEffect(() => { if (Array.isArray(state.data?.data)) setLines(state.data.data.map((x) => ({ material_variant_id: x.material_variant_id, qty: x.qty }))); }, [state.data]);
+  const materials = (Array.isArray(available.data?.data) ? available.data.data : []).flatMap((p) => (Array.isArray(p.variants) ? p.variants : []).filter((v) => v.kind !== 'bundle' && !v.archived_at).map((v) => ({ id: v.id, label: `${p.name}${v.name ? ` — ${v.name}` : ''} · ${v.sku} (${p.unit})` })));
+  const patch = (i, value) => setLines((rows) => rows.map((x, j) => j === i ? { ...x, ...value } : x));
+  return <Section title="Định mức đóng gói"><div className="stack">
+    {lines.map((line, i) => <div className="row" key={`${i}-${line.material_variant_id}`}><select aria-label="Vật liệu đóng gói" value={line.material_variant_id} onChange={(e) => patch(i, { material_variant_id: e.target.value })}><option value="">Chọn vật tư</option>{materials.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select><input aria-label="Định mức" type="number" min="0.001" step="0.001" value={line.qty} onChange={(e) => patch(i, { qty: e.target.value })} style={{ width: 100 }} /><button className="btn sm" type="button" onClick={() => setLines((rows) => rows.filter((_, j) => j !== i))} aria-label="Bỏ vật liệu">✕</button></div>)}
+    <div className="row"><button type="button" className="btn sm" onClick={() => setLines((rows) => [...rows, { material_variant_id: materials[0]?.id || '', qty: 1 }])} disabled={!materials.length}>+ Thêm vật tư</button><button type="button" className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api.put(`/packaging-specs/${productId}`, { lines: lines.filter((x) => x.material_variant_id).map((x) => ({ ...x, qty: Number(x.qty) })) }); state.reload(); })}>Lưu định mức</button></div>
+    <div className="small muted">Định mức chỉ gợi ý lượng dự kiến; kho chỉ giảm khi xác nhận đóng gói đơn.</div><ErrorBox error={error} />
+  </div></Section>;
+}
+
 /** Trường thông tin sản phẩm của shop (vd Ngũ hành hợp của shop phong thuỷ). Chỉ gửi các trường đã đổi. */
 function ProductFields({ productId, shopId, value, onChange }) {
   const state = useAsync(async () => {
@@ -273,7 +294,7 @@ function ProductFields({ productId, shopId, value, onChange }) {
   const { fields, values } = state.data;
   return (
     <Section title="Thông tin riêng của shop">
-      <div className="stack" style={{ gap: 10 }}>
+      <div className="stack" style={{ gap: 8 }}>
         {fields.map((fd) => {
           const cur = fd.key in value ? value[fd.key] : values[fd.key];
           return <Field key={fd.id} label={fd.type === 'boolean' ? '' : fd.label}><FieldInput field={fd} value={cur} onChange={(v) => onChange({ ...value, [fd.key]: v })} /></Field>;
@@ -304,7 +325,7 @@ function TagInput({ values, onChange, onRename, label }) {
       {values.map((v) => (
         <span key={v} className="tag">
           {editing === v
-            ? <CommitInput value={v} aria-label={`Đổi tên giá trị ${v}`} autoFocus style={{ minWidth: 80, minHeight: 28, padding: '0 6px' }} onCommit={(n) => { setEditing(null); onRename(v, n); }} />
+            ? <CommitInput value={v} aria-label={`Đổi tên giá trị ${v}`} autoFocus style={{ minWidth: 80, minHeight: 28, padding: '0 8px' }} onCommit={(n) => { setEditing(null); onRename(v, n); }} />
             : <span role="button" tabIndex={0} title="Bấm để đổi tên" onClick={() => setEditing(v)} onKeyDown={(e) => e.key === 'Enter' && setEditing(v)}>{v}</span>}
           <button type="button" aria-label={`Bỏ ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>✕</button>
         </span>
@@ -351,7 +372,7 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
       {f.options.map((o, i) => (
         <div key={i} className="grid cols-2" style={{ alignItems: 'end' }}>
           <Field label={`Thuộc tính ${i + 1}`}>
-            <div className="row" style={{ gap: 6 }}>
+            <div className="row" style={{ gap: 8 }}>
               <CommitInput className="grow" value={o.name} placeholder="Mùi, Size, Màu…" aria-label={`Tên thuộc tính ${i + 1}`} onCommit={(n) => (o.name ? renameAttr(i, n) : upd(i, { name: n.trim() }))} />
               {f.options.length > 1 && <button type="button" className="btn sm" aria-label={`Xoá thuộc tính ${o.name || i + 1}`} onClick={() => removeAttr(i)}>✕</button>}
             </div>

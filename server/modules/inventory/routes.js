@@ -1,11 +1,55 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { tx } from '../../db/index.js';
-import { body, money, qty, query, optionalText } from '../../lib/http.js';
+import { body, money, qty, stockQty, signedQty, query, optionalText } from '../../lib/http.js';
 import * as svc from './service.js';
 import * as counts from './counts.js';
+import * as materials from './materials.js';
+import * as close from './close.js';
+import { flushJournal } from '../accounting/journal.js';
+import { rowsToCsv } from '../system/export.js';
 
 const r = new Hono();
+
+const reportFilter = z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), warehouse_id: z.string().optional() });
+r.get('/packaging-specs/:productId', (c) => c.json({ data: materials.getPackagingSpec(c.req.param('productId')) }));
+r.put('/packaging-specs/:productId', async (c) => {
+  const input = await body(c, z.object({ lines: z.array(z.object({ material_variant_id: z.string(), qty })).max(100) }));
+  return c.json({ data: tx(() => materials.savePackagingSpec(c.req.param('productId'), input.lines, c.get('actor'))) });
+});
+r.get('/orders/:orderId/packaging-plan', (c) => c.json({ data: materials.packagingPlan(c.req.param('orderId')) }));
+r.post('/orders/:orderId/packaging-confirm', async (c) => {
+  const input = await body(c, z.object({ warehouse_id: z.string(), shop_id: z.string().nullish(), note: optionalText, lines: z.array(z.object({ variant_id: z.string(), qty })).min(1).max(100) }));
+  return c.json({ data: tx(() => materials.confirmPackaging({ orderId: c.req.param('orderId'), warehouseId: input.warehouse_id, shopId: input.shop_id, note: input.note, lines: input.lines }, c.get('actor'))) });
+});
+r.post('/material-issues', async (c) => {
+  const input = await body(c, z.object({ warehouse_id: z.string(), purpose: z.string().trim().min(1).max(500), expense_account_code: z.enum(['6414','6418','6422','6428']).default('6428'), shop_id: z.string().nullish(), lines: z.array(z.object({ variant_id: z.string(), qty })).min(1).max(200) }));
+  return c.json({ data: tx(() => materials.issueMaterials({ warehouseId: input.warehouse_id, purpose: input.purpose, accountCode: input.expense_account_code, shopId: input.shop_id, lines: input.lines }, c.get('actor'))) }, 201);
+});
+r.get('/inventory-reports', (c) => {
+  const f = query(c, reportFilter);
+  flushJournal();
+  return c.json({ data: materials.inventoryReport({ from: f.from, to: f.to, warehouseId: f.warehouse_id }) });
+});
+r.get('/inventory-reports/export', (c) => {
+  const f = query(c, reportFilter);
+  flushJournal();
+  const data = materials.inventoryReport({ from: f.from, to: f.to, warehouseId: f.warehouse_id });
+  const headers = ['SKU','Mặt hàng','Loại','Đơn vị','Tồn đầu kỳ','Nhập kỳ','Xuất kỳ','Tồn cuối kỳ','Giá vốn bình quân hiện tại','Giá trị tồn hiện tại','Tồn tối thiểu'];
+  const rows = data.items.map((x) => [x.sku, x.product_name, x.item_type, x.unit, x.opening_qty, x.in_qty, x.out_qty, x.ending_qty, x.avg_cost, x.stock_value, x.min_stock]);
+  return new Response(rowsToCsv(headers, rows), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="bao-cao-ton-kho.csv"' } });
+});
+r.get('/material-consumption', (c) => {
+  const f = query(c, reportFilter);
+  return c.json({ data: materials.materialConsumption({ from: f.from, to: f.to, warehouseId: f.warehouse_id }) });
+});
+r.get('/material-consumption/export', (c) => {
+  const f = query(c, reportFilter);
+  const rows = materials.materialConsumption({ from: f.from, to: f.to, warehouseId: f.warehouse_id });
+  const headers = ['Ngày','SKU','Vật tư','Đơn vị','Loại nghiệp vụ','Mã đơn','Mục đích','Số lượng','Giá trị','Tài khoản chi phí'];
+  const data = rows.map((x) => [x.business_date, x.sku, x.product_name, x.unit, x.ref_type, x.order_code || '', x.purpose || '', Math.abs(x.qty), x.amount, x.expense_account_code]);
+  return new Response(rowsToCsv(headers, data), { headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="bao-cao-tieu-hao-vat-tu.csv"' } });
+});
 
 r.get('/stock', (c) => {
   const q = query(
@@ -51,8 +95,8 @@ r.post('/stock-adjustments', async (c) => {
         .array(
           z.object({
             variant_id: z.string(),
-            counted: z.coerce.number().int().min(0).optional(),
-            change: z.coerce.number().int().optional(),
+            counted: stockQty.optional(),
+            change: signedQty.optional(),
             unit_cost: money.optional(),
           }),
         )
@@ -77,6 +121,21 @@ r.post('/transfers', async (c) => {
   return c.json({ data: res }, 201);
 });
 
+// Chốt kỳ kho
+const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+r.get('/stock-close', (c) => c.json({ data: close.closeStatus() }));
+r.get('/stock-close/preview', (c) => c.json({ data: close.previewClose(query(c, z.object({ date: dateStr })).date) }));
+r.post('/stock-close', async (c) => {
+  const input = await body(c, z.object({ date: dateStr, note: optionalText }));
+  return c.json({ data: tx(() => close.closeStock(input.date, input.note, c.get('actor'))) }, 201);
+});
+r.post('/stock-close/reopen', async (c) => {
+  const input = await body(c, z.object({ date: dateStr.nullable(), reason: z.string().trim().min(1).max(500) }));
+  return c.json({ data: tx(() => close.reopenStock(input.date, input.reason, c.get('actor'))) });
+});
+r.get('/stock-closes', (c) => c.json({ data: close.listCloses() }));
+r.get('/stock-closes/:id', (c) => c.json({ data: close.getClose(c.req.param('id')) }));
+
 r.get('/stock-integrity', (c) => {
   const issues = svc.verifyStockIntegrity();
   return c.json({ ok: issues.length === 0, issues });
@@ -91,7 +150,7 @@ r.post('/stock-counts', async (c) => {
 });
 r.patch('/stock-counts/:id', async (c) => {
   const input = await body(c, z.object({
-    lines: z.array(z.object({ variant_id: z.string(), counted_qty: z.coerce.number().int().min(0).nullable().optional(), unit_cost: money.nullable().optional(), note: optionalText.optional() })).default([]),
+    lines: z.array(z.object({ variant_id: z.string(), counted_qty: stockQty.nullable().optional(), unit_cost: money.nullable().optional(), note: optionalText.optional() })).default([]),
     add_variant_ids: z.array(z.string()).default([]),
     remove_variant_ids: z.array(z.string()).default([]),
     note: optionalText.optional(),

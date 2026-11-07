@@ -5,11 +5,37 @@ import { applyIndustry } from './industry.js';
 import { hasFeature } from '../../lib/industries.js';
 import { audit, emit } from '../../lib/events.js';
 import { badRequest, notFound } from '../../lib/errors.js';
+import { contrast, luminance } from '../../lib/color.js';
 
 // Màu nhận diện shop: giữ trong tông giấy–gỗ–gốm của thương hiệu (đã giảm bão hoà), vẫn đủ khác nhau để phân biệt
 const PALETTE = ['#865C49', '#42633F', '#33566F', '#8A4E14', '#6A4A70', '#A23A30'];
 
-const withWarehouses = (s) => ({ ...s, warehouse_ids: shopWarehouses(s.id).map((w) => w.warehouse_id) });
+const parseColors = (v) => { try { return v ? JSON.parse(v) : null; } catch { return null; } };
+const withWarehouses = (s) => ({ ...s, ui_colors: parseColors(s.ui_colors), warehouse_ids: shopWarehouses(s.id).map((w) => w.warehouse_id) });
+
+// Nền mặc định sáng nhất của các chủ đề và màu chữ trên nút chính: màu người dùng chọn phải đọc được trên cả hai
+const DEFAULT_PAPER = '#fdfcf9';
+const BUTTON_TEXT = '#ede3d2';
+
+/** Màu giao diện riêng của shop. Màu chủ đạo dùng cho nút chính và liên kết nên phải đủ tương phản; nền phải sáng để chữ tối đọc được. */
+export function normalizeColors(c) {
+  if (c === null || c === undefined) return null;
+  const out = {};
+  if (c.background) {
+    if (luminance(c.background) < 0.75) throw badRequest('COLOR_TOO_DARK', 'Màu nền quá tối. Chọn màu sáng hơn để chữ vẫn dễ đọc.', { field: 'background' });
+    out.background = c.background.toLowerCase();
+  }
+  if (c.primary) {
+    const bg = out.background || DEFAULT_PAPER;
+    const onButton = contrast(c.primary, BUTTON_TEXT);
+    const onPaper = contrast(c.primary, bg);
+    if (onButton < 4.5 || onPaper < 4.5) {
+      throw badRequest('COLOR_LOW_CONTRAST', `Màu chủ đạo chưa đủ tương phản (chữ trên nút ${onButton.toFixed(1)}:1, trên nền ${onPaper.toFixed(1)}:1, cần ít nhất 4,5:1). Chọn màu đậm hơn.`, { field: 'primary', on_button: Math.round(onButton * 10) / 10, on_background: Math.round(onPaper * 10) / 10 });
+    }
+    out.primary = c.primary.toLowerCase();
+  }
+  return Object.keys(out).length ? out : null;
+}
 
 export function getShop(id) {
   const s = getDb().prepare('SELECT * FROM shops WHERE id = ?').get(id);
@@ -106,7 +132,7 @@ export function createShop(input, actor) {
   return s;
 }
 
-const FIELDS = ['code', 'name', 'description', 'color', 'default_warehouse_id', 'phone', 'address', 'receipt_footer', 'industry', 'archived_at'];
+const FIELDS = ['code', 'name', 'description', 'color', 'default_warehouse_id', 'phone', 'address', 'receipt_footer', 'industry', 'archived_at', 'ui_colors'];
 
 export function updateShop(id, input, actor) {
   const before = getShop(id);
@@ -114,6 +140,10 @@ export function updateShop(id, input, actor) {
   const next = { ...before };
   delete next.warehouse_ids;
   for (const f of FIELDS) if (input[f] !== undefined) next[f] = input[f];
+  if (input.ui_colors !== undefined) {
+    const c = normalizeColors(input.ui_colors);
+    next.ui_colors = c ? JSON.stringify(c) : null;
+  } else next.ui_colors = before.ui_colors ? JSON.stringify(before.ui_colors) : null;
   next.code = next.code.toUpperCase();
   next.updated_at = nowIso();
   getDb()

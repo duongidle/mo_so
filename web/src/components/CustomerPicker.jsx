@@ -25,7 +25,7 @@ export default function CustomerPicker({ shopId, value, onChange, compact = fals
   const [tier, setTier] = useState(null);
   const wrap = useRef(null);
 
-  // Tìm: khách của shop trước, rồi "khách ở shop khác" (hồ sơ chung, chọn thì tự vào danh sách shop khi lưu đơn)
+  // Ưu tiên khách trong shop, sau đó hiện cả hồ sơ ở shop khác để có thể dùng cùng danh tính.
   useEffect(() => {
     if (value || mode !== 'search' || !open) return undefined;
     let off = false;
@@ -35,16 +35,14 @@ export default function CustomerPicker({ shopId, value, onChange, compact = fals
         const a = shopId ? await api.get('/customers', { ...params, shop_id: shopId }) : { data: [] };
         const inShop = a.data || [];
         let rest = [];
-        if (dq) {
-          const b = await api.get('/customers', params);
-          const have = new Set(inShop.map((c) => c.id));
-          rest = (b.data || []).filter((c) => !have.has(c.id));
-        } else if (!shopId) rest = (await api.get('/customers', params)).data || [];
+        const b = await api.get('/customers', params);
+        const have = new Set(inShop.map((c) => c.id));
+        rest = (b.data || []).filter((c) => !have.has(c.id));
         if (off) return;
         setMine(inShop);
         setOther(rest);
         setActive(0);
-        inShop.forEach((c) => {
+        [...inShop, ...rest].forEach((c) => {
           api.get(`/loyalty/customers/${c.id}`).then((l) => !off && setTiers((t) => ({ ...t, [c.id]: l.data?.tier }))).catch(() => {});
         });
       } catch {
@@ -70,7 +68,7 @@ export default function CustomerPicker({ shopId, value, onChange, compact = fals
     return () => document.removeEventListener('mousedown', h);
   }, []);
 
-  const rows = [...mine.map((c) => ({ c, elsewhere: false })), ...other.map((c) => ({ c, elsewhere: true }))];
+  const rows = [...mine.map((c) => ({ c, elsewhere: false })), ...other.map((c) => ({ c, elsewhere: Boolean(shopId) }))];
   const choose = (c) => { onChange(c); setQ(''); setOpen(false); setMode('search'); };
 
   const onKey = (e) => {
@@ -90,7 +88,7 @@ export default function CustomerPicker({ shopId, value, onChange, compact = fals
             <div className="small muted">{[value.phone, value.code].filter(Boolean).join(' · ') || 'Chưa có SĐT'}</div>
             {!compact && value.address && <div className="small" style={{ marginTop: 4 }}>{value.address}</div>}
           </div>
-          <div className="row" style={{ gap: 6 }}>
+          <div className="row" style={{ gap: 8 }}>
             <button type="button" className="btn sm" onClick={() => onChange(null)}>Đổi</button>
           </div>
         </div>
@@ -130,7 +128,7 @@ export default function CustomerPicker({ shopId, value, onChange, compact = fals
       </div>
       {open && (
         <div className="cust-pop" id={listId} role="listbox" aria-label="Kết quả tìm khách">
-          {rows.length === 0 && <div className="small muted" style={{ padding: '12px 16px' }}>{dq ? 'Không tìm thấy khách khớp.' : 'Shop chưa có khách nào. Tạo khách mới bên dưới.'}</div>}
+          {rows.length === 0 && <div className="small muted" style={{ padding: '12px 16px' }}>{dq ? 'Không tìm thấy khách khớp.' : 'Chưa có khách nào. Tạo khách mới bên dưới.'}</div>}
           {rows.map(({ c, elsewhere }, i) => (
             <div key={c.id}>
               {elsewhere && (i === 0 || !rows[i - 1].elsewhere) && <div className="cust-sep">Khách ở shop khác</div>}

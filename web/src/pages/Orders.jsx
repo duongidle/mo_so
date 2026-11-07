@@ -1,5 +1,5 @@
 import ProductThumb from '../components/ProductThumb.jsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
@@ -11,6 +11,7 @@ import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
 import MoneyInput from '../components/MoneyInput.jsx';
 import ReturnModal, { emptyReturnForm } from './ReturnModal.jsx';
+import ExchangeModal from './ExchangeModal.jsx';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
 const PAY_CLASS = { paid: 'st-completed', partial: 'st-returned', unpaid: 'st-draft', refunded: 'st-returned' };
@@ -94,7 +95,8 @@ const NEXT = { draft: [['confirmed', 'Xác nhận (trừ kho)']], confirmed: [['
 
 export function OrderDetail() {
   const { id } = useParams();
-  const { allChannels: channels, methodLabels, methodList } = useSession();
+  const navigate = useNavigate();
+  const { allChannels: channels, methodLabels, methodList, warehouses } = useSession();
   const state = useAsync(() => api.get(`/orders/${id}`), [id]);
   const act = useAction();
   const [modal, setModal] = useState(null);
@@ -129,7 +131,9 @@ export function OrderDetail() {
                 {['draft', 'confirmed', 'shipping'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
                 {o.amount_due > 0 && !['cancelled', 'draft'].includes(o.status) && <button className="btn" onClick={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}>Thu tiền ({vnd(o.amount_due)})</button>}
                 {o.refund_owed_amount > 0 && <button className="btn primary" onClick={() => { setForm({ amount: o.refund_owed_amount, method: 'cash' }); setModal('refund'); }}>Hoàn tiền ({vnd(o.refund_owed_amount)})</button>}
-                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm(emptyReturnForm()); setModal('return'); }}>Trả hàng</button>}
+                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm(emptyReturnForm(o.is_marketplace)); setModal('return'); }}>Trả hàng</button>}
+                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('packaging')}>Xác nhận đóng gói</button>}
+                {!o.is_marketplace && o.customer_id && ['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('exchange')}>Đổi hàng</button>}
                 <a className="btn" href={`/api/v1/orders/${o.id}/receipt`} target="_blank" rel="noreferrer">In phiếu</a>
               </div>
 
@@ -138,7 +142,7 @@ export function OrderDetail() {
                   {o.customer_id ? <Link to={`/customers/${o.customer_id}`}>{o.customer_name}</Link> : <span>{o.customer_name || 'Khách lẻ'}</span>}
                   <div className="small muted">{o.customer_phone}</div><div className="small">{o.shipping_address}</div>
                   {o.tracking_code && <div className="small">Vận đơn: {o.carrier} {o.tracking_code}</div>}
-                  {o.note && <div className="small" style={{ marginTop: 6 }}>Ghi chú: {o.note}</div>}
+                  {o.note && <div className="small" style={{ marginTop: 8 }}>Ghi chú: {o.note}</div>}
                 </Section>
                 <Section title="Tiền">
                   <div className="stack small">
@@ -164,7 +168,7 @@ export function OrderDetail() {
                 <div className="table-wrap"><table>
                   <thead><tr><th>Sản phẩm</th><th className="num">SL</th><th className="num">Đơn giá</th><th className="num">Giá vốn</th><th className="num">Thành tiền</th></tr></thead>
                   <tbody>{o.lines.map((l) => (
-                    <tr key={l.id}><td><div className="row" style={{ gap: 10 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div>{l.allocations?.length > 0 && <div className="small muted">Lấy từ: {l.allocations.map((a) => `${a.warehouse_name}${l.allocations.some((x) => x.sku !== l.sku) ? ` (${a.sku})` : ''} × ${a.qty}`).join(', ')}</div>}{!l.allocations?.length && l.planned_allocations?.length > 0 && <div className="small muted">Dự kiến lấy từ kho đã chọn tay</div>}</div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
+                    <tr key={l.id}><td><div className="row" style={{ gap: 8 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div>{l.allocations?.length > 0 && <div className="small muted">Lấy từ: {l.allocations.map((a) => `${a.warehouse_name}${l.allocations.some((x) => x.sku !== l.sku) ? ` (${a.sku})` : ''} × ${a.qty}`).join(', ')}</div>}{!l.allocations?.length && l.planned_allocations?.length > 0 && <div className="small muted">Dự kiến lấy từ kho đã chọn tay</div>}</div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
                   ))}</tbody>
                 </table></div>
               </Section>
@@ -172,12 +176,12 @@ export function OrderDetail() {
               <div className="grid cols-2 collapse">
                 <Section title="Thanh toán">
                   {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
-                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
+                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {p.method === 'customer_credit' ? 'Tiền khách gửi' : methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn / cộng tiền gửi)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
                   ))}
                 </Section>
                 <Section title="Lịch sử">
                   {o.history.map((h) => <div key={h.id} className="small"><span className="muted">{fmtDate(h.created_at)}</span> · {h.from_status ? `${STATUS[h.from_status]} → ` : ''}{STATUS[h.to_status]}{h.note && ` (${h.note})`}</div>)}
-                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.reason && ` — ${r.reason}`}</div>)}
+                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.awaiting_goods ? <> · <b>Chờ hàng về</b> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, {}); state.reload(); })}>Đã nhận hàng</button></> : r.goods_received_at && o.is_marketplace ? ' · Đã nhận hàng' : ''}{r.reason && ` — ${r.reason}`}</div>)}
                 </Section>
               </div>
 
@@ -193,24 +197,46 @@ export function OrderDetail() {
               {modal === 'pay' && (
                 <Modal title="Thu tiền" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method }); setModal(null); state.reload(); })}>Ghi nhận</button>}>
                   <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
-                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{o.customer_credit_balance > 0 && !o.is_marketplace && <option value="customer_credit">Tiền khách gửi ({vnd(o.customer_credit_balance)})</option>}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}
               {modal === 'refund' && (
                 <Modal title="Hoàn tiền cho khách" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method, direction: 'out' }); setModal(null); state.reload(); })}>Ghi nhận hoàn tiền</button>}>
                   <Field label={`Số tiền (tối đa ${vnd(o.refund_owed_amount)})`}><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
-                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{o.customer_id && !o.is_marketplace && <option value="customer_credit">Chuyển thành tiền khách gửi</option>}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}
               {modal === 'return' && <ReturnModal order={o} form={form} setForm={setForm} act={act} methodList={methodList} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
+              {modal === 'exchange' && <ExchangeModal order={o} methodList={methodList} onClose={() => setModal(null)} onDone={(result) => navigate(`/orders/${result.created.id}`)} />}
+              {modal === 'packaging' && <PackagingModal orderId={o.id} warehouses={warehouses} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
             </>
           );
         }}
       </Async>
     </div>
   );
+}
+
+function PackagingModal({ orderId, warehouses, onClose, onDone }) {
+  const plan = useAsync(() => api.get(`/orders/${orderId}/packaging-plan`), [orderId]);
+  const [lines, setLines] = useState([]);
+  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || '');
+  const [note, setNote] = useState('');
+  const { busy, error, run } = useAction();
+  useEffect(() => { if (plan.data?.data?.lines) setLines(plan.data.data.lines.map((x) => ({ variant_id: x.variant_id, qty: x.qty, name: x.name, sku: x.sku, unit: x.unit }))); }, [plan.data]);
+  const change = (variantId, qty) => setLines((xs) => xs.map((x) => x.variant_id === variantId ? { ...x, qty } : x));
+  const confirmed = plan.data?.data?.confirmed;
+  return <Modal title="Xác nhận vật tư đóng gói" onClose={onClose} footer={confirmed ? <button className="btn primary" onClick={onClose}>Đóng</button> : <button className="btn primary" disabled={busy || !lines.length || !warehouseId} onClick={() => run(async () => { await api.post(`/orders/${orderId}/packaging-confirm`, { warehouse_id: warehouseId, lines: lines.map((x) => ({ variant_id: x.variant_id, qty: Number(x.qty) })), note: note || null }); onDone(); })}>Ghi nhận tiêu hao</button>}>
+    <Async state={plan}>{(r) => confirmed ? <div className="alert ok">Đơn đã ghi nhận tiêu hao vật tư lúc {fmtDate(confirmed.created_at)}. Tồn kho không bị trừ thêm.</div> : <>
+      {!lines.length ? <div className="alert warn">Chưa có định mức đóng gói cho sản phẩm trong đơn. Thêm định mức ở trang sản phẩm hoặc bỏ qua nếu đơn không dùng vật tư.</div> : lines.map((x) => <div className="row" key={x.variant_id}><div className="grow">{x.name}<div className="small muted">{x.sku} · {x.unit} · dự kiến {num(x.qty)}</div></div><Field label="Thực tế"><input type="number" min="0.001" step="0.001" value={x.qty} onChange={(e) => change(x.variant_id, e.target.value)} /></Field></div>)}
+      <Field label="Kho xuất"><select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+      <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+      <div className="small muted">Chỉ ghi nhận sau khi bấm xác nhận. Lần xác nhận thứ hai sẽ không trừ kho thêm.</div>
+      <ErrorBox error={error} />
+    </>}</Async>
+  </Modal>;
 }
 
 const Row = ({ l, v, bold }) => <div className="row between" style={bold ? { fontWeight: 700 } : undefined}><span>{l}</span><span className="num">{vnd(v)}</span></div>;

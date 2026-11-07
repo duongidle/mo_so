@@ -42,6 +42,7 @@ function Form({ order }) {
   const [channelId, setChannelId] = useState(order?.channel_id || 'direct');
   const [externalId, setExternalId] = useState(order?.external_id || '');
   const [customer, setCustomer] = useState(null);
+  const [customerCredit, setCustomerCredit] = useState(0);
   const [address, setAddress] = useState(order?.shipping_address || '');
   const [discount, setDiscount] = useState(order?.discount_amount || 0);
   const [shipping, setShipping] = useState(order?.shipping_fee || 0);
@@ -59,6 +60,13 @@ function Form({ order }) {
 
   const channel = (isEdit ? allChannels : channels).find((c) => c.id === channelId);
   const marketplace = !!channel?.is_marketplace;
+
+  useEffect(() => {
+    if (!customer?.id || !shopId || marketplace) { setCustomerCredit(0); if (method === 'customer_credit') setMethod('cash'); return undefined; }
+    let off = false;
+    api.get(`/customers/${customer.id}`, { shop_id: shopId }).then((r) => { if (!off) { const balance = r.data.credit_balance || 0; setCustomerCredit(balance); if (!balance && method === 'customer_credit') setMethod('cash'); } }).catch(() => { if (!off) { setCustomerCredit(0); if (method === 'customer_credit') setMethod('cash'); } });
+    return () => { off = true; };
+  }, [customer?.id, shopId, marketplace, method]);
 
   // Tìm sản phẩm niêm yết ở shop
   useEffect(() => {
@@ -132,7 +140,8 @@ function Form({ order }) {
     if (errs.length) return undefined;
     return run(async () => {
       const common = { shopId, channelId, externalId, customerId: customer?.id, address, lines, edits, discount, shipping, platformFee, sellerShipping, marketplace, note };
-      const payments = paymentsFor(status, paid, totals.amountDue, method);
+      const collected = method === 'customer_credit' && paid === '' ? Math.min(totals.amountDue, customerCredit) : paid;
+      const payments = paymentsFor(status, collected, totals.amountDue, method);
       const askNegative = (e) => e.code === 'STOCK_NOT_ENOUGH' && status !== 'draft' && window.confirm(`${e.message}\n\nVẫn xác nhận và cho phép âm kho?`);
       try {
         if (!isEdit) {
@@ -301,13 +310,14 @@ function Form({ order }) {
 
           <Section title="Thanh toán">
             <div className="grid cols-2 collapse">
-              <Field label="Số tiền thu" hint="Để trống: Bán xong thu đủ, Xác nhận không thu">
-                <MoneyInput value={paid} placeholder={String(totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
+              <Field label={method === 'customer_credit' ? 'Số tiền dùng từ tiền gửi' : 'Số tiền thu'} hint={method === 'customer_credit' ? `Còn ${vnd(customerCredit)} trong shop này` : 'Để trống: Bán xong thu đủ, Xác nhận không thu'}>
+                <MoneyInput value={paid} placeholder={String(method === 'customer_credit' ? Math.min(totals.amountDue, customerCredit) : totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
               </Field>
               <Field label="Phương thức">
-                <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Phương thức thanh toán">{methodList(method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+                <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Phương thức thanh toán">{methodList(method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{customerCredit > 0 && !marketplace && <option value="customer_credit">Tiền khách gửi</option>}</select>
               </Field>
             </div>
+            {customerCredit > 0 && !marketplace && <p className="small muted">Khách còn {vnd(customerCredit)} tiền gửi trong shop này.</p>}
           </Section>
         </div>
       </div>
@@ -318,12 +328,14 @@ function Form({ order }) {
             <span className="small muted">Khách phải trả</span>
             <b className="num">{vnd(totals.total)}</b>
           </div>
-          {localErrors.length > 0 && <div className="alert err small" role="alert">{localErrors[0]}</div>}
-          <ErrorBox error={error} />
+          {(localErrors.length > 0 || error) && <div className="of-errors">
+            {localErrors.length > 0 && <div className="alert err small" role="alert">{localErrors[0]}</div>}
+            <ErrorBox error={error} />
+          </div>}
           <div className="of-btns">
-            <button type="button" className="btn" disabled={busy} onClick={() => submit('draft')}>Lưu nháp</button>
-            <button type="button" className="btn" disabled={busy || problems.length > 0} onClick={() => submit('confirmed')}>Xác nhận đơn</button>
-            <button type="button" className="btn primary" disabled={busy || problems.length > 0} onClick={() => submit('completed')}>{busy ? 'Đang lưu…' : 'Bán xong'}</button>
+            <button type="button" className="btn" aria-label="Lưu nháp" disabled={busy} onClick={() => submit('draft')}>Lưu nháp</button>
+            <button type="button" className="btn" aria-label="Xác nhận đơn" disabled={busy || problems.length > 0} onClick={() => submit('confirmed')}>Xác nhận</button>
+            <button type="button" className="btn primary" aria-label="Bán xong" disabled={busy || problems.length > 0} onClick={() => submit('completed')}>{busy ? 'Đang lưu…' : 'Bán xong'}</button>
           </div>
         </div>
       </div>
@@ -379,7 +391,7 @@ function AllocationPanel({ lines, edits, setEdits, preview, previewErr, notes, m
                   const sku = pl?.items.find((it) => it.variant_id === vid)?.sku || l.sku;
                   const sum = Object.values(edit.cells[vid] || {}).reduce((a, n) => a + n, 0);
                   return (
-                    <div key={vid} className="stack" style={{ gap: 6 }}>
+                    <div key={vid} className="stack" style={{ gap: 8 }}>
                       <div className="row between small"><span>{sku}</span><span className={sum === edit.required[vid] ? 'muted' : 'h-red'}>{sum}/{edit.required[vid]}</span></div>
                       {preview.warehouses.map((w) => {
                         const onHand = stock?.warehouses.find((x) => x.warehouse_id === w.id)?.on_hand ?? 0;

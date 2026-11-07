@@ -1,5 +1,36 @@
 # Nhật ký thực hiện
 
+### 2026-11-08 — Thang khoảng cách, thang chữ, phân cấp sắc độ
+
+- Viết lại token: khoảng cách bội 4 (`--sp-*`), chữ 6 bậc (12/13/14/16/20/24), độ đậm 400/500/600, chiều cao điều khiển bội 4. Quy đổi hàng loạt giá trị lệch trong `styles.css` và style inline của JSX (22 tệp).
+- Bề mặt: viền thẻ `--rule` 75%→38%, kẻ dòng `--hair` 12%→7%, tiêu đề bảng nền `--thead` thay cho kẻ đậm; nút chọn shop theo token ô nhập. Sticky header bảng bám đúng chiều cao thanh trên (61px).
+- Đo lại bằng script trên 10 trang desktop: khoảng cách bội 4px 40%→95%, cỡ chữ 13→8 giá trị, chữ đậm 600 299→128 đoạn.
+
+### 2026-11-07 — Rà soát giao diện, tương phản, shadcn/ui
+
+- Rà soát giao diện thật ở 1440, 1280, 768 và 390px (mô phỏng bằng iframe vì cửa sổ trình duyệt không nhỏ hơn 570px), bấm qua từng tab con. Sửa các lỗi trang cuộn ngang trên điện thoại (bảng có header dính, đầu thẻ nhiều nút, thanh so sánh, thẻ chỉ số số lớn), vùng chạm tab/chip/nút nhỏ, bộ lọc Sản phẩm gộp một nhóm "Loại", thẻ chỉ số Sổ kế toán gọn nhãn phạm vi, dải tab Cài đặt không còn rớt chữ, chuỗi dài tự ngắt dòng, phản hồi nhấn nút, hiệu ứng vào trang 0,2s.
+- Đo tương phản WCAG bằng script (màu chữ và nền hiệu lực qua canvas) trên 12 trang × 4 theme ngành, 3.332 mẫu chữ: 3 nhóm lỗi (ⓘ trên thẻ nền tối, số đếm trên tab, chữ cái trên ô ảnh nhỏ) đã sửa; chạy lại 1.192 mẫu ở các trang liên quan: 0 lỗi. Chưa đo: placeholder, trạng thái hover/disabled, vùng có ảnh nền hoạ tiết (tính theo màu nền gần nhất).
+- shadcn/ui (Radix + Tailwind v4) cho `Modal` và `MetricInfo`, cách ly khỏi CSS thuần (xem nhật ký quyết định 2026-11-07 ở CLAUDE.md). Hộp thoại nay giữ focus, trả focus về nút mở, khoá cuộn nền; ⓘ bám nút và tự lật khi sát mép. Xoá CSS `.modal*` và `.metric-pop` cũ. Test `metrics.test.jsx` đổi sang sự kiện pointer của Radix.
+- Kiểm chứng: 221 test giao diện và production build qua. Chưa chạy lại `test:e2e` (cần Playwright). Cảnh báo `npm audit` về `xlsx` có từ trước, không liên quan.
+
+### 2026-11-06 — Mở rộng kho hàng và vật tư
+
+- Thêm loại mặt hàng `product` / `packaging` / `supply`, nhà cung cấp mặc định và ngăn vật tư được niêm yết hoặc thêm vào đơn bán.
+- Mở rộng số lượng kho tối đa 3 chữ số thập phân theo đơn vị cơ sở để ghi nhận mét, kg, tờ lẻ; chưa tự quy đổi thùng/cuộn nếu chưa khai báo hệ số.
+- Thêm định mức đóng gói theo sản phẩm và API xem lượng dự kiến. Chỉ trừ vật liệu sau khi xác nhận; mỗi đơn chỉ ghi nhận một lần và dùng số thực tế.
+- Thêm phiếu xuất vật tư vận hành. Tiêu hao đóng gói ghi Nợ 6414 / Có 156; xuất nội bộ ghi vào tài khoản chi phí chọn trước / Có 156. Dùng chung sổ biến động kho và journal hiện hữu.
+- Thêm báo cáo tồn, nhập/xuất theo kỳ, giá trị tồn, tiêu hao và đối chiếu TK 156 trong trang Kho.
+- Báo cáo tồn lâu chưa bật do chưa có tracking theo lô; không suy đoán ngày nhập. Hiện mỗi mặt hàng quản lý theo một đơn vị cơ sở.
+- Giao diện thêm danh mục vật tư, định mức đóng gói trong hồ sơ sản phẩm, nút xác nhận đóng gói trong đơn, xuất vật tư nội bộ, báo cáo tồn/tiêu hao và tải CSV.
+- Kiểm chứng: 173 test server, 221 test giao diện và production build đều qua; `git diff --check` sạch. Build còn cảnh báo chunk frontend lớn.
+
+### 2026-11-06 — Phạm vi shop trong Sổ kế toán
+
+- Cân đối phát sinh nhận bộ lọc shop và chỉ cộng các bút toán thuộc shop được chọn; Excel cũng ghi rõ shop.
+- Tổng quan kế toán lọc doanh thu, lợi nhuận, phải thu khách/sàn theo shop; tiền/quỹ, hàng tồn và phải trả NCC vẫn hiển thị toàn tài khoản. Chi phí chung tiếp tục phân bổ vào lợi nhuận shop theo quy tắc hiện có.
+- Cân đối kế toán vẫn toàn tài khoản. Giao diện nêu phạm vi để người dùng phân biệt số theo shop với số dư toàn sổ.
+- Có test API kiểm tra doanh thu theo shop, tổng Nợ/Có của Cân đối phát sinh và các số dư chung không đổi theo shop.
+
 > Ghi theo module trong `CLAUDE.md` mục 8. Mỗi phiên làm việc: đọc mục "Việc tiếp theo" trước, cập nhật file này khi xong.
 
 ## Tổng quan
@@ -28,6 +59,30 @@
 
 ## Nhật ký
 
+### 2026-11-06 — Đối chiếu việc còn mở và hoàn thiện form dài
+
+- Đối chiếu các mục “chưa làm” lịch sử với mã hiện tại: các mục gộp khách, chuyển kho, chỉnh mẫu import, combo, kiểm kê nhiều bước và test `rowsToOrders` đã được triển khai ở các đợt sau; không làm lại.
+- Form tạo/sửa chi phí định kỳ (8 trường) và form tài sản/chi phí trả trước (7 trường) chuyển từ popup sang trang nhập liệu đầy đủ dùng `FormPage`, có nút quay lại và thanh lưu dính đáy. Thêm test giao diện cho cả hai luồng.
+- SĐT chính đã được chuẩn hoá và duy nhất toàn tài khoản từ trước; `/customers/lookup` cũng tìm cả SĐT phụ. Bộ chọn khách trong đơn nay tải cả khách ở shop khác ngay khi mở (không phải gõ trước), chọn khách sẽ tự thêm membership khi lưu đơn. Tạo khách khi đang xem “Tất cả shop” nay phải thuộc một shop (shop duy nhất được chọn sẵn), không tạo khách mới vô chủ.
+- Thanh thao tác đơn gọn thành một hàng tổng tiền + ba nút, nhãn xác nhận rút ngắn; các cặp trường Thuế tự xếp một cột trên màn hình nhỏ để tránh nhãn dài làm lệch ô.
+- Kiểm tra: API 168/168; giao diện 221/221; build thành công. E2E chưa chạy thật vì môi trường chưa cài Playwright (12 ca bị skip). Build có cảnh báo chunk JS lớn; npm báo 1 lỗ hổng mức high trong dependency tree.
+- Còn cần làm/kiểm chứng: chụp và xem giao diện ở 390px cùng bốn theme; chạy E2E khi có Playwright/Chromium; thử trên iPhone thật. Loyalty tiếp tục hoãn. Các nghiệp vụ trả hàng còn lại được mở lại để triển khai theo yêu cầu 2026-11-06; hạch toán phí ship sàn vẫn cần file Shopee thật để chốt.
+
+### 2026-11-06 — Quyết định khách hàng và xử lý mục lợi nhuận
+
+- Quyết định chính thức: giữ hồ sơ khách dùng chung toàn tài khoản; không tách hồ sơ theo shop. Membership, nhãn và thông tin riêng theo shop tiếp tục như hiện tại. Không làm nút sao chép hồ sơ giữa shop. Loyalty tiếp tục hoãn.
+- Báo cáo lợi nhuận tổng nay cộng điều chỉnh kho và thừa/thiếu kiểm đếm quỹ từ sổ cái; không cộng trùng tiền phạt đã nằm trong chi phí. Theo shop/kênh không cộng khoản không gắn phạm vi. Cơ sở thuế ròng dùng cùng số lợi nhuận này. Cập nhật giải thích chỉ số, trang lợi nhuận và file xuất.
+- Form chi phí (6 trường) chuyển từ popup sang trang nhập liệu; popup giữ cho nghiệp vụ ngắn.
+- Đối chiếu hoàn tất: Báo cáo = KQKD kế toán cho toàn bộ và từng shop; tổng theo shop lệch đúng phần điều chỉnh không gán shop. API 168/168, giao diện 221/221, build thành công.
+
+### 2026-11-06 — Hoàn tất các luồng trả hàng còn mở
+
+- Tiền khách gửi dùng chung hồ sơ khách nhưng số dư theo shop phát sinh; hoàn trả hàng có thể ghi thành tiền gửi, đơn sau tại shop đó dùng làm phương thức thanh toán. Sổ cái hạch toán qua công nợ 3388, không đi qua quỹ tiền.
+- Thêm đổi hàng một bước cho đơn bán trực tiếp: ghi phiếu trả, nhập lại kho theo lựa chọn, cấn tiền khách gửi vào đơn mới và thu phần chênh trong cùng giao dịch. Đơn mới mở ngay sau khi hoàn tất.
+- Đơn sàn có thể ghi nhận trả hàng trước, giữ hàng ở trạng thái “Chờ hàng về”; chỉ khi xác nhận nhận hàng mới cộng tồn và hoàn giá vốn. Phiếu cũ được xem là đã nhận để tránh nhập kho lần hai.
+- Còn để lại: xác nhận cách hạch toán phí ship chiều về của sàn bằng file đối soát Shopee thật; đây là mục cần dữ liệu thực tế.
+- Kiểm tra: API 171/171, giao diện 221/221, build thành công. E2E/iPhone và đối chiếu file sàn để lại theo yêu cầu; môi trường hiện chưa có Playwright.
+
 ### 2026-11-04 — Đợt nâng cấp, đợt rà soát cuối (polish)
 - **Dòng đơn** (OrderForm): mỗi dòng là thẻ gọn (hàng 1: ảnh, tên đầy đủ, SKU · tồn, nút bỏ; hàng 2: số lượng, đơn giá, giảm, thành tiền); thứ tự Tab theo số lượng, giá, giảm, bỏ. POS vốn đã dạng thẻ nên giữ.
 - **Ô nhập tiền**: `components/MoneyInput.jsx` + `lib/money.js` (dấu chấm ngăn nghìn, số nguyên, căn phải, `inputMode=numeric`); thay vào đơn, POS, sản phẩm/combo, chứng từ, chi phí định kỳ, tài sản, nhập hàng, chi phí, quỹ tiền… Có vitest.
@@ -40,7 +95,7 @@
 - **Mật độ giao diện**: token trên `:root`, gọn từ 900px; điện thoại giữ ô ≥44px, chữ ô nhập 16px.
 - Không đổi số liệu báo cáo.
 
-**Việc chờ làm** (chủ shop hoãn ngày 2026-11-04): lợi nhuận ở Báo cáo → Lợi nhuận và `net_profit_estimate` của tổng quan báo cáo **chưa gồm** (1) điều chỉnh/hao hụt kho (`adjust_in`, `adjust_out`, `damage_out`, chênh lệch kiểm kê) và (2) thừa/thiếu khi kiểm đếm quỹ. Sổ kế toán có gồm, ở tài khoản 711 và 811. Nên với "Tất cả shop": lợi nhuận kế toán = lợi nhuận báo cáo + các khoản này; theo từng shop thì khớp hẳn vì các khoản này không thuộc shop nào. Đề xuất chờ chủ shop quyết: thêm dòng "Thu nhập/chi phí khác" vào báo cáo lãi lỗ cho hai bên khớp (hàng hỏng, mất là chi phí thật). Khi làm phải sửa cùng lúc: `tests/accounting_integrity.test.js` (đoạn so lãi lỗ đang cộng các khoản này vào), `tests/finance_integrity.test.js`, ghi chú `net_profit_estimate`, `acc_other`, `acc_depreciation` trong `web/src/metrics.js`, và trang Cách đọc số liệu (`guide`). Khấu hao là câu hỏi riêng: hiện chỉ có ở lãi lỗ kế toán.
+**Đã xử lý 2026-11-06:** Báo cáo tổng cộng điều chỉnh kho và kiểm đếm quỹ, còn lọc shop/kênh thì loại các khoản không gán phạm vi. Thuế dùng cùng cơ sở lợi nhuận. Khấu hao và chứng từ thu/chi khác lập tay vẫn chỉ có ở KQKD kế toán, đã giải thích trong từ điển.
 
 ### 2026-11-04 — Làm lại phần tiền của phiếu trả hàng
 
@@ -290,26 +345,21 @@
 **Lỗi phát hiện & đã sửa**
 - Đơn sàn nhận đủ payout vẫn bị báo "thanh toán một phần" → sửa: kênh sàn cần thu = `net_amount`. Đã thêm test.
 
-**Việc tiếp theo (theo thứ tự đề xuất)**
-1. **M13 giao diện tối thiểu dùng được**: đăng nhập/thiết lập, bộ chọn shop, POS bán nhanh trên điện thoại, danh sách & chi tiết đơn, sản phẩm, tồn kho, nhập hàng, khách hàng, import (đọc Excel bằng SheetJS trên trình duyệt). Làm trước để bắt đầu dùng thật và phát hiện lỗi nghiệp vụ sớm.
-2. **M7** chi phí + phân bổ chi phí chung + màn đối soát tiền Shopee đang treo.
-3. **M8** `daily_stats` + báo cáo + sức khoẻ.
-4. **M12** sao lưu tự động hằng ngày + xuất CSV.
-5. **M9**, **M11** (route quản lý + worker gửi webhook), **M10**.
+**Kế hoạch ban đầu:** các module M13, M7, M8, M12, M9, M11 và M10 bên dưới đã được triển khai ở các phiên tiếp theo; không còn là danh sách việc mở.
 
-**Cần kiểm tra lại với chủ shop**
+**Còn chờ dữ liệu/thiết bị bên ngoài**
 - Tên cột trong file xuất đơn của Shopee hiện tại (mẫu `imp_shopee` đang dựa trên tên cột phổ biến, có thể đã đổi).
 - Phí ship shop chịu trên Shopee có bị sàn trừ vào payout không, hay trả riêng.
 - Chu kỳ dùng hết thực tế của từng loại nước hoa.
 
-**Nợ kỹ thuật**
+**Nợ kỹ thuật đã biết, mức ưu tiên thấp**
 - `listStock` tính tốc độ bán 30 ngày bằng query trực tiếp; khi dữ liệu lớn nên đọc từ `daily_stats`.
 - Báo cáo query thẳng bảng `orders` (có index theo shop/ngày), chưa dùng `daily_stats`. Khi dữ liệu lớn mới cần.
 - Hoàn trả tính vào ngày của đơn gốc, không phải ngày trả hàng.
 - Lọc khách theo mệnh lấy hết khách khớp điều kiện rồi mới phân trang (đúng nhưng không tối ưu). Với hàng chục nghìn khách thì cần chuyển mệnh thành cột tính sẵn.
 - Ngày biến động kho của đơn import là ngày đặt; huỷ/trả hàng của đơn import vẫn ghi theo lúc thao tác (không biết ngày huỷ thật trên sàn).
 
-**Chưa làm, cần người thật hoặc quyết định của chủ shop**
+**Còn chờ người thật hoặc thông tin nghiệp vụ**
 - Thử trên iPhone thật qua wifi (cần thiết bị).
 - Kiểm tra với file xuất Shopee thật: tên cột, phí ship shop chịu có bị trừ vào payout không (cần file thật).
 - Điền "chu kỳ dùng hết" cho từng sản phẩm thì mới có nhắc mua lại.
@@ -323,7 +373,7 @@
 - Danh sách Đơn (tab có số đếm, `GET /orders/status-counts`, có test) và Sản phẩm (`stock_total`, `low_stock_count` thêm vào `GET /products`) dễ quan sát; Kho, Khách dùng bảng dính header.
 - Sổ kế toán một hàng công cụ, KQKD/Cân đối thẳng lề; Báo cáo, Kho, Khách, Loyalty, Chi phí, Cài đặt, Guide dùng khung chung.
 - Test: server 161 (thêm 2), web 207 (thêm: định dạng tiền, form dạng trang, phiếu nhập, điều hướng `/pos`).
-- Chưa làm / còn thô: form Chi phí, Chứng từ tay, Tài sản, Chi phí định kỳ vẫn là popup (chưa kiểm popup nào dài quá 6 ô); (đã xử lý ở đợt dưới: chi tiết đơn và hồ sơ khách dùng PageHeader/Section); chưa chụp thử cỡ 390px (công cụ trình duyệt không đổi được viewport); chưa chạy e2e Playwright sau khi sửa case POS; chưa kiểm kỹ cả bốn theme bằng mắt (chỉ theme ô tô).
+- Chưa làm / còn thô: phiếu thu/chi tay ngắn vẫn là popup; bút toán tổng hợp vẫn là popup có bảng dòng động. Form Chi phí, Tài sản và Chi phí định kỳ đã chuyển thành trang. Chưa chụp thử cỡ 390px; chưa chạy e2e thật vì thiếu Playwright; chưa kiểm kỹ cả bốn theme bằng mắt (trước đó mới xem theme ô tô).
 
 **Đợt trường tuỳ chỉnh v2 (2026-11-04, cùng nhánh, kế hoạch `docs/plans/2026-11-truong-tuy-chinh-v2.md`)**
 - A. Xoá trường: `DELETE /custom/fields/:id` (409 `FIELD_REFERENCED` / `CONFIRM_REQUIRED`, snapshot `audit_log`, sự kiện `custom_field.deleted`), `GET /custom/fields/:id/usage`; `FieldsManager` có nút Xoá + hộp xác nhận nói số bản ghi, nút tắt khi còn công thức dùng.
@@ -336,11 +386,7 @@
 - Còn thô: form thêm nhanh dạng gọn (`compact`) của `CustomerPicker` không có ô ngày sinh (để POS nhanh); trường công thức lồng nhau chỉ báo lý do ở mức “chưa có <tên trường>”; migration chỉ viết lại công thức “tuổi” có dạng đúng `TODAY() - {biến}` (khoảng trắng tuỳ ý), dạng khác để nguyên và `check-birthdates` liệt kê công thức còn dùng trường cũ.
 
 **Việc chờ làm (từ kế hoạch trả hàng 2026-11-04, ngoài phạm vi lần này)**
-- Dùng tiền khách gửi (store credit) để trừ vào đơn sau.
-- Đổi hàng trong một bước.
-- Trạng thái "chờ hàng về" cho phiếu trả của sàn.
-- Phí ship chiều về của đơn sàn đang ghi Có 3388 (phải trả khác); nếu sàn thực tế trừ thẳng vào payout thì nên ghi giảm 1388.
-- Phí trả hàng chưa tính vào "Tổng chi tiêu" và hạng của khách (chỉ tính hàng thuần). Để quyết khi làm lại module Loyalty (mục dưới).
+**Đã hoàn tất các nghiệp vụ trả hàng còn mở ngày 2026-11-06:** tiền khách gửi, đổi hàng một bước, và trạng thái chờ nhận hàng sàn. Phí ship chiều về đơn sàn vẫn ghi Có 3388 cho tới khi đối chiếu được file thanh toán thật; phí trả hàng trong tổng chi tiêu/hạng khách giữ nguyên vì Loyalty đang hoãn.
 
 **Việc chờ làm: làm lại module Loyalty cho hoàn chỉnh** (chủ shop dặn ngày 2026-11-04)
 - Chủ shop sẽ tự lên yêu cầu sau vì module có nhiều cài đặt. Khi bắt đầu, **làm trọn một lần**: hạng, chi tiêu, cài đặt, tự động hoá, báo cáo. Không vá từng mảnh nhỏ, để sau không phải quay lại sửa lắt nhắt.
@@ -351,3 +397,15 @@
   - Hạng tính theo toàn tài khoản (hiện tại) hay theo từng shop.
   - Cửa sổ thời gian (12 tháng lăn, năm dương lịch, hay giữ hạng đến hết kỳ).
   - Tích điểm (CLAUDE.md đang ghi không làm vì là khoản nợ với khách) và tiền khách gửi (mục trả hàng ở trên) có gộp vào module này không.
+
+## 2026-11-08 · Ship nhập trả bên vận chuyển
+- Migration 031, `shipping_payee` trên phiếu nhập, `POST /purchases/:id/carrier-payments`, bút toán Có 3388, giao diện chọn người nhận ship và ghi trả ship ở chi tiết phiếu.
+- `tests/purchase_carrier.test.js` (4 test). Lưu ý: `tests/finance.test.js` 'Tuổi nợ' đang fail từ trước (lệch ngày UTC/giờ VN), không do thay đổi này.
+
+## 2026-11-08 · Chốt kho, tài liệu API, trang Hướng dẫn, nền dịu
+- Chốt kỳ kho + đóng kho (CLAUDE.md 5.3A): migration 032, `server/modules/inventory/close.js`, tab Kho → Chốt kho, `tests/stock_close.test.js`. Đóng kho chặn khi còn hàng/kiểm kê/phiếu nhập nháp.
+- Tài liệu API viết lại (`server/modules/system/apidocs/`): 222 route đều có mô tả, ví dụ, mã lỗi, hướng dẫn webhook và kiểm chữ ký; `tests/apidocs.test.js`.
+- `/guide` thành trang Hướng dẫn với 14 bài (`web/src/guides/content.js`), "Cách đọc sức khoẻ kinh doanh" là một bài; menu đổi tên "Hướng dẫn"; e2e và test cập nhật.
+- Nền theme chung và phong thuỷ nhạt hơn.
+- Sửa gạch chân và nút Trước/Tiếp ở Hướng dẫn; màu giao diện riêng của shop (migration 033); gỡ kho có cảnh báo/chuyển hàng (`tests/warehouse_remove.test.js`).
+- Gỡ sản phẩm (xoá hẳn / ngừng kinh doanh / khôi phục, xuất huỷ tồn): `server/modules/catalog/removal.js`, `tests/product_remove.test.js`, giao diện `RemoveProduct`, tab "Đã ngừng kinh doanh".

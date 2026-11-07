@@ -10,6 +10,7 @@ import { recordPayment, netPaid, listPaymentsFor } from '../payments/service.js'
 import { planAllocation, shopWarehouseIds } from './allocation.js';
 import { findOrCreateCustomer, recalcCustomerStats, getCustomer, ensureMember } from '../customers/service.js';
 import { getShop } from '../shops/service.js';
+import { customerCreditBalance, assertCustomerCredit } from '../payments/credit.js';
 
 const db = () => getDb();
 
@@ -57,10 +58,11 @@ export function getOrder(id) {
   o.returns = db()
     .prepare('SELECT * FROM order_returns WHERE order_id = ? ORDER BY created_at')
     .all(o.id)
-    .map((r) => ({ ...r, lines: JSON.parse(r.lines), amount_due_to_customer: returnDueToCustomer(r, isMarketplace(o.channel_id)) }));
+    .map((r) => ({ ...r, lines: JSON.parse(r.lines), awaiting_goods: isMarketplace(o.channel_id) && !r.goods_received_at, amount_due_to_customer: returnDueToCustomer(r, isMarketplace(o.channel_id)) }));
   // Giá trị đã trả của từng dòng (từ các phiếu trả) để giao diện và máy chủ cùng tính phần còn lại theo luỹ kế
   for (const l of o.lines) l.returned_value = o.returns.reduce((a, r) => a + r.lines.filter((x) => x.order_line_id === l.id).reduce((b, x) => b + x.value, 0), 0);
   o.is_marketplace = isMarketplace(o.channel_id);
+  o.customer_credit_balance = customerCreditBalance(o.customer_id, o.shop_id);
   o.amount_due = Math.max(0, dueAmount(o) - o.paid_amount);
   o.needs_refund = o.paid_amount > dueAmount(o);
   o.gross_profit = orderGrossProfit(o);
@@ -145,9 +147,10 @@ export function listOrders(f) {
 function resolveLines(shopId, lines) {
   return lines.map((l, i) => {
     let v;
-    if (l.variant_id) v = db().prepare('SELECT v.*, p.name AS product_name FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(l.variant_id);
-    else if (l.sku) v = db().prepare('SELECT v.*, p.name AS product_name FROM variants v JOIN products p ON p.id = v.product_id WHERE v.sku = ?').get(String(l.sku).trim().toUpperCase());
+    if (l.variant_id) v = db().prepare('SELECT v.*, p.name AS product_name, p.item_type FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(l.variant_id);
+    else if (l.sku) v = db().prepare('SELECT v.*, p.name AS product_name, p.item_type FROM variants v JOIN products p ON p.id = v.product_id WHERE v.sku = ?').get(String(l.sku).trim().toUpperCase());
     if (!v) throw badRequest('VARIANT_NOT_FOUND', `Không tìm thấy sản phẩm ${l.sku || l.variant_id}`, { line: i, sku: l.sku, variant_id: l.variant_id });
+    if (v.item_type !== 'product') throw badRequest('MATERIAL_NOT_SELLABLE', `Mặt hàng ${v.sku} là vật tư kho, không thể thêm vào đơn bán`, { line: i, variant_id: v.id });
     let price = l.unit_price;
     if (price == null) {
       const listing = db().prepare('SELECT price FROM shop_listings WHERE shop_id = ? AND variant_id = ?').get(shopId, v.id);
@@ -242,7 +245,7 @@ function deductStock(o, actor, allowNegative) {
   lines.forEach((l, i) => {
     const done = [];
     for (const it of plan.lines[i].items) {
-      const res = applyMovement({ warehouseId: it.warehouse_id, variantId: it.variant_id, type: 'sale_out', qty: it.qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at });
+      const res = applyMovement({ warehouseId: it.warehouse_id, variantId: it.variant_id, type: 'sale_out', qty: it.qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at, clampIfClosed: true });
       if (res.negative || it.short_qty > 0) warning = true;
       insAlloc.run(newId('ola'), l.id, it.variant_id, it.warehouse_id, it.qty, res.unitCost, nowIso());
       done.push({ variant_id: it.variant_id, qty: it.qty, cost: it.qty * res.unitCost });
@@ -284,7 +287,7 @@ function putBackLine(o, l, qty, { type, note, actor, at, warehouseId }) {
     if (n <= 0) continue;
     const take = Math.min(n, a.qty - a.restocked_qty);
     need.set(a.variant_id, n - take);
-    applyMovement({ warehouseId: warehouseId ?? a.warehouse_id, variantId: a.variant_id, type, qty: take, unitCost: a.unit_cost, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note, actorId: actor?.id, at });
+    applyMovement({ warehouseId: warehouseId ?? a.warehouse_id, variantId: a.variant_id, type, qty: take, unitCost: a.unit_cost, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note, actorId: actor?.id, at, clampIfClosed: true });
     db().prepare('UPDATE order_line_allocations SET restocked_qty = restocked_qty + ? WHERE id = ?').run(take, a.id);
     restored += take * a.unit_cost;
   }
@@ -464,7 +467,13 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
   const target = input.status || 'draft';
   if (target !== 'draft') transitionOrder(id, target, { actor, allowNegative: input.allow_negative_stock ?? false, note: input.status_note });
   for (const p of input.payments ?? []) {
-    if (p.amount > 0) recordPayment({ direction: 'in', refType: 'order', refId: id, shopId: shop.id, amount: p.amount, method: p.method, paidAt: p.paid_at, note: p.note }, actor);
+    if (p.amount > 0) {
+      if (p.method === 'customer_credit') {
+        if (isMarketplace(channel.id)) throw badRequest('CUSTOMER_CREDIT_MARKETPLACE', 'Không thể dùng tiền khách gửi để thanh toán đơn sàn');
+        assertCustomerCredit(customer?.id, shop.id, p.amount);
+      }
+      recordPayment({ direction: 'in', refType: 'order', refId: id, shopId: shop.id, amount: p.amount, method: p.method, paidAt: p.paid_at, note: p.note }, actor);
+    }
   }
   refreshDerived(id);
   if (customer) recalcCustomerStats(customer.id);
@@ -555,6 +564,11 @@ export function updateOrder(id, input, actor) {
 // ---------- Thanh toán ----------
 export function addOrderPayment(id, { amount, method, paidAt, note, direction = 'in' }, actor) {
   const o = getOrder(id);
+  if (method === 'customer_credit') {
+    if (o.is_marketplace) throw badRequest('CUSTOMER_CREDIT_MARKETPLACE', 'Không thể dùng tiền khách gửi cho đơn sàn');
+    if (direction === 'in') assertCustomerCredit(o.customer_id, o.shop_id, amount);
+    if (direction === 'out' && !o.customer_id) throw badRequest('CUSTOMER_CREDIT_CUSTOMER_REQUIRED', 'Cần hồ sơ khách để chuyển tiền hoàn thành tiền khách gửi');
+  }
   if (direction === 'in' && o.status === 'cancelled') throw conflict('ORDER_CANCELLED', 'Đơn đã huỷ');
   if (direction === 'out' && amount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
   if (direction === 'out' && o.status !== 'cancelled' && !o.is_marketplace && o.status !== 'draft' && amount > o.refund_owed_amount) {
@@ -588,7 +602,7 @@ export function returnLineValue(l, qty) {
  * Cần trả khách = hàng + ship hoàn − phí trả hàng; tiền trả ngay không vượt số đó và không vượt số khách đã trả.
  * Kênh sàn: sàn tự hoàn tiền cho người mua → không có ship hoàn, phí trả hàng, tiền trả khách (chỉ ship chiều về nếu sàn tính cho shop).
  */
-export function createReturn(orderId, { lines, reason, refund, returnedAt, shippingRefund = 0, returnFee = 0, returnShippingCost = 0 }, actor) {
+export function createReturn(orderId, { lines, reason, refund, returnedAt, shippingRefund = 0, returnFee = 0, returnShippingCost = 0, awaitingGoods = false }, actor) {
   const o = getOrder(orderId);
   if (!['completed', 'shipping', 'confirmed'].includes(o.status)) throw conflict('INVALID_STATUS', 'Chỉ trả hàng cho đơn đã xác nhận/giao/hoàn thành');
   const refundAmount = refund?.amount ?? 0;
@@ -598,6 +612,7 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
   const shipLeft = o.shipping_fee - o.returned_shipping_amount;
   if (shippingRefund > shipLeft) throw badRequest('OVER_SHIPPING_REFUND', `Hoàn phí ship tối đa ${shipLeft}`, { max: shipLeft });
   const at = toIso(returnedAt) || nowIso();
+  const waitingForGoods = o.is_marketplace && awaitingGoods;
   const id = newId('ret');
   const result = [];
   let goods = 0;
@@ -608,15 +623,15 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
     const value = returnLineValue(l, r.qty);
     goods += value;
     let restoredCost = 0;
-    if (r.restock) {
+    if (r.restock && !waitingForGoods) {
       restoredCost = putBackLine(o, l, r.qty, { type: 'sale_return_in', note: reason, actor, at, warehouseId: r.warehouse_id });
     }
     db()
       .prepare('UPDATE order_lines SET returned_qty = returned_qty + ?, restocked_qty = restocked_qty + ? WHERE id = ?')
-      .run(r.qty, r.restock ? r.qty : 0, l.id);
+      .run(r.qty, r.restock && !waitingForGoods ? r.qty : 0, l.id);
     l.returned_qty += r.qty;
     l.returned_value += value;
-    result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!r.restock, value, unit_cost: l.unit_cost, restored_cost: restoredCost });
+    result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!r.restock, received: !waitingForGoods, value, unit_cost: l.unit_cost, restored_cost: restoredCost });
   }
   if (returnFee > goods + shippingRefund) throw badRequest('OVER_RETURN_FEE', `Phí trả hàng tối đa ${goods + shippingRefund} (hàng trả + ship hoàn)`, { max: goods + shippingRefund });
   const dueToCustomer = goods + shippingRefund - returnFee;
@@ -624,12 +639,14 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
   if (refundAmount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
   db()
     .prepare(
-      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, shipping_refund_amount, return_fee_amount, return_shipping_cost, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, shipping_refund_amount, return_fee_amount, return_shipping_cost, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at, goods_received_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, dailyCode('TH', o.shop_code, at), o.id, o.shop_id, goods, shippingRefund, returnFee, returnShippingCost, refundAmount, reason ?? null, JSON.stringify(result), at, businessDate(at), actor?.id ?? null, nowIso());
+    .run(id, dailyCode('TH', o.shop_code, at), o.id, o.shop_id, goods, shippingRefund, returnFee, returnShippingCost, refundAmount, reason ?? null, JSON.stringify(result), at, businessDate(at), actor?.id ?? null, nowIso(), waitingForGoods ? null : at);
   if (refundAmount > 0) {
-    recordPayment({ direction: 'out', refType: 'order', refId: o.id, shopId: o.shop_id, amount: refundAmount, method: refund.method ?? 'cash', paidAt: at, note: `Hoàn tiền trả hàng` }, actor);
+    const method = refund.to_credit ? 'customer_credit' : refund.method ?? 'cash';
+    if (method === 'customer_credit' && !o.customer_id) throw badRequest('CUSTOMER_CREDIT_CUSTOMER_REQUIRED', 'Cần hồ sơ khách để chuyển tiền hoàn thành tiền khách gửi');
+    recordPayment({ direction: 'out', refType: 'order', refId: o.id, shopId: o.shop_id, amount: refundAmount, method, paidAt: at, note: refund.to_credit ? 'Chuyển tiền trả hàng thành tiền khách gửi' : 'Hoàn tiền trả hàng' }, actor);
   }
   const fully = db().prepare('SELECT SUM(qty - returned_qty) AS left FROM order_lines WHERE order_id = ?').get(o.id).left === 0;
   if (fully) {
@@ -642,4 +659,67 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
   audit(actor, 'order.returned', 'order', o.id, null, { return_id: id, lines: result, goods, shippingRefund, returnFee, returnShippingCost, refundAmount });
   emit('order.returned', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: id, goods_amount: goods, shipping_refund_amount: shippingRefund, return_fee_amount: returnFee, return_shipping_cost: returnShippingCost, refund_amount: refundAmount, order: after } });
   return after;
+}
+
+/** Nhận hàng của phiếu trả sàn: chỉ lúc này mới nhập kho và hoàn giá vốn. */
+export function receiveMarketplaceReturn(orderId, returnId, { actor, receivedAt } = {}) {
+  const o = getOrder(orderId);
+  if (!o.is_marketplace) throw badRequest('MARKETPLACE_ONLY', 'Chỉ dùng cho phiếu trả của đơn sàn');
+  const ret = db().prepare('SELECT * FROM order_returns WHERE id = ? AND order_id = ?').get(returnId, orderId);
+  if (!ret) throw notFound('Phiếu trả hàng');
+  if (ret.goods_received_at) throw conflict('RETURN_ALREADY_RECEIVED', 'Hàng của phiếu trả này đã được nhận');
+  const at = toIso(receivedAt) || nowIso();
+  const lines = JSON.parse(ret.lines || '[]');
+  for (const item of lines) {
+    if (!item.restock) { item.received = true; continue; }
+    const line = db().prepare('SELECT * FROM order_lines WHERE id = ? AND order_id = ?').get(item.order_line_id, orderId);
+    if (!line) throw conflict('RETURN_LINE_MISSING', 'Không tìm thấy dòng đơn của phiếu trả');
+    item.restored_cost = putBackLine(o, line, item.qty, { type: 'sale_return_in', note: ret.reason, actor, at });
+    item.received = true;
+    db().prepare('UPDATE order_lines SET restocked_qty = restocked_qty + ? WHERE id = ?').run(item.qty, line.id);
+  }
+  db().prepare('UPDATE order_returns SET lines = ?, goods_received_at = ? WHERE id = ?').run(JSON.stringify(lines), at, returnId);
+  refreshDerived(orderId);
+  if (o.customer_id) recalcCustomerStats(o.customer_id);
+  const after = getOrder(orderId);
+  audit(actor, 'order.return_goods_received', 'order', o.id, null, { return_id: returnId, received_at: at });
+  emit('order.return_goods_received', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: returnId, order: after } });
+  return after;
+}
+
+/** Đổi hàng một giao dịch: ghi phiếu trả, chuyển phần đã thu thành tiền khách gửi, rồi tạo đơn hàng mới. */
+export function exchangeOrder(orderId, { returnLines, newLines, reason, shippingFee = 0, paymentMethod = 'cash' }, actor) {
+  const old = getOrder(orderId);
+  if (old.is_marketplace) throw badRequest('MARKETPLACE_EXCHANGE', 'Đơn sàn cần xử lý trả hàng theo quy trình của sàn, không hỗ trợ đổi trực tiếp');
+  if (!old.customer_id) throw badRequest('CUSTOMER_REQUIRED', 'Cần gắn đơn với hồ sơ khách để đổi hàng và đối trừ tiền chính xác');
+  if (!['confirmed', 'shipping', 'completed'].includes(old.status)) throw conflict('INVALID_STATUS', 'Chỉ đổi hàng cho đơn đã xác nhận/giao/hoàn thành');
+  if (!returnLines?.length || !newLines?.length) throw badRequest('EXCHANGE_LINES_REQUIRED', 'Chọn ít nhất một sản phẩm trả và một sản phẩm đổi');
+  const returnedGoods = returnLines.reduce((sum, r) => {
+    const line = old.lines.find((l) => l.id === r.order_line_id);
+    if (!line || r.qty < 1 || r.qty > line.qty - line.returned_qty) throw badRequest('RETURN_QTY', 'Số lượng đổi vượt phần hàng còn lại');
+    return sum + returnLineValue(line, r.qty);
+  }, 0);
+  const creditIssued = Math.min(returnedGoods, old.paid_amount);
+  const returned = createReturn(orderId, {
+    lines: returnLines,
+    reason: reason || 'Đổi hàng',
+    refund: creditIssued ? { amount: creditIssued, method: 'customer_credit', to_credit: true } : null,
+  }, actor);
+  const h = computeHeader(resolveLines(old.shop_id, newLines), { shipping_fee: shippingFee });
+  const creditUsed = Math.min(creditIssued, h.total_amount);
+  const cashDue = h.total_amount - creditUsed;
+  const created = createOrder({
+    shop_id: old.shop_id,
+    channel_id: old.channel_id,
+    customer_id: old.customer_id,
+    lines: newLines,
+    shipping_fee: shippingFee,
+    status: 'completed',
+    payments: [
+      ...(creditUsed ? [{ amount: creditUsed, method: 'customer_credit' }] : []),
+      ...(cashDue ? [{ amount: cashDue, method: paymentMethod }] : []),
+    ],
+  }, actor);
+  audit(actor, 'order.exchanged', 'order', old.id, null, { return_order_id: old.id, new_order_id: created.id, credit_issued: creditIssued, credit_used: creditUsed, cash_due: cashDue });
+  return { returned, created, credit_issued: creditIssued, credit_used: creditUsed, cash_due: cashDue, remaining_credit: creditIssued - creditUsed };
 }

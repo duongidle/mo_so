@@ -5,6 +5,7 @@ import { getSettings } from '../settings/service.js';
 import { listStock } from '../inventory/service.js';
 import { COUNTED, readStats } from './stats.js';
 import { categoryClause as categoryClauseOf } from '../../lib/categories.js';
+import { flushJournal } from '../accounting/journal.js';
 
 const db = () => getDb();
 
@@ -182,8 +183,20 @@ export function previousPeriod(f) {
   return { ...f, from: addDays(f.from, -len), to: addDays(f.from, -1) };
 }
 
-function withProfit(s, expenses) {
-  return { ...s, expenses_amount: expenses, net_profit_estimate: s.gross_profit - expenses };
+function unassignedOtherProfit(f) {
+  // Điều chỉnh kho và kiểm đếm quỹ là thu/chi khác trong sổ cái, không gắn với shop.
+  // Không lấy toàn bộ 711/811: tiền phạt qua danh mục chi phí đã có trong expenses.
+  if (f.shopIds || f.channel) return 0;
+  flushJournal();
+  return db().prepare(`SELECT COALESCE(SUM(l.credit - l.debit), 0) AS amount
+    FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
+    WHERE e.voided_at IS NULL AND e.entry_date >= ? AND e.entry_date <= ?
+      AND e.source_type IN ('stock','cash_entry') AND l.account_code IN ('711','811')`)
+    .get(f.from, f.to).amount;
+}
+
+function withProfit(s, expenses, otherProfit = 0) {
+  return { ...s, expenses_amount: expenses, other_profit_adjustment: otherProfit, net_profit_estimate: s.gross_profit - expenses + otherProfit };
 }
 
 const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả + phí trả hàng thu được', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
@@ -195,7 +208,7 @@ function taxBase(base, from, to) {
   const s = sumOrders(all);
   if (base === 'net_revenue') return s.net_revenue;
   if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee + s.return_fee;
-  return s.gross_profit - expensesFor(all).total;
+  return s.gross_profit - expensesFor(all).total + unassignedOtherProfit(all);
 }
 
 /**
@@ -236,8 +249,8 @@ export function overview(filter) {
   const prevF = previousPeriod(f);
   const prev = sumOrders(prevF);
   const prevExp = expensesFor(prevF);
-  const current = withProfit(cur, exp.total);
-  const previous = withProfit(prev, prevExp.total);
+  const current = withProfit(cur, exp.total, unassignedOtherProfit(f));
+  const previous = withProfit(prev, prevExp.total, unassignedOtherProfit(prevF));
   const change = {};
   for (const k of ['net_revenue', 'gross_profit', 'order_count', 'net_profit_estimate', 'aov']) {
     change[k] = previous[k] ? Math.round(((current[k] - previous[k]) / Math.abs(previous[k])) * 1000) / 10 : null;

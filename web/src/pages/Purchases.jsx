@@ -67,19 +67,21 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
   const [lines, setLines] = useState([]);
   const [fees, setFees] = useState({ shipping_fee: 0, other_fee: 0, discount_amount: 0 });
   const [paid, setPaid] = useState(0);
+  const [shipTo, setShipTo] = useState('supplier'); // ai nhận tiền ship: nhà cung cấp hay bên vận chuyển
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const sup = useAsync(() => api.get('/suppliers'), []);
   const found = useAsync(() => (dq ? api.get('/variants', { q: dq, all: '1', limit: 8 }) : null), [dq]);
   const { busy, error, run } = useAction();
   const sub = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
-  const total = sub - (Number(fees.discount_amount) || 0) + (Number(fees.shipping_fee) || 0) + (Number(fees.other_fee) || 0);
+  const carrier = shipTo === 'carrier' ? Number(fees.shipping_fee) || 0 : 0;
+  const total = sub - (Number(fees.discount_amount) || 0) + (Number(fees.shipping_fee) || 0) - carrier + (Number(fees.other_fee) || 0);
   const upd = (id, p) => setLines((l) => l.map((x) => (x.id === id ? { ...x, ...p } : x)));
   const dirty = lines.length > 0 || !!supplier || Number(paid) > 0 || Object.values(fees).some((v) => Number(v) > 0);
   useEffect(() => { onDirty?.(dirty); }, [dirty, onDirty]);
   const save = (receive) => run(async () => {
     await api.post('/purchases', {
-      supplier_id: supplier || null, warehouse_id: wh, receive, paid_amount: receive ? Number(paid) || 0 : 0, ...Object.fromEntries(Object.entries(fees).map(([k, v]) => [k, Number(v) || 0])),
+      supplier_id: supplier || null, warehouse_id: wh, receive, shipping_payee: shipTo, paid_amount: receive ? Number(paid) || 0 : 0, ...Object.fromEntries(Object.entries(fees).map(([k, v]) => [k, Number(v) || 0])),
       lines: lines.map((l) => ({ variant_id: l.id, qty: Number(l.qty), unit_cost: Number(l.unit_cost) })),
     }, { 'Idempotency-Key': crypto.randomUUID?.() });
     onDirty?.(false);
@@ -106,12 +108,18 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
         <Section title="Phí & thanh toán">
           <div className="stack">
             <Field label="Phí ship nhập"><MoneyInput value={fees.shipping_fee} onChange={(e) => setFees({ ...fees, shipping_fee: e.target.value })} /></Field>
+            {Number(fees.shipping_fee) > 0 && (
+              <Field label="Ship trả cho" hint={shipTo === 'carrier' ? 'Vẫn tính vào giá vốn, nhưng không cộng vào số nợ nhà cung cấp. Trả bên vận chuyển ở trang chi tiết phiếu.' : 'Nhà cung cấp thu hộ: cộng vào số nợ nhà cung cấp.'}>
+                <select value={shipTo} onChange={(e) => setShipTo(e.target.value)}><option value="supplier">Nhà cung cấp</option><option value="carrier">Bên vận chuyển</option></select>
+              </Field>
+            )}
             <Field label="Phí khác"><MoneyInput value={fees.other_fee} onChange={(e) => setFees({ ...fees, other_fee: e.target.value })} /></Field>
             <Field label="Chiết khấu"><MoneyInput value={fees.discount_amount} onChange={(e) => setFees({ ...fees, discount_amount: e.target.value })} /></Field>
             <Field label="Đã trả nhà cung cấp" hint="Chỉ ghi nhận khi bấm Nhận hàng & lưu"><MoneyInput value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
             <div>
               <div className="ledger-line"><span>Tiền hàng</span><span className="num">{vnd(sub)}</span></div>
-              <div className="ledger-line total"><span>Tổng cộng</span><span className="num">{vnd(total)}</span></div>
+              {carrier > 0 && <div className="ledger-line"><span>Ship trả bên vận chuyển</span><span className="num">{vnd(carrier)}</span></div>}
+              <div className="ledger-line total"><span>{carrier > 0 ? 'Phải trả nhà cung cấp' : 'Tổng cộng'}</span><span className="num">{vnd(total)}</span></div>
             </div>
           </div>
         </Section>
@@ -155,6 +163,7 @@ export function PurchasePage() {
   const s = useAsync(() => api.get(`/purchases/${id}`), [id]);
   const { busy, error, run } = useAction();
   const [pay, setPay] = useState('');
+  const [shipPay, setShipPay] = useState('');
   const [refund, setRefund] = useState(null); // phương thức NCC hoàn tiền khi huỷ phiếu đã trả tiền
   return (
     <div className="page stack">
@@ -176,6 +185,18 @@ export function PurchasePage() {
                     <div className="ledger-line"><span>Đã trả</span><b className="num">{vnd(p.paid_amount)}</b></div>
                   </div>
                   {p.payments?.map((x) => <div key={x.id} className="small muted">{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)}</div>)}
+                  {p.carrier_amount > 0 && (
+                    <div className="stack" style={{ gap: 8 }}>
+                      <div>
+                        <div className="ledger-line"><span>Ship trả bên vận chuyển</span><b className="num">{vnd(p.carrier_amount)}</b></div>
+                        <div className="ledger-line"><span>Đã trả ship</span><b className="num">{vnd(p.carrier_paid_amount)}</b></div>
+                      </div>
+                      {p.carrier_payments?.map((x) => <div key={x.id} className="small muted">{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)} (ship)</div>)}
+                      {p.status === 'received' && p.carrier_debt > 0 && (
+                        <div className="row"><MoneyInput placeholder={`Trả ship (còn ${p.carrier_debt})`} value={shipPay} onChange={(e) => setShipPay(e.target.value)} /><button className="btn" disabled={busy || !shipPay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/carrier-payments`, { amount: Number(shipPay) }); setShipPay(''); s.reload(); })}>Ghi trả ship</button></div>
+                      )}
+                    </div>
+                  )}
                   {p.status === 'received' && p.debt > 0 && (
                     <div className="row"><MoneyInput placeholder={`Trả nợ (còn ${p.debt})`} value={pay} onChange={(e) => setPay(e.target.value)} /><button className="btn" disabled={busy || !pay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay) }); setPay(''); s.reload(); })}>Ghi trả</button></div>
                   )}
@@ -186,12 +207,12 @@ export function PurchasePage() {
                   <ErrorBox error={error} />
                   <div className="row wrap">
                     {p.status === 'draft' && <button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/receive`); s.reload(); })}>Nhận hàng</button>}
-                    {p.status !== 'cancelled' && p.paid_amount === 0 && <button className="btn danger" disabled={busy} onClick={() => confirm('Huỷ phiếu? Nếu đã nhận, kho sẽ bị trừ lại.') && run(async () => { await api.post(`/purchases/${p.id}/cancel`, {}); s.reload(); })}>Huỷ phiếu</button>}
-                    {p.status !== 'cancelled' && p.paid_amount > 0 && <button className="btn danger" disabled={busy} onClick={() => setRefund('bank')}>Huỷ phiếu</button>}
+                    {p.status !== 'cancelled' && p.paid_amount === 0 && !(p.carrier_paid_amount > 0) && <button className="btn danger" disabled={busy} onClick={() => confirm('Huỷ phiếu? Nếu đã nhận, kho sẽ bị trừ lại.') && run(async () => { await api.post(`/purchases/${p.id}/cancel`, {}); s.reload(); })}>Huỷ phiếu</button>}
+                    {p.status !== 'cancelled' && (p.paid_amount > 0 || p.carrier_paid_amount > 0) && <button className="btn danger" disabled={busy} onClick={() => setRefund('bank')}>Huỷ phiếu</button>}
                   </div>
                   {refund && (
                     <div className="alert warn stack small" style={{ gap: 8 }}>
-                      <span>Phiếu đã trả nhà cung cấp <b>{vnd(p.paid_amount)}</b>. Huỷ phiếu nghĩa là nhà cung cấp hoàn lại số tiền này. Họ hoàn bằng cách nào?</span>
+                      <span>Phiếu đã trả <b>{vnd(p.paid_amount + p.carrier_paid_amount)}</b>{p.carrier_paid_amount > 0 ? ' (gồm tiền ship cho bên vận chuyển)' : ''}. Huỷ phiếu nghĩa là số tiền này được hoàn lại. Hoàn bằng cách nào?</span>
                       <div className="row wrap">
                         <select value={refund} onChange={(e) => setRefund(e.target.value)} aria-label="Phương thức hoàn tiền">{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
                         <button className="btn danger" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/cancel`, { refund_method: refund }); setRefund(null); s.reload(); })}>Huỷ phiếu và ghi nhận hoàn tiền</button>

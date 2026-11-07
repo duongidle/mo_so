@@ -17,6 +17,8 @@ const shopInput = z.object({
   address: optionalText,
   receipt_footer: optionalText,
   industry: z.enum(INDUSTRY_IDS).optional(),
+  // Màu giao diện riêng của shop; null = về màu mặc định của chủ đề
+  ui_colors: z.object({ primary: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(), background: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish() }).nullable().optional(),
 });
 
 r.get('/', (c) => c.json({ data: listShops({ includeArchived: c.req.query('archived') === '1' }) }));

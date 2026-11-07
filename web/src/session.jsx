@@ -1,12 +1,17 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
+import { useInRouterContext, useLocation } from 'react-router-dom';
+import { allowsAllShops } from './lib/routes.js';
 import { api } from './api.js';
 import { methodLabels, methodOptions } from './lib.js';
+import { applyColors } from './lib/colors.js';
 
 const Ctx = createContext(null);
 export const useSession = () => useContext(Ctx);
 
 /** Tải một lần các danh mục dùng khắp nơi (shop, kho, kênh) và nhớ shop đang làm việc */
 export function SessionProvider({ user, onLogout, children }) {
+  // Vị trí hiện tại quyết định có được dùng "Tất cả shop" hay không (cần để số liệu khớp với nút chọn shop). Ngoài router (test) coi như trang cho phép.
+  const pathname = useInRouterContext() ? useLocation().pathname : '/'; // eslint-disable-line react-hooks/rules-of-hooks
   const [meta, setMeta] = useState(null);
   const [shopId, setShopIdState] = useState(() => {
     try { return localStorage.getItem('moso.shop') || ''; } catch { return ''; }
@@ -26,12 +31,19 @@ export function SessionProvider({ user, onLogout, children }) {
   };
   // Shop đã chọn không còn tồn tại (bị ẩn) → quay về shop đầu tiên
   const valid = !!meta && (shopId === 'all' || meta.shops.some((s) => s.id === shopId));
-  const effective = meta && valid && shopId ? shopId : meta?.shops[0]?.id;
+  let effective = meta && valid && shopId ? shopId : meta?.shops[0]?.id;
+  // Trang không có "Tất cả shop" (Sản phẩm, Nhập hàng, Chi phí, Cài đặt…) thì làm việc với shop đầu tiên, đúng như nút chọn shop đang hiển thị.
+  // Lựa chọn "Tất cả shop" đã lưu vẫn giữ nguyên để quay lại trang cho phép là còn đó.
+  if (effective === 'all' && !allowsAllShops(pathname)) effective = meta?.shops[0]?.id;
   const shop = meta && effective !== 'all' ? meta.shops.find((s) => s.id === effective) || null : null;
   // Ngành của shop đang làm việc quyết định giao diện và tính năng. "Tất cả shop" dùng giao diện chung.
   const industry = useMemo(() => (meta && shop ? meta.industries.find((i) => i.id === shop.industry) || meta.industries[0] : null), [meta, shop]);
   const theme = industry?.theme || 'general';
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  // Màu riêng của shop đang làm việc (ghi đè màu chủ đề); "Tất cả shop" và shop không đặt màu dùng màu của chủ đề
+  const primary = shop?.ui_colors?.primary || null;
+  const background = shop?.ui_colors?.background || null;
+  useEffect(() => { applyColors({ primary, background }); return () => applyColors(null); }, [primary, background]);
   if (!meta) return <div className="empty">Đang tải…</div>;
   const features = industry?.features || [];
   const platformEnabled = (id) => !!meta.platforms.find((p) => p.id === id)?.enabled;

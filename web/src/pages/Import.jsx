@@ -119,7 +119,7 @@ export default function ImportPanel({ onClose, defaultShop }) {
         {parsed && <p className="small">Đọc được <b>{parsed.rows.length}</b> dòng, <b>{parsed.columns.length}</b> cột.</p>}
         {missing.length > 0 && <div className="alert warn small">Không thấy các cột mà mẫu đang mong đợi: {[...new Set(missing.map(([k, c]) => `“${c}” (${k})`))].join(', ')}. Dữ liệu các trường này sẽ trống. Nếu sàn đã đổi tên cột, sửa mẫu map cột trong Cài đặt.</div>}
         <ErrorBox error={error} />
-        <div className="row" style={{ marginTop: 10 }}><button className="btn primary" disabled={!parsed || busy} onClick={() => send(false)}>{busy ? 'Đang xử lý…' : 'Xem thử (chưa ghi gì)'}</button></div>
+        <div className="row" style={{ marginTop: 12 }}><button className="btn primary" disabled={!parsed || busy} onClick={() => send(false)}>{busy ? 'Đang xử lý…' : 'Xem thử (chưa ghi gì)'}</button></div>
       </Card>
 
       {editing && <ProfileEditor profile={editing.profile} channels={channels} columns={parsed?.columns || []} rows={parsed?.rows || []} onClose={() => setEditing(null)}
@@ -139,7 +139,7 @@ export default function ImportPanel({ onClose, defaultShop }) {
             ))}</tbody>
           </table></div>
           {!final && (
-            <div className="row" style={{ marginTop: 10 }}>
+            <div className="row" style={{ marginTop: 12 }}>
               <button className="btn primary" disabled={busy || show.summary.created + show.summary.updated === 0} onClick={() => send(true)}>Ghi vào hệ thống ({show.summary.created + show.summary.updated} đơn)</button>
               {show.summary.error > 0 && <span className="small muted">Đơn lỗi sẽ không được ghi; sửa file rồi import lại phần đó.</span>}
             </div>

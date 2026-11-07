@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Async, Card, Chips, Empty, ErrorBox, Field, Modal, PageHeader, SearchBox, Tabs, Toolbar, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import { vnd, num } from '../lib.js';
 import { Element } from '../components/Motif.jsx';
@@ -12,16 +12,21 @@ import { flattenTree, indent } from '../lib/categories.js';
 export default function Products() {
   const { shopId, shops, isAll, has } = useSession();
   const nav = useNavigate();
+  const loc = useLocation();
+  const [notice, setNotice] = useState(loc.state?.notice || '');
   const [tab, setTab] = useState('products');
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [type, setType] = useState('');
+  const [itemType, setItemType] = useState('');
   const [cat, setCat] = useState('');
   const [sync, setSync] = useState(false);
   const cats = useAsync(() => api.get('/categories'), []);
   const catList = useMemo(() => flattenTree(cats.data?.data || []), [cats.data]);
   const catName = useMemo(() => Object.fromEntries(catList.map((c) => [c.id, c.name])), [catList]);
-  const state = useAsync(() => api.get('/products', { shop_id: isAll ? undefined : shopId, q: dq || undefined, type: type || undefined, category_id: cat || undefined, limit: 200 }), [shopId, dq, type, cat]);
+  const archivedTab = tab === 'archived';
+  const unlistedOnly = type === 'unlisted'; // sản phẩm chưa gắn vào shop nào: không hiện khi lọc theo shop nên cần chip riêng
+  const state = useAsync(() => api.get('/products', { shop_id: isAll || itemType || archivedTab || unlistedOnly ? undefined : shopId, unlisted: unlistedOnly ? 'only' : itemType || archivedTab ? '1' : undefined, archived: archivedTab ? 'only' : undefined, q: dq || undefined, type: unlistedOnly ? undefined : type || undefined, item_type: itemType || undefined, category_id: cat || undefined, limit: 200 }), [shopId, dq, type, itemType, cat, tab]);
   const fengShui = has('feng_shui') && !isAll;
 
   return (
@@ -31,39 +36,40 @@ export default function Products() {
         actions={<>
           {!isAll && shops.length > 1 && <button className="btn" onClick={() => setSync(true)}>Đồng bộ từ shop khác</button>}
           <Link to="/products/combo/new" className="btn">+ Combo</Link>
-          <Link to="/products/new" className="btn primary">+ Sản phẩm</Link>
+          <Link to="/products/new" className="btn primary">+ Thêm mặt hàng</Link>
         </>}
       />
       <Toolbar>
-        <Tabs options={[['products', 'Sản phẩm'], ['categories', 'Danh mục']]} value={tab} onChange={setTab} />
-        {tab === 'products' && <>
-          <Chips options={[['', 'Tất cả'], ['single', 'Sản phẩm'], ['combo', 'Combo']]} value={type} onChange={setType} />
+        <Tabs options={[['products', 'Sản phẩm'], ['archived', 'Đã ngừng kinh doanh'], ['categories', 'Danh mục']]} value={tab} onChange={setTab} />
+        {tab !== 'categories' && <>
+          <Chips options={[['', 'Hàng bán'], ['single', 'Đơn lẻ'], ['combo', 'Combo'], ['packaging', 'Đóng gói'], ['supply', 'Vận hành'], ['unlisted', 'Chưa gắn shop']]} value={itemType || type} onChange={(v) => { const material = v === 'packaging' || v === 'supply'; setItemType(material ? v : ''); setType(material ? '' : v); }} />
           <SearchBox value={q} onChange={setQ} placeholder="Tìm tên, SKU, mã vạch…" />
           <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục">
             <option value="">Mọi danh mục</option>{catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
           </select>
         </>}
       </Toolbar>
+      {notice && <div className="alert ok small" role="status">{notice}</div>}
       {tab === 'categories' ? <Categories onChanged={cats.reload} /> : (
         <Async state={state}>
-          {({ data }) => !data.length ? <Empty>{q || type || cat ? 'Không có sản phẩm khớp bộ lọc.' : 'Chưa có sản phẩm. Bấm “+ Sản phẩm” để thêm.'}</Empty> : (
+          {({ data }) => !data.length ? <Empty>{archivedTab ? 'Chưa có sản phẩm nào ngừng kinh doanh.' : q || type || cat ? 'Không có sản phẩm khớp bộ lọc.' : 'Chưa có sản phẩm. Bấm “+ Sản phẩm” để thêm.'}</Empty> : (
             <Card flat className="list-card sticky-head"><div className="table-wrap"><table className="stackable product-table">
               <thead><tr><th>Sản phẩm</th><th className="hide-sm num">Biến thể</th><th className="num">Giá bán</th><th className="num">Tồn</th>{fengShui && <th className="hide-sm">Ngũ hành</th>}<th className="hide-sm">Trạng thái</th></tr></thead>
               <tbody>{data.map((p) => {
                 const img = p.image_url || p.variants.find((v) => v.image_url)?.image_url;
                 const live = p.variants.filter((v) => !v.archived_at);
-                const prices = live.map((v) => v.listings.find((l) => l.shop_id === shopId)?.price ?? v.default_price);
+                const prices = p.item_type === 'product' ? live.map((v) => v.listings.find((l) => l.shop_id === shopId)?.price ?? v.default_price) : [];
                 const isCombo = p.variants.some((v) => v.kind === 'bundle');
-                const selling = !isAll ? live.some((v) => v.listings.some((l) => l.shop_id === shopId && l.active !== 0 && l.active !== false)) : live.length > 0;
+                const selling = p.item_type === 'product' && (!isAll ? live.some((v) => v.listings.some((l) => l.shop_id === shopId && l.active !== 0 && l.active !== false)) : live.length > 0);
                 const low = p.low_stock_count > 0;
                 return (
                   <tr key={p.id} className="click" tabIndex={0} onClick={() => nav(`/products/${p.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/products/${p.id}`)}>
-                    <td className="pcell"><div className="row" style={{ gap: 12 }}><ProductThumb src={img} name={p.name} size={40} /><div className="grow"><b>{p.name}</b>{isCombo && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<span className="sub">{[p.category_id && catName[p.category_id], live.slice(0, 2).map((v) => v.sku).join(', ') + (live.length > 2 ? '…' : '')].filter(Boolean).join(' · ')}</span></div></div></td>
+                    <td className="pcell"><div className="row" style={{ gap: 12 }}><ProductThumb src={img} name={p.name} size={40} /><div className="grow"><b>{p.name}</b>{p.item_type !== 'product' && <span className="badge plain" style={{ marginLeft: 8 }}>{p.item_type === 'packaging' ? 'Đóng gói' : 'Vận hành'}</span>}{isCombo && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<span className="sub">{[p.category_id && catName[p.category_id], live.slice(0, 2).map((v) => v.sku).join(', ') + (live.length > 2 ? '…' : '')].filter(Boolean).join(' · ')}</span></div></div></td>
                     <td className="hide-sm num">{live.length}</td>
-                    <td className="num">{prices.length ? (Math.min(...prices) === Math.max(...prices) ? vnd(prices[0]) : `${vnd(Math.min(...prices))} – ${vnd(Math.max(...prices))}`) : ''}</td>
+                    <td className="num">{p.item_type !== 'product' ? <span className="muted">—</span> : prices.length ? (Math.min(...prices) === Math.max(...prices) ? vnd(prices[0]) : `${vnd(Math.min(...prices))} – ${vnd(Math.max(...prices))}`) : ''}</td>
                     <td className={`num${low ? ' h-red' : ''}`}>{isCombo || p.stock_total === null || p.stock_total === undefined ? <span className="muted">—</span> : <b>{num(p.stock_total)}</b>}{low && <span className="sub h-red">dưới tối thiểu</span>}</td>
                     {fengShui && <td className="hide-sm"><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>}
-                    <td className="hide-sm">{selling ? <span className="badge st-completed">Đang bán</span> : <span className="badge plain">Ngừng bán</span>}</td>
+                    <td className={archivedTab ? '' : 'hide-sm'}>{archivedTab ? <button type="button" className="btn sm" onClick={async (e) => { e.stopPropagation(); await api.post(`/products/${p.id}/restore`); setNotice(`Đã khôi phục ${p.name}.`); state.reload(); }}>Khôi phục</button> : p.item_type !== 'product' ? <span className="badge plain">Vật tư kho</span> : selling ? <span className="badge st-completed">Đang bán</span> : <span className="badge plain">Ngừng bán</span>}</td>
                   </tr>);
               })}</tbody>
             </table></div></Card>

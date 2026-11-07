@@ -78,7 +78,7 @@ export default function Reports() {
 
   return (
     <div className="page stack">
-      <PageHeader title="Báo cáo" actions={<><Link className="btn" to="/guide">Cách đọc các chỉ số</Link><ExportButton tab={tab} data={ready} range={range} shopName={isAll ? null : shop?.name} /></>} />
+      <PageHeader title="Báo cáo" actions={<><Link className="btn" to="/guide/suc-khoe-kinh-doanh">Cách đọc các chỉ số</Link><ExportButton tab={tab} data={ready} range={range} shopName={isAll ? null : shop?.name} /></>} />
       <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} /></Toolbar>
       <Toolbar><DateRange {...range} onChange={setRange} />{PRESETS.map(([l, f]) => <button key={l} className="btn sm" onClick={() => { const [from, to] = f(); setRange({ from, to }); }}>{l}</button>)}
         {tab === 'products' && <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục sản phẩm"><option value="">Mọi danh mục</option>{(cats.data?.data || []).map((c) => <option key={c.id} value={c.id}>{c.parent_id ? '— ' : ''}{c.name}</option>)}</select>}</Toolbar>
@@ -103,7 +103,7 @@ function ExportButton({ tab, data, range, shopName }) {
   return <button className="btn" disabled={!data} onClick={go}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất Excel</button>;
 }
 
-const Row = ({ l, v, bold, neg, m }) => <div className="row between" style={bold ? { fontWeight: 700, borderTop: '1px solid var(--champagne)', paddingTop: 6 } : undefined}><MetricLabel metric={m}>{l}</MetricLabel>{v !== null && <span className="num">{neg ? '− ' : ''}{vnd(v)}</span>}</div>;
+const Row = ({ l, v, bold, neg, m }) => <div className="row between" style={bold ? { fontWeight: 700, borderTop: '1px solid var(--champagne)', paddingTop: 8 } : undefined}><MetricLabel metric={m}>{l}</MetricLabel>{v !== null && <span className="num">{neg ? '− ' : ''}{vnd(v)}</span>}</div>;
 
 const Th = ({ m, children, className = 'num', ...rest }) => <th className={className} {...rest}><MetricLabel metric={m}>{children}</MetricLabel></th>;
 
@@ -133,8 +133,8 @@ function Body({ tab, d, elements }) {
       <>
         <Card title="Lợi nhuận"><div className="stack small">
           <Row m="net_revenue" l="Doanh thu thuần" v={c.net_revenue} /><Row m="shipping_fee" l="Phí ship khách trả (sau hoàn ship)" v={c.shipping_fee} />{c.return_fee > 0 && <Row m="return_fee" l="Phí trả hàng thu được" v={c.return_fee} />}<Row m="platform_fee" l="Phí sàn" v={c.platform_fee} neg /><Row m="seller_shipping" l="Ship shop chịu" v={c.seller_shipping} neg />{c.return_shipping_cost > 0 && <Row m="return_shipping_cost" l="Phí ship chiều về (trả hàng)" v={c.return_shipping_cost} neg />}<Row m="cogs" l="Giá vốn" v={c.cogs} neg />
-          <Row m="gross_profit" l="Lợi nhuận gộp" v={c.gross_profit} bold /><Row m="gross_margin_pct" l={`Biên lợi nhuận gộp: ${pct(c.gross_margin_pct)}`} v={null} /><Row m="expenses_amount" l="Chi phí (gồm phần chia từ chi phí chung)" v={c.expenses_amount} neg /><Row m="net_profit_estimate" l="Lợi nhuận ròng ước tính" v={c.net_profit_estimate} bold />
-        </div><p className="small muted" style={{ marginTop: 8 }}>“Ước tính” vì chưa tính thuế và các khoản ngoài sổ.</p></Card>
+          <Row m="gross_profit" l="Lợi nhuận gộp" v={c.gross_profit} bold /><Row m="gross_margin_pct" l={`Biên lợi nhuận gộp: ${pct(c.gross_margin_pct)}`} v={null} /><Row m="expenses_amount" l="Chi phí (gồm phần chia từ chi phí chung)" v={c.expenses_amount} neg />{c.other_profit_adjustment !== 0 && <Row m="report_other_adjustment" l="Điều chỉnh kho và kiểm đếm quỹ" v={c.other_profit_adjustment} />}<Row m="net_profit_estimate" l="Lợi nhuận ròng ước tính" v={c.net_profit_estimate} bold />
+        </div><p className="small muted" style={{ marginTop: 8 }}>“Ước tính” vì chưa tính thuế, khấu hao và các chứng từ thu/chi khác lập tay.</p></Card>
         {ov.tax?.applicable && (
           <Card title={<MetricLabel metric="tax_estimate">Ước tính thuế</MetricLabel>} actions={<Link className="btn sm" to="/settings">Đổi quy tắc</Link>}><div className="stack small">
             {ov.tax.items.map((t) => <div key={t.name} className="row between"><span>{t.name} <span className="muted">({String(t.rate_pct).replace('.', ',')}% trên {t.base_label.toLowerCase()}{t.exempt_threshold_year ? `, miễn ${vnd(t.exempt_threshold_year)}/năm` : ''})</span></span><span className="num">{vnd(t.tax)}</span></div>)}
@@ -254,7 +254,7 @@ function CashTab({ cf, aging, accounts, meta }) {
   return (
     <>
       <Card title={<MetricLabel metric="fund_balance">{`Số dư các quỹ · ${vnd(accounts.total_balance)}`}</MetricLabel>} actions={<Link className="btn sm" to="/expenses?tab=cash">Quản lý quỹ</Link>}>
-        {accounts.data.map((a) => <div key={a.id} className="row between" style={{ padding: '6px 0' }}><span>{a.name}</span><b className={`num ${a.balance < 0 ? 'h-red' : ''}`}>{vnd(a.balance)}</b></div>)}
+        {accounts.data.map((a) => <div key={a.id} className="row between" style={{ padding: '8px 0' }}><span>{a.name}</span><b className={`num ${a.balance < 0 ? 'h-red' : ''}`}>{vnd(a.balance)}</b></div>)}
         {accounts.unassigned.has_activity && <div className="alert warn small" style={{ marginTop: 8 }}>Có {vnd(accounts.unassigned.net)} ở phương thức chưa gán quỹ nào ({accounts.unassigned.methods.join(', ')}). Gán ở Chi phí & đối soát → Quỹ tiền để số dư đủ.</div>}
         <p className="small muted" style={{ marginBottom: 0 }}>Số dư tính đến hôm nay, không phụ thuộc khoảng ngày đang chọn. Hãy nhập số dư đầu và đếm tiền thật ở trang quản lý quỹ để số này khớp với két và tài khoản.</p>
       </Card>

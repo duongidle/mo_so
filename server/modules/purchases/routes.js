@@ -24,6 +24,7 @@ const purchaseInput = z.object({
   shop_id: z.string().nullish(),
   discount_amount: money.default(0),
   shipping_fee: money.default(0),
+  shipping_payee: z.enum(['supplier', 'carrier']).default('supplier'), // ai nhận tiền ship: NCC hay bên vận chuyển
   other_fee: money.default(0),
   note: optionalText,
   supplier_ref: optionalText,
@@ -67,6 +68,11 @@ r.post('/purchases/:id/cancel', async (c) => {
 r.post('/purchases/:id/payments', async (c) => {
   const input = await body(c, z.object({ amount: money.refine((v) => v > 0), method: z.enum(PAYMENT_METHODS).default('cash'), paid_at: z.string().nullish(), note: optionalText }));
   return c.json({ data: tx(() => svc.addPurchasePayment(c.req.param('id'), { amount: input.amount, method: input.method, paidAt: input.paid_at, note: input.note }, c.get('actor'))) });
+});
+
+r.post('/purchases/:id/carrier-payments', async (c) => {
+  const input = await body(c, z.object({ amount: money.refine((v) => v > 0), method: z.enum(PAYMENT_METHODS).default('cash'), paid_at: z.string().nullish(), note: optionalText }));
+  return c.json({ data: tx(() => svc.addCarrierPayment(c.req.param('id'), { amount: input.amount, method: input.method, paidAt: input.paid_at, note: input.note }, c.get('actor'))) });
 });
 
 export default r;

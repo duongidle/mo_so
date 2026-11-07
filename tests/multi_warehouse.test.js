@@ -276,6 +276,14 @@ test('Lưu trữ kho còn nằm trong danh sách shop: 409 WAREHOUSE_IN_USE, for
   assert.equal(r1.body.error.code, 'WAREHOUSE_IN_USE');
   assert.ok(r1.body.error.details.shops.some((s) => s.id === nh.id));
   assert.equal(getDb().prepare('SELECT archived_at FROM warehouses WHERE id = ?').get(B.id).archived_at, null, 'chưa đổi gì');
+  // Đóng kho cần hết hàng: còn tồn thì bị chặn kể cả khi force
+  getDb().prepare('UPDATE stock_levels SET on_hand = on_hand + 1 WHERE warehouse_id = ?').run(B.id);
+  const hasStock = getDb().prepare('SELECT COUNT(*) AS n FROM stock_levels WHERE warehouse_id = ? AND on_hand != 0').get(B.id).n;
+  if (hasStock) {
+    const r1b = await api.patch(`/warehouses/${B.id}`, { archived: true, force: true });
+    assert.equal(r1b.status, 409); assert.equal(r1b.body.error.code, 'WAREHOUSE_HAS_STOCK');
+  }
+  getDb().prepare('UPDATE stock_levels SET on_hand = 0 WHERE warehouse_id = ?').run(B.id);
   const r2 = await api.patch(`/warehouses/${B.id}`, { archived: true, force: true });
   assert.equal(r2.status, 200, JSON.stringify(r2.body));
   assert.deepEqual(getDb().prepare('SELECT warehouse_id FROM shop_warehouses WHERE shop_id = ?').all(nh.id).map((x) => x.warehouse_id), [A.id]);
@@ -283,4 +291,18 @@ test('Lưu trữ kho còn nằm trong danh sách shop: 409 WAREHOUSE_IN_USE, for
   const r3 = await api.patch(`/warehouses/${A.id}`, { archived: true, force: true });
   assert.equal(r3.status, 409);
   assert.equal(r3.body.error.code, 'WAREHOUSE_LAST');
+});
+
+test('Tồn kho: chọn một kho thì chỉ liệt kê hàng đã từng có ở kho đó (kèm tìm kiếm, shop)', async () => {
+  const { api, nh, A, B } = await scenario();
+  const all = (await api.get('/stock')).body.data;
+  const inA = (await api.get(`/stock?warehouse_id=${A.id}`)).body.data;
+  assert.ok(inA.length > 0 && inA.length <= all.length);
+  const dbN = (wh) => getDb().prepare('SELECT COUNT(DISTINCT variant_id) n FROM stock_levels WHERE warehouse_id = ?').get(wh).n;
+  const singles = inA.filter((r) => !r.is_bundle);
+  assert.equal(singles.length, dbN(A.id), 'đúng bằng số biến thể có dòng tồn ở kho A');
+  for (const r of singles) assert.ok(getDb().prepare('SELECT 1 FROM stock_levels WHERE warehouse_id = ? AND variant_id = ?').get(A.id, r.variant_id));
+  // kèm tìm kiếm và shop: tham số truy vấn vẫn đúng thứ tự
+  const q = (await api.get(`/stock?warehouse_id=${A.id}&shop_id=${nh.id}&q=${encodeURIComponent(singles[0].sku)}`)).body.data;
+  assert.ok(q.some((r) => r.variant_id === singles[0].variant_id));
 });

@@ -4,6 +4,7 @@ import { useSession } from '../../session.jsx';
 import { ErrorBox, Field, Section, useAction, useAsync, useDebounced } from '../../components/ui.jsx';
 import { useDirty } from '../../components/useDirty.js';
 import FormPage from '../../components/FormPage.jsx';
+import { RemoveProductButton } from '../../components/RemoveProduct.jsx';
 import ImageGallery from '../../components/ImageGallery.jsx';
 import { vnd, num } from '../../lib.js';
 import { flattenTree, indent } from '../../lib/categories.js';
@@ -29,7 +30,7 @@ export function initialCombo(p, shopId, isAll) {
   };
 }
 
-export default function ComboForm({ init, onClose, onSaved, onDirty }) {
+export default function ComboForm({ init, onClose, onSaved, onDirty, onRemoved }) {
   const { shops, shopId, isAll } = useSession();
   const [f, setF] = useState(init);
   useDirty(f, onDirty);
@@ -71,7 +72,7 @@ export default function ComboForm({ init, onClose, onSaved, onDirty }) {
       sub={f.existing ? f.name : 'Combo gồm nhiều sản phẩm bán cùng nhau. Bán combo trừ kho từng thành phần.'}
       onBack={onClose}
       error={<ErrorBox error={error} />}
-      footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !f.sku.trim() || !f.components.length} onClick={save}>Lưu</button></>}
+      footer={<>{f.existing && f.id && <RemoveProductButton product={{ id: f.id, name: f.name }} onRemoved={(r) => { onDirty?.(false); (onRemoved || onClose)(r); }} />}<button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !f.sku.trim() || !f.components.length} onClick={save}>Lưu</button></>}
       side={<>
         <Section title="Ảnh"><ImageGallery images={f.images} onChange={(images) => set({ images })} max={5} /></Section>
         <Section title="Phân loại">

@@ -64,9 +64,10 @@ test('Mọi cách cắt báo cáo cộng lại đều khớp tổng quan', async
   assert.ok(ov.net_revenue > 0 && ov.cogs > 0);
 
   const shops = (await get('/reports/shops')).data;
-  for (const k of ['order_count', 'net_revenue', 'goods_revenue', 'returned_amount', 'cogs', 'gross_profit', 'platform_fee', 'seller_shipping', 'shipping_fee', 'expenses_amount', 'net_profit_estimate']) {
+  for (const k of ['order_count', 'net_revenue', 'goods_revenue', 'returned_amount', 'cogs', 'gross_profit', 'platform_fee', 'seller_shipping', 'shipping_fee', 'expenses_amount']) {
     assert.equal(sum(shops, k), ov[k], `theo shop: ${k}`);
   }
+  assert.equal(sum(shops, 'net_profit_estimate'), ov.net_profit_estimate - ov.other_profit_adjustment, 'lợi nhuận theo shop loại trừ khoản điều chỉnh không gán shop');
   const channels = (await get('/reports/channels')).data;
   for (const k of ['order_count', 'net_revenue', 'cogs', 'gross_profit', 'platform_fee', 'shipping_fee']) assert.equal(sum(channels, k), ov[k], `theo kênh: ${k}`);
 

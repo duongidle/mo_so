@@ -30,12 +30,21 @@ describe('CustomerPicker', () => {
     await screen.findByText('Chị Lan');
     await screen.findByText('Khách ở shop khác');
     expect(screen.getByText('Anh Nam')).toBeTruthy();
-    expect(api.get).toHaveBeenCalledWith('/customers', { q: 'la', limit: 8, shop_id: 'shp_1' });
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/customers', { q: 'la', limit: 8, shop_id: 'shp_1' }));
     expect(api.get).toHaveBeenCalledWith('/customers', { q: 'la', limit: 8 });
-    await screen.findByText('Bạc'); // hạng hiện ở dòng kết quả
+    await screen.findAllByText('Bạc'); // hạng hiện ở các dòng kết quả
     fireEvent.mouseDown(screen.getByText('Chị Lan'));
     expect(onChange).toHaveBeenCalledWith(LAN);
     expect(onChange.mock.calls[0][0].id).toBe('cus_1');
+  });
+
+  it('khi mở danh sách ở shop, khách đã tạo từ màn Tất cả shop vẫn hiện để chọn', async () => {
+    const onChange = vi.fn();
+    render(<CustomerPicker shopId="shp_1" value={null} onChange={onChange} />);
+    fireEvent.focus(screen.getByLabelText('Tìm khách hàng'));
+    expect(await screen.findByText('Khách ở shop khác')).toBeTruthy();
+    fireEvent.mouseDown(screen.getByText('Anh Nam'));
+    expect(onChange).toHaveBeenCalledWith(NAM);
   });
 
   it('điều hướng bằng bàn phím: mũi tên xuống rồi Enter chọn dòng thứ hai', async () => {

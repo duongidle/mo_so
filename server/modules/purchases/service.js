@@ -61,7 +61,10 @@ export function getPurchase(id) {
     )
     .all(id);
   p.payments = listPaymentsFor('purchase', id);
+  p.carrier_payments = listPaymentsFor('purchase_carrier', id);
   p.debt = p.status === 'received' ? p.total_amount - p.paid_amount : 0;
+  p.shipping_payee = p.carrier_amount > 0 ? 'carrier' : 'supplier';
+  p.carrier_debt = p.status === 'received' ? p.carrier_amount - p.carrier_paid_amount : 0;
   return p;
 }
 
@@ -84,10 +87,12 @@ export function listPurchases({ status, supplierId, shopId, limit = 50, cursor }
   return { data, next_cursor: hasMore ? data[data.length - 1].id : null };
 }
 
-function computeTotals(lines, { discount_amount = 0, shipping_fee = 0, other_fee = 0 }) {
+function computeTotals(lines, { discount_amount = 0, shipping_fee = 0, other_fee = 0, carrier_ship = false }) {
   const subtotal = lines.reduce((a, l) => a + l.qty * l.unit_cost, 0);
   if (discount_amount > subtotal) throw badRequest('INVALID_DISCOUNT', 'Chiết khấu lớn hơn tổng tiền hàng');
-  const total = subtotal - discount_amount + shipping_fee + other_fee;
+  // Ship trả bên vận chuyển: vào giá vốn (extra bên dưới) nhưng không phải nợ NCC
+  const carrier = carrier_ship ? shipping_fee : 0;
+  const total = subtotal - discount_amount + shipping_fee - carrier + other_fee;
   // Phân bổ (phí − chiết khấu) theo giá trị dòng để ra giá vốn thực
   const extra = shipping_fee + other_fee - discount_amount;
   const alloc = allocate(Math.abs(extra), lines.map((l) => l.qty * l.unit_cost)).map((x) => (extra < 0 ? -x : x));
@@ -96,7 +101,7 @@ function computeTotals(lines, { discount_amount = 0, shipping_fee = 0, other_fee
     const landedTotal = lineTotal + alloc[i];
     return { ...l, line_total: lineTotal, allocated_cost: alloc[i], landed_unit_cost: Math.round(landedTotal / l.qty) };
   });
-  return { subtotal, total, lines: computed };
+  return { subtotal, total, carrier, lines: computed };
 }
 
 function writeLines(purchaseId, lines) {
@@ -117,15 +122,15 @@ export function createPurchase(input, actor) {
   const id = newId('pur');
   const at = nowIso();
   const orderedAt = toIso(input.ordered_at) || at;
-  const t = computeTotals(input.lines, input);
+  const t = computeTotals(input.lines, { ...input, carrier_ship: input.shipping_payee === 'carrier' });
   const code = dailyCode('PN', null, orderedAt);
   db()
     .prepare(
       `INSERT INTO purchases (id, code, supplier_id, warehouse_id, shop_id, status, subtotal, discount_amount, shipping_fee, other_fee,
-         total_amount, paid_amount, note, supplier_ref, ordered_at, created_at, updated_at)
-       VALUES (?,?,?,?,?,'draft',?,?,?,?,?,0,?,?,?,?,?)`,
+         total_amount, paid_amount, note, supplier_ref, ordered_at, created_at, updated_at, carrier_amount)
+       VALUES (?,?,?,?,?,'draft',?,?,?,?,?,0,?,?,?,?,?,?)`,
     )
-    .run(id, code, input.supplier_id ?? null, input.warehouse_id, input.shop_id ?? null, t.subtotal, input.discount_amount ?? 0, input.shipping_fee ?? 0, input.other_fee ?? 0, t.total, input.note ?? null, input.supplier_ref ?? null, orderedAt, at, at);
+    .run(id, code, input.supplier_id ?? null, input.warehouse_id, input.shop_id ?? null, t.subtotal, input.discount_amount ?? 0, input.shipping_fee ?? 0, input.other_fee ?? 0, t.total, input.note ?? null, input.supplier_ref ?? null, orderedAt, at, at, t.carrier);
   writeLines(id, t.lines);
   audit(actor, 'purchase.created', 'purchase', id, null, input);
   if (input.receive) receivePurchase(id, actor);
@@ -138,13 +143,13 @@ export function updatePurchase(id, input, actor) {
   if (before.status !== 'draft') throw conflict('NOT_DRAFT', 'Chỉ sửa được phiếu nhập ở trạng thái nháp');
   const merged = { ...before, ...input };
   const lines = input.lines ?? before.lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty, unit_cost: l.unit_cost }));
-  const t = computeTotals(lines, merged);
+  const t = computeTotals(lines, { ...merged, carrier_ship: (input.shipping_payee ?? (before.carrier_amount > 0 ? 'carrier' : 'supplier')) === 'carrier' });
   db()
     .prepare(
       `UPDATE purchases SET supplier_id=?, warehouse_id=?, shop_id=?, subtotal=?, discount_amount=?, shipping_fee=?, other_fee=?,
-        total_amount=?, note=?, supplier_ref=?, ordered_at=?, updated_at=? WHERE id=?`,
+        total_amount=?, note=?, supplier_ref=?, ordered_at=?, updated_at=?, carrier_amount=? WHERE id=?`,
     )
-    .run(merged.supplier_id, merged.warehouse_id, merged.shop_id, t.subtotal, merged.discount_amount, merged.shipping_fee, merged.other_fee, t.total, merged.note, merged.supplier_ref, toIso(merged.ordered_at) || before.ordered_at, nowIso(), id);
+    .run(merged.supplier_id, merged.warehouse_id, merged.shop_id, t.subtotal, merged.discount_amount, merged.shipping_fee, merged.other_fee, t.total, merged.note, merged.supplier_ref, toIso(merged.ordered_at) || before.ordered_at, nowIso(), t.carrier, id);
   writeLines(id, t.lines);
   const after = getPurchase(id);
   audit(actor, 'purchase.updated', 'purchase', id, before, after);
@@ -184,6 +189,9 @@ export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
   if (p.paid_amount > 0 && !refundMethod) {
     throw conflict('PURCHASE_PAID', `Phiếu đã trả NCC ${p.paid_amount} ₫. Huỷ phiếu cần ghi nhận NCC hoàn lại số tiền này (chọn phương thức hoàn).`, { paid_amount: p.paid_amount });
   }
+  if (p.carrier_paid_amount > 0 && !refundMethod) {
+    throw conflict('CARRIER_PAID', `Phiếu đã trả bên vận chuyển ${p.carrier_paid_amount} ₫ tiền ship. Huỷ phiếu cần ghi nhận khoản này được hoàn lại (chọn phương thức hoàn).`, { carrier_paid_amount: p.carrier_paid_amount });
+  }
   const at = nowIso();
   if (p.status === 'received') {
     for (const l of p.lines) {
@@ -200,6 +208,10 @@ export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
     recordPayment({ direction: 'in', refType: 'purchase', refId: id, shopId: p.shop_id, amount: p.paid_amount, method: refundMethod, paidAt: at, note: 'NCC hoàn tiền do huỷ phiếu nhập' }, actor);
     db().prepare('UPDATE purchases SET paid_amount = 0 WHERE id = ?').run(id);
   }
+  if (p.carrier_paid_amount > 0) {
+    recordPayment({ direction: 'in', refType: 'purchase_carrier', refId: id, shopId: p.shop_id, amount: p.carrier_paid_amount, method: refundMethod, paidAt: at, note: 'Hoàn tiền ship do huỷ phiếu nhập' }, actor);
+    db().prepare('UPDATE purchases SET carrier_paid_amount = 0 WHERE id = ?').run(id);
+  }
   db().prepare("UPDATE purchases SET status='cancelled', cancelled_at=?, note=COALESCE(note || ' | ', '') || ?, updated_at=? WHERE id=?").run(at, `Huỷ: ${reason || ''}`, at, id);
   const after = getPurchase(id);
   audit(actor, 'purchase.cancelled', 'purchase', id, p, after);
@@ -215,5 +227,18 @@ export function addPurchasePayment(id, { amount, method, paidAt, note }, actor) 
   db().prepare('UPDATE purchases SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), id);
   const after = getPurchase(id);
   audit(actor, 'purchase.payment', 'purchase', id, null, { amount, method });
+  return after;
+}
+
+/** Trả tiền ship nhập cho bên vận chuyển (chỉ phiếu đã nhận có ship trả bên vận chuyển). */
+export function addCarrierPayment(id, { amount, method, paidAt, note }, actor) {
+  const p = getPurchase(id);
+  if (p.status !== 'received') throw conflict('INVALID_STATUS', 'Chỉ ghi trả ship cho phiếu đã nhận hàng');
+  if (!(p.carrier_amount > 0)) throw badRequest('NO_CARRIER_FEE', 'Phiếu này không có ship trả bên vận chuyển');
+  if (p.carrier_paid_amount + amount > p.carrier_amount) throw badRequest('OVERPAID', 'Số tiền trả vượt tiền ship của phiếu');
+  recordPayment({ direction: 'out', refType: 'purchase_carrier', refId: id, shopId: p.shop_id, amount, method, paidAt, note }, actor);
+  db().prepare('UPDATE purchases SET carrier_paid_amount = carrier_paid_amount + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), id);
+  const after = getPurchase(id);
+  audit(actor, 'purchase.carrier_payment', 'purchase', id, null, { amount, method });
   return after;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { METRICS, SCOPES, GLOSSARY } from '../metrics.js';
 import MetricInfo, { MetricFilters } from '../components/MetricInfo.jsx';
@@ -40,7 +40,7 @@ describe('từ điển chỉ số', () => {
 
 describe('MetricInfo', () => {
   const wrap = (ui) => render(<MemoryRouter><MetricFilters.Provider value={{ from: '2026-11-01', to: '2026-11-30' }}>{ui}</MetricFilters.Provider></MemoryRouter>);
-  it('mở bằng nút ⓘ, đóng bằng Esc và bằng bấm ra ngoài', () => {
+  it('mở bằng nút ⓘ, đóng bằng Esc và bằng bấm ra ngoài', async () => {
     wrap(<div><MetricInfo metric="cancel_rate_pct" /><p>ngoài</p></div>);
     const btn = screen.getByRole('button', { name: /Giải thích: Tỷ lệ huỷ/ });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -49,10 +49,13 @@ describe('MetricInfo', () => {
     expect(screen.getByText(/Lấy từ đâu/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Xem dữ liệu gốc' }).getAttribute('href')).toBe('/orders?status=cancelled&from=2026-11-01&to=2026-11-30');
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(btn);
-    fireEvent.mouseDown(screen.getByText('ngoài'));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 20)); // Radix gắn bộ nghe "bấm ra ngoài" sau một nhịp
+    const outside = screen.getByText('ngoài'); // một cú bấm thật: pointerdown → mousedown → click
+    fireEvent.pointerDown(outside); fireEvent.mouseDown(outside); fireEvent.click(outside);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
   it('Kpi hiện nhãn phạm vi khi khác bộ lọc, không hiện khi theo bộ lọc', () => {
     wrap(<><Kpi metric="supplier_payable" label="Nợ NCC" value="1" /><Kpi metric="net_revenue" label="DT" value="2" /></>);

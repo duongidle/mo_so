@@ -49,7 +49,7 @@ function Today({ shopId }) {
           <>
             <Card title={`Sắp hết hàng (${data.reminders.length})`}>
               {!data.reminders.length ? <Empty>Chưa có khách nào đến hạn mua lại. Nhắc nhở dựa trên “chu kỳ dùng hết” của sản phẩm — nhớ điền ở trang Sản phẩm.</Empty> : data.reminders.map((r) => (
-                <div key={`${r.customer_id}${r.product_id}`} className="stack" style={{ gap: 6, padding: '10px 0', borderBottom: '1px solid var(--hairline)' }}>
+                <div key={`${r.customer_id}${r.product_id}`} className="stack" style={{ gap: 8, padding: '12px 0', borderBottom: '1px solid var(--hairline)' }}>
                   <div className="row between"><Link to={`/customers/${r.customer_id}`}><b>{r.customer.name}</b></Link><span className={r.overdue_days > 0 ? 'h-yellow small' : 'small muted'}>{r.overdue_days > 0 ? `quá hạn ${r.overdue_days} ngày` : r.overdue_days === 0 ? 'đến hạn hôm nay' : `còn ${-r.overdue_days} ngày`}</span></div>
                   <div className="small muted">{r.product_name} × {r.qty} · mua {fmtDate(r.last_purchase_date)} · {r.customer.phone || r.customer.facebook_url || 'chưa có liên hệ'}</div>
                   <div className="row wrap">
@@ -148,7 +148,7 @@ function Templates() {
       <p className="small muted" style={{ marginTop: 0 }}>Dùng được các biến <code>{'{ten}'}</code> (tên gọi của khách), <code>{'{san_pham}'}</code>, <code>{'{shop}'}</code>. Khi soạn tin, app chọn mẫu đầu tiên đúng loại.</p>
       <ErrorBox error={error} />
       <Async state={state}>{({ data }) => !data.length ? <Empty>Chưa có mẫu nào.</Empty> : data.map((t) => (
-        <div key={t.id} className="stack" style={{ gap: 4, padding: '10px 0', borderBottom: '1px solid var(--hairline)' }}>
+        <div key={t.id} className="stack" style={{ gap: 4, padding: '12px 0', borderBottom: '1px solid var(--hairline)' }}>
           <div className="row between"><span><b>{t.name}</b> <span className="badge plain">{KIND[t.kind] || t.kind}</span></span>
             <span className="row"><button className="btn sm" onClick={() => setF({ ...t })}>Sửa</button><button className="btn sm danger" disabled={busy} onClick={() => confirm(`Xoá mẫu “${t.name}”?`) && run(async () => { await api.del(`/loyalty/templates/${t.id}`); state.reload(); })}>Xoá</button></span></div>
           <div className="small muted" style={{ whiteSpace: 'pre-wrap' }}>{t.body}</div>
@@ -171,8 +171,8 @@ function Automation() {
   return (
     <Card title="Tự động hoá">
       <div className="alert warn small">Chưa có gì chạy tự động. Hiện mọi việc ở đây đều do bạn bấm tay.</div>
-      <p style={{ marginBottom: 6 }}>Dự kiến làm ở module này:</p>
-      <ul className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+      <p style={{ marginBottom: 8 }}>Dự kiến làm ở module này:</p>
+      <ul className="small" style={{ margin: 0, paddingLeft: 16, lineHeight: 1.7 }}>
         <li><b>Tự động nhắn tin</b>: gửi nhắc mua lại, lời chúc sinh nhật theo mẫu, khi đến hạn.</li>
         <li><b>Tự động nâng hạng</b>: khi chi tiêu 12 tháng vượt ngưỡng, đổi hạng và áp mức giảm giá tương ứng.</li>
       </ul>

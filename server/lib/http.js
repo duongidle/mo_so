@@ -43,7 +43,11 @@ export function paginate(rows, limit) {
 // Kiểu dữ liệu dùng lại
 export const money = z.coerce.number().int().min(0);
 export const signedMoney = z.coerce.number().int();
-export const qty = z.coerce.number().int().positive();
+// Quantities use the item's base unit; allow up to 3 decimals (e.g. 0.5 m).
+const validQty = (n) => Number.isFinite(n) && Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-7;
+export const qty = z.coerce.number().positive().refine(validQty, 'Số lượng tối đa 3 chữ số thập phân');
+export const stockQty = z.coerce.number().nonnegative().refine(validQty, 'Số lượng tối đa 3 chữ số thập phân');
+export const signedQty = z.coerce.number().refine(validQty, 'Số lượng tối đa 3 chữ số thập phân');
 export const optionalText = z
   .string()
   .trim()

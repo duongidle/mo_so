@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   expense_allocation: 'revenue', // revenue | equal | fixed
   tax_enabled: false, // ước tính thuế: mặc định tắt. App không tự đặt mức thuế nào, người dùng tự nhập theo quy định hiện hành
   tax_rules: [], // [{ name, rate_pct, base: net_revenue | revenue_with_shipping | net_profit, exempt_threshold_year }]
+  stock_lock_date: null, // chốt kho: chỉ đặt qua POST /stock-close (có chụp tồn), không qua PATCH /settings
   accounting_lock_date: null, // khoá sổ: chứng từ tay, chi phí, thanh toán, chuyển quỹ, tài sản có ngày ≤ ngày này không tạo/sửa/huỷ được (PERIOD_LOCKED). Đặt qua POST /accounting/lock để có ảnh chụp số liệu
   expense_allocation_fixed: {}, // khi expense_allocation = fixed: { shop_id: tỷ lệ % } (không cần cộng đúng 100, app chia theo tỷ lệ)
   health_thresholds: {
@@ -46,6 +47,7 @@ function validate(patch) {
     const ok = Array.isArray(t) && t.length <= 10 && t.every((r) => r && typeof r.name === 'string' && r.name.trim() && r.name.length <= 60 && typeof r.rate_pct === 'number' && r.rate_pct >= 0 && r.rate_pct <= 100 && TAX_BASES.includes(r.base) && Number.isInteger(r.exempt_threshold_year ?? 0) && (r.exempt_threshold_year ?? 0) >= 0);
     if (!ok) throw badRequest('INVALID_SETTING', 'Quy tắc thuế: tối đa 10 dòng; mỗi dòng có tên, tỷ lệ 0–100 %, cơ sở tính (net_revenue | revenue_with_shipping | net_profit) và ngưỡng miễn thuế cả năm (số nguyên ≥ 0)');
   }
+  if ('stock_lock_date' in patch) throw badRequest('INVALID_SETTING', 'Chốt kho đặt qua POST /stock-close (và mở lại qua POST /stock-close/reopen) để có chụp tồn và nhật ký');
   if ('accounting_lock_date' in patch) {
     const v = patch.accounting_lock_date;
     if (v !== null && !(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()))) throw badRequest('INVALID_SETTING', 'Ngày khoá sổ phải là YYYY-MM-DD hoặc null (không khoá)');

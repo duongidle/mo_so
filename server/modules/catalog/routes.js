@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { body, money, optionalText, query, patchOf } from '../../lib/http.js';
+import { body, money, optionalText, query, patchOf, stockQty } from '../../lib/http.js';
 import { tx } from '../../db/index.js';
+import { badRequest } from '../../lib/errors.js';
 import * as svc from './service.js';
+import { productRemovalImpact, removeProduct, restoreProduct } from './removal.js';
 
 const r = new Hono();
 
@@ -35,7 +37,7 @@ const variantInput = z.object({
   image_id: z.string().nullish(),
   active: z.boolean().optional(),
   // Tồn đầu kỳ (chỉ khi tạo biến thể mới): ghi bằng biến động 'opening' trong cùng giao dịch
-  opening_qty: z.coerce.number().int().min(0).optional(),
+  opening_qty: stockQty.optional(),
   opening_cost: money.optional(),
   opening_warehouse_id: z.string().optional(),
 });
@@ -45,6 +47,8 @@ const imagesInput = z.array(z.object({ id: z.string(), variant_id: z.string().op
 
 const productInput = z.object({
   name: z.string().trim().min(1).max(200),
+  item_type: z.enum(['product', 'packaging', 'supply']).default('product'),
+  default_supplier_id: z.string().nullish(),
   description: optionalText,
   category_id: z.string().nullish(),
   unit: z.string().trim().min(1).max(20).default('cái'),
@@ -72,6 +76,7 @@ r.get('/products', (c) => {
       q: z.string().optional(),
       category_id: z.string().optional(),
       type: z.enum(['single', 'combo']).optional(),
+      item_type: z.enum(['product', 'packaging', 'supply']).optional(),
       archived: z.string().optional(),
       unlisted: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -84,8 +89,11 @@ r.get('/products', (c) => {
       q: q.q,
       categoryId: q.category_id,
       type: q.type,
-      includeArchived: q.archived === '1',
-      includeUnlisted: q.unlisted === '1',
+      itemType: q.item_type,
+      includeArchived: q.archived === '1' || q.archived === 'only',
+      archivedOnly: q.archived === 'only',
+      includeUnlisted: q.unlisted === '1' || q.unlisted === 'only',
+      unlistedOnly: q.unlisted === 'only',
       limit: q.limit,
       cursor: q.cursor,
     }),
@@ -97,6 +105,13 @@ r.post('/products/:id/removal-preview', async (c) => {
   const input = await body(c, z.object({ variant_ids: z.array(z.string()).max(500) }));
   return c.json({ data: svc.previewVariantRemoval(c.req.param('id'), input.variant_ids) });
 });
+// Gỡ sản phẩm: xem trước hậu quả, gỡ (xoá hẳn nếu chưa từng dùng, ngược lại ngừng kinh doanh), khôi phục
+r.get('/products/:id/removal-impact', (c) => c.json({ data: productRemovalImpact(c.req.param('id')) }));
+r.post('/products/:id/remove', async (c) => {
+  const input = await body(c, z.object({ confirm: z.boolean().default(false), write_off: z.boolean().default(false) }));
+  return c.json({ data: tx(() => removeProduct(c.req.param('id'), { confirm: input.confirm, writeOff: input.write_off }, c.get('actor'))) });
+});
+r.post('/products/:id/restore', (c) => c.json({ data: tx(() => restoreProduct(c.req.param('id'), c.get('actor'))) }));
 r.post('/products', async (c) => {
   const input = await body(c, productInput);
   return c.json({ data: tx(() => svc.createProduct(input, c.get('actor'))) }, 201);
@@ -106,7 +121,8 @@ r.patch('/products/:id', async (c) => {
     c,
     patchOf(productInput.omit({ variants: true, shop_ids: true })).extend({ variants: z.array(patchOf(variantInput).extend({ archived_at: z.string().nullish(), remove: z.boolean().optional() })).optional(), archived: z.boolean().optional() }),
   );
-  if (input.archived !== undefined) input.archived_at = input.archived ? new Date().toISOString() : null;
+  if (input.archived === true) throw badRequest('USE_REMOVE', 'Gỡ sản phẩm qua POST /products/:id/remove (có kiểm tra tồn kho, combo, đơn nháp); khôi phục qua POST /products/:id/restore');
+  if (input.archived === false) throw badRequest('USE_RESTORE', 'Khôi phục sản phẩm qua POST /products/:id/restore');
   delete input.archived;
   return c.json({ data: tx(() => svc.updateProduct(c.req.param('id'), input, c.get('actor'))) });
 });

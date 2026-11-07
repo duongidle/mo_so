@@ -24,9 +24,9 @@ export function OptionsEditor({ value, onChange }) {
   };
   return (
     <div className="stack" style={{ gap: 8 }}>
-      <div className="row wrap" style={{ gap: 6 }}>
+      <div className="row wrap" style={{ gap: 8 }}>
         {value.map((o) => (
-          <span key={o} className="chip on" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <span key={o} className="chip on" style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
             {o}
             <button type="button" aria-label={`Bỏ ${o}`} onClick={() => onChange(value.filter((x) => x !== o))} style={{ border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 0 }}>×</button>
           </span>
@@ -101,7 +101,7 @@ export default function FieldsManager({ entities = Object.keys(ENTITIES), shop =
           <Async state={state}>{({ data }) => (!data.length ? <Empty>{showHidden ? 'Không có trường nào bị ẩn.' : 'Chưa có trường nào.'}</Empty> : data.map((x, i) => (
             <div key={x.id} className="row between wrap" style={{ padding: '8px 0', borderBottom: '1px dotted var(--rule)' }}>
               <span>
-                <b>{x.label}</b> <code className="small">{`{custom.${x.key}}`}</code>{x.required && <span className="badge plain" style={{ marginLeft: 6 }}>Bắt buộc</span>}
+                <b>{x.label}</b> <code className="small">{`{custom.${x.key}}`}</code>{x.required && <span className="badge plain" style={{ marginLeft: 8 }}>Bắt buộc</span>}
                 <div className="small muted">{TYPES[x.type]}{x.options && `: ${x.options.join(', ')}`}{x.formula && ` = ${x.formula}`}{x.role && ` · vai trò: ${ROLES[x.entity_type]?.[x.role] || OLD_ROLE[x.role] || x.role}`}{x.default_value != null && ` · mặc định: ${[].concat(x.default_value).join(', ')}`}{x.shop_id && !isCustomer && ` · riêng ${shops.find((s) => s.id === x.shop_id)?.name || 'một shop'}`}</div>
               </span>
               <span className="row wrap">
@@ -129,7 +129,7 @@ export default function FieldsManager({ entities = Object.keys(ENTITIES), shop =
           {del.usage.referenced_by.length > 0 ? (
             <div className="alert warn small">Đang được công thức {del.usage.referenced_by.map((o) => `“${o.label}”`).join(', ')} dùng nên chưa xoá được.</div>
           ) : del.usage.values_count > 0 ? (
-            <div className="stack small" style={{ gap: 6 }}>
+            <div className="stack small" style={{ gap: 8 }}>
               <div>Trường <b>{del.field.label}</b> đang có dữ liệu ở <b>{del.usage.values_count}</b> bản ghi. Xoá hẳn sẽ bỏ trường và toàn bộ dữ liệu đó khỏi các màn hình.</div>
               <div className="muted">Bản sao dữ liệu được ghi vào nhật ký hệ thống để khôi phục tay nếu xoá nhầm. Muốn giữ dữ liệu và chỉ ẩn trường, đóng hộp này rồi bấm “Ẩn”.</div>
             </div>
@@ -147,7 +147,7 @@ export default function FieldsManager({ entities = Object.keys(ENTITIES), shop =
             {!f.id && <Field label="Khoá (a-z, 0-9, _)" hint="Dùng trong công thức. Để trống: tự lấy từ nhãn. Không đổi được sau này."><input value={f.key} placeholder={slugify(f.label)} onChange={(e) => setF({ ...f, key: e.target.value })} /></Field>}
             {!f.id && f.entity_type !== 'customer' && <Field label="Phạm vi" hint="Toàn hệ thống để cộng gộp được giữa các shop"><select value={f.shop_id} onChange={(e) => setF({ ...f, shop_id: e.target.value })}><option value="">Toàn hệ thống</option>{shops.map((s) => <option key={s.id} value={s.id}>Chỉ {s.name}</option>)}</select></Field>}
           </div>
-          {isSelect && <div className="stack" style={{ gap: 6 }}><span className="small" style={{ fontWeight: 600 }}>Các lựa chọn</span><OptionsEditor value={f.options} onChange={(options) => setF({ ...f, options })} /></div>}
+          {isSelect && <div className="stack" style={{ gap: 8 }}><span className="small" style={{ fontWeight: 600 }}>Các lựa chọn</span><OptionsEditor value={f.options} onChange={(options) => setF({ ...f, options })} /></div>}
           {f.type === 'formula' && <FormulaEditor entity={f.entity_type} shopId={f.entity_type === 'customer' ? shop?.id : f.shop_id || shop?.id || null} fieldKey={f.key || (f.id ? f.key : slugify(f.label)) || null} value={f.formula} onChange={(formula) => setF({ ...f, formula })} />}
           {f.type !== 'formula' && f.type !== 'boolean' && (
             <Field label="Giá trị mặc định" hint="Điền sẵn khi tạo bản ghi mới và khi mở form của bản ghi chưa có giá trị. Không tự ghi vào bản ghi cũ.">

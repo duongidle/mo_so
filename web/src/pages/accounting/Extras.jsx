@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import { useSession } from '../../session.jsx';
 import { Async, Card, Empty, ErrorBox, Field, Modal, useAction, useAsync } from '../../components/ui.jsx';
+import FormPage from '../../components/FormPage.jsx';
 import { MetricLabel } from '../../components/MetricInfo.jsx';
 import { vnd, fmtDate, today } from '../../lib.js';
 import { balanceOfLines, lineProblems, searchAccounts, RECEIPT_ACCOUNTS, PAYMENT_ACCOUNTS } from '../../lib/voucher.js';
@@ -46,6 +47,7 @@ export function Vouchers({ range, shopParam, report }) {
   const lockInfo = useAsync(() => api.get('/accounting/lock'), []);
   const lock = lockInfo.data?.data?.lock_date;
   const void_ = (v) => confirm(`Huỷ ${v.code}? Chứng từ không bị xoá hẳn, chỉ không còn vào sổ.`) && run(async () => { await api.del(`/accounting/vouchers/${v.id}`); state.reload(); });
+  if (form) return <VoucherForm initial={form} shops={shops} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />;
   return (
     <>
       <div className="row wrap between">
@@ -76,7 +78,6 @@ export function Vouchers({ range, shopParam, report }) {
           </table></div></Card>
         ))}
       </Async>
-      {form && <VoucherForm initial={form} shops={shops} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />}
     </>
   );
 }
@@ -162,6 +163,7 @@ export function Recurring({ report }) {
   const state = useAsync(async () => { const r = await api.get('/recurring-expenses'); report(r.data); return r; }, []);
   const { busy, error, run } = useAction();
   const act = (fn, msg) => (!msg || confirm(msg)) && run(async () => { await fn(); state.reload(); });
+  if (form) return <RecurringForm initial={form} shops={shops} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />;
   return (
     <>
       <div className="row between wrap"><span className="muted small">Job chạy mỗi giờ: tạo chi phí đến hạn, kể cả các kỳ bỏ lỡ khi máy tắt. Không bao giờ tạo trùng một kỳ.</span><button className="btn primary" onClick={() => setForm({})}>+ Chi phí định kỳ</button></div>
@@ -169,7 +171,7 @@ export function Recurring({ report }) {
       <Async state={state}>
         {({ data }) => (!data.length ? <Empty>Chưa có chi phí định kỳ. Thêm tiền thuê, internet, lương… để app tự ghi mỗi kỳ.</Empty> : (
           <div className="stack">{data.map((r) => (
-            <Card key={r.id} flat>
+            <Card key={r.id}>
               <div className="row between wrap">
                 <div><b>{r.name}</b> {r.paused_at && <span className="badge plain">Tạm dừng</span>}
                   <div className="muted small">{r.category_name} · {r.shop_name || 'Chung'} · {FREQ[r.frequency]}, {r.frequency === 'weekly' ? WEEKDAYS[r.day_of_period] : `ngày ${r.day_of_period}`} · {methodLabels[r.method] || r.method}</div>
@@ -186,7 +188,6 @@ export function Recurring({ report }) {
           ))}</div>
         ))}
       </Async>
-      {form && <RecurringForm initial={form} shops={shops} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />}
     </>
   );
 }
@@ -210,8 +211,8 @@ function RecurringForm({ initial, shops, onClose, onSaved }) {
   });
   const past = !edit && f.start_date < today();
   return (
-    <Modal title={edit ? 'Sửa chi phí định kỳ' : 'Thêm chi phí định kỳ'} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" disabled={busy || !f.name.trim() || !(Number(f.amount) > 0)} onClick={save}>Lưu</button></>}>
-      <ErrorBox error={error} />
+    <FormPage embedded title={edit ? 'Sửa chi phí định kỳ' : 'Thêm chi phí định kỳ'} sub="Thiết lập khoản chi và lịch tạo tự động." onBack={onClose} error={error && <ErrorBox error={error} />} footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !(Number(f.amount) > 0)} onClick={save}>Lưu</button></>}>
+      <Card title="Thông tin khoản chi"><div className="stack">
       <Field label="Tên"><input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Vd: Thuê kho" /></Field>
       <div className="grid cols-2">
         <Field label="Danh mục"><select value={f.category_id} onChange={(e) => set('category_id', e.target.value)}>{cats.data?.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
@@ -226,7 +227,8 @@ function RecurringForm({ initial, shops, onClose, onSaved }) {
         <Field label="Đến ngày (tuỳ chọn)"><input type="date" value={f.end_date} onChange={(e) => set('end_date', e.target.value)} /></Field>
       </div>
       {past && <div className="alert warn" role="status">Ngày bắt đầu đã qua: app sẽ tạo bù mọi kỳ từ ngày đó đến hôm nay. Muốn bỏ qua các kỳ cũ, chọn ngày bắt đầu là hôm nay.</div>}
-    </Modal>
+      </div></Card>
+    </FormPage>
   );
 }
 
@@ -239,6 +241,7 @@ export function Assets({ report }) {
   const state = useAsync(async () => { const r = await api.get('/accounting/assets'); report(r.data); return r; }, []);
   const { busy, error, run } = useAction();
   const dispose = (a) => confirm(`Thanh lý “${a.name}”? Giá trị còn lại ${vnd(a.remaining)} ghi vào chi phí khác (811), không khấu hao thêm. Tiền bán tài sản (nếu có) ghi bằng phiếu thu khác.`) && run(async () => { await api.post(`/accounting/assets/${a.id}/dispose`, {}); state.reload(); });
+  if (form) return <AssetForm shops={shops} methodList={methodList} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />;
   return (
     <>
       <div className="row between wrap"><span className="muted small">Mua tài sản không vào chi phí ngay: ghi nhận vào tài sản rồi chia đều theo tháng (ghi ngày cuối tháng). Khấu hao chỉ có ở Sổ kế toán, không có ở Báo cáo.</span><button className="btn primary" onClick={() => setForm({})}>+ Tài sản / chi phí trả trước</button></div>
@@ -262,7 +265,6 @@ export function Assets({ report }) {
           </table></div></Card>
         ))}
       </Async>
-      {form && <AssetForm shops={shops} methodList={methodList} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />}
     </>
   );
 }
@@ -291,8 +293,8 @@ function AssetForm({ shops, methodList, onClose, onSaved }) {
   const per = Number(f.cost) > 0 && Number(f.months) > 0 ? Math.round(Number(f.cost) / Number(f.months)) : 0;
   const save = () => run(async () => { await api.post('/accounting/assets', { name: f.name.trim(), kind: f.kind, cost: Number(f.cost), months: Number(f.months), start_date: f.start_date, paid_via: f.paid_via, expense_account_code: f.expense_account_code, shop_id: f.shop_id || null }); onSaved(); });
   return (
-    <Modal title="Thêm tài sản / chi phí trả trước" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Đóng</button><button className="btn primary" disabled={busy || !f.name.trim() || !(Number(f.cost) > 0) || !(Number(f.months) > 0)} onClick={save}>Lưu</button></>}>
-      <ErrorBox error={error} />
+    <FormPage embedded title="Thêm tài sản / chi phí trả trước" sub="Ghi nhận nguyên giá, sau đó phân bổ đều theo tháng." onBack={onClose} error={error && <ErrorBox error={error} />} footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !(Number(f.cost) > 0) || !(Number(f.months) > 0)} onClick={save}>Lưu</button></>}>
+      <Card title="Thông tin tài sản"><div className="stack">
       <Field label="Tên"><input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Vd: Kệ trưng bày, Thuê mặt bằng 12 tháng" /></Field>
       <div className="grid cols-2">
         <Field label="Loại"><select value={f.kind} onChange={(e) => set('kind', e.target.value)}><option value="fixed_asset">Tài sản cố định (khấu hao)</option><option value="prepaid">Chi phí trả trước (phân bổ)</option></select></Field>
@@ -303,7 +305,8 @@ function AssetForm({ shops, methodList, onClose, onSaved }) {
         <Field label="Ghi chi phí vào"><select value={f.expense_account_code} onChange={(e) => set('expense_account_code', e.target.value)}>{exp.map((a) => <option key={a.code} value={a.code}>{a.code} – {a.name}</option>)}</select></Field>
         <Field label="Shop"><select value={f.shop_id} onChange={(e) => set('shop_id', e.target.value)}><option value="">Chung</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
       </div>
-    </Modal>
+      </div></Card>
+    </FormPage>
   );
 }
 
@@ -317,7 +320,7 @@ export function LockTab() {
     <Async state={state}>
       {({ data: d }) => (
         <>
-          <Card flat title="Ngày khoá sổ">
+          <Card title="Ngày khoá sổ">
             <div className="stack">
               <p>{d.lock_date ? <>Đã khoá đến hết ngày <b>{fmtDate(d.lock_date)}</b>. Chứng từ tay, chi phí, thanh toán, chuyển quỹ và tài sản ngày đó trở về trước không tạo, sửa, huỷ được.</> : 'Chưa khoá sổ.'} <MetricLabel metric="acc_lock">Khoá sổ là gì?</MetricLabel></p>
               <div className="row wrap">
@@ -330,7 +333,7 @@ export function LockTab() {
             </div>
           </Card>
           {d.lock_date && (d.changed ? (
-            <Card flat title="Kỳ đã khoá có thay đổi sau khoá">
+            <Card title="Kỳ đã khoá có thay đổi sau khoá">
               <div className="alert warn" role="alert">Số dư các tài khoản đến hết {fmtDate(d.lock_date)} khác lúc khoá sổ ({d.changes.length} tài khoản).</div>
               <div className="table-wrap"><table>
                 <thead><tr><th>Tài khoản</th><th className="num">Lúc khoá</th><th className="num">Hiện tại</th><th className="num">Chênh</th></tr></thead>
@@ -355,7 +358,7 @@ export function CategoryMapping() {
   const map = (id, code) => run(async () => { await api.patch(`/accounting/expense-categories/${id}`, { account_code: code }); cats.reload(); });
   const add = () => run(async () => { await api.post('/expense-categories', { name: name.trim() }); setName(''); cats.reload(); });
   return (
-    <Card title="Danh mục chi phí → tài khoản" flat>
+    <Card title="Danh mục chi phí → tài khoản">
       <div className="stack">
         <p className="muted small">Mỗi khoản chi phí được hạch toán vào tài khoản của danh mục. Danh mục mới mặc định vào 6428 (chi phí quản lý khác).</p>
         <ErrorBox error={error} />

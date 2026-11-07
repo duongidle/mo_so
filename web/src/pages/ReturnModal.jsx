@@ -4,7 +4,7 @@ import MoneyInput from '../components/MoneyInput.jsx';
 import { vnd } from '../lib.js';
 import { codRefusedForm, computeReturn, returnSummary } from '../lib/returnForm.js';
 
-export const emptyReturnForm = () => ({ lines: {}, reason: '', shipOn: false, shipRefund: '', fee: '', shipCost: '', refund: null, method: 'cash' });
+export const emptyReturnForm = (marketplace = false) => ({ lines: {}, reason: '', shipOn: false, shipRefund: '', fee: '', shipCost: '', refund: null, method: 'cash', toCredit: false, awaitingGoods: marketplace });
 
 /** Form trả hàng: dòng hàng → khối tiền → cần trả khách → tiền trả ngay → giải thích kết quả */
 export default function ReturnModal({ order: o, form, setForm, act, methodList, onClose, onDone }) {
@@ -20,7 +20,8 @@ export default function ReturnModal({ order: o, form, setForm, act, methodList, 
       shipping_refund_amount: r.shipRefund,
       return_fee_amount: r.fee,
       return_shipping_cost: r.shipCost,
-      refund: r.refund > 0 ? { amount: r.refund, method: form.method } : null,
+      awaiting_goods: mp && !!form.awaitingGoods,
+      refund: r.refund > 0 ? { amount: r.refund, method: form.toCredit ? 'customer_credit' : form.method, to_credit: !!form.toCredit } : null,
     });
     onDone();
   });
@@ -55,12 +56,16 @@ export default function ReturnModal({ order: o, form, setForm, act, methodList, 
       {!mp && <Field label="Phí trả hàng shop giữ lại (0 nếu không thu)"><MoneyInput value={form.fee} onChange={(e) => set({ fee: e.target.value })} /></Field>}
       <Field label="Phí ship chiều về shop chịu (0 nếu không có)"><MoneyInput value={form.shipCost} onChange={(e) => set({ shipCost: e.target.value })} /></Field>
       {mp ? (
-        <p className="muted small">Đơn sàn: sàn tự hoàn tiền cho người mua rồi trừ vào tiền trả shop, nên không có phần trả khách, hoàn ship hay phí trả hàng.</p>
+        <>
+          <label className="check small"><input type="checkbox" checked={!!form.awaitingGoods} onChange={(e) => set({ awaitingGoods: e.target.checked })} />Hàng chưa về kho (chờ nhận hàng trước khi cộng tồn)</label>
+          <p className="muted small">Đơn sàn: sàn tự hoàn tiền cho người mua rồi trừ vào tiền trả shop, nên không có phần trả khách, hoàn ship hay phí trả hàng. Nếu hàng chưa về, tồn kho và giá vốn chỉ cập nhật khi bấm “Đã nhận hàng”.</p>
+        </>
       ) : (
         <>
           <div className="row between" style={{ fontWeight: 700 }}><span>Cần trả khách</span><span className="num">{vnd(r.due)}</span></div>
-          <Field label={`Tiền trả khách ngay (tối đa ${vnd(r.maxRefund)}; 0 nếu chưa trả)`}><MoneyInput value={form.refund == null ? String(r.refund) : form.refund} onChange={(e) => set({ refund: e.target.value })} /></Field>
-          {r.refund > 0 && <Field label="Phương thức"><select value={form.method} onChange={(e) => set({ method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
+          <Field label={`${form.toCredit ? 'Chuyển thành tiền khách gửi' : 'Tiền trả khách ngay'} (tối đa ${vnd(r.maxRefund)}; 0 nếu chưa thu)`}><MoneyInput value={form.refund == null ? String(r.refund) : form.refund} onChange={(e) => set({ refund: e.target.value })} /></Field>
+          {r.refund > 0 && o.customer_id && <label className="check small"><input type="checkbox" checked={!!form.toCredit} onChange={(e) => set({ toCredit: e.target.checked })} />Chuyển khoản này thành tiền khách gửi dùng cho đơn sau trong shop này</label>}
+          {r.refund > 0 && !form.toCredit && <Field label="Phương thức"><select value={form.method} onChange={(e) => set({ method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
         </>
       )}
       {r.goods > 0 && <p className="small" role="status">{returnSummary(r, vnd, mp)}</p>}

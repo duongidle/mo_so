@@ -1,107 +1,113 @@
-import { Link } from 'react-router-dom';
-import { api } from '../api.js';
-import { useSession } from '../session.jsx';
-import { Async, Card, useAsync, PageHeader } from '../components/ui.jsx';
-import { monthStart, today, fmtDate, pct } from '../lib.js';
-import { buildChecks, summarize, GLOSSARY, COLOR_MEANING } from '../guide.js';
-import { SCOPES } from '../metrics.js';
+import { useMemo, useState } from 'react';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { PageHeader } from '../components/ui.jsx';
+import { GUIDES, GROUPS, byId, searchText } from '../guides/content.js';
+import HealthGuide from './guide/HealthGuide.jsx';
 
-const DOT = { green: 'Xanh', yellow: 'Vàng', red: 'Đỏ' };
-const Dot = ({ status }) => <b className={status ? `h-${status}` : 'muted'}>● {status ? DOT[status] : 'Chưa có dữ liệu'}</b>;
+const slugOf = (g) => g.id;
+const INDEX = GUIDES.map((g) => ({ g, text: searchText(g) }));
+
+function Blocks({ guide }) {
+  return (
+    <>
+      {guide.blocks.map((b, i) => {
+        if (b.t === 'p') return <p key={i} className="guide-p">{b.text}</p>;
+        if (b.t === 'steps') return (
+          <ol key={i} className="guide-steps">
+            {b.items.map((s) => (
+              <li key={s.title}>
+                <div className="guide-step-title">{s.title}</div>
+                <div className="guide-step-text">{s.text}</div>
+                {s.to && <Link className="btn sm" to={s.to}>{s.cta || 'Mở trang'}</Link>}
+              </li>
+            ))}
+          </ol>
+        );
+        if (b.t === 'tips') return (
+          <div key={i} className="guide-box tip"><div className="guide-box-title">Mẹo</div><ul>{b.items.map((t) => <li key={t}>{t}</li>)}</ul></div>
+        );
+        if (b.t === 'warn') return <div key={i} className="guide-box warn"><div className="guide-box-title">Lưu ý</div><p>{b.text}</p></div>;
+        if (b.t === 'faq') return (
+          <div key={i} className="guide-faq">
+            <div className="guide-box-title">Hay gặp</div>
+            {b.items.map(([q, a]) => <details key={q}><summary>{q}</summary><p>{a}</p></details>)}
+          </div>
+        );
+        return null;
+      })}
+      {guide.links?.length > 0 && <div className="row wrap">{guide.links.map(([to, label]) => <Link key={to} className="btn" to={to}>{label}</Link>)}</div>}
+    </>
+  );
+}
 
 /**
- * Hướng dẫn đọc sức khoẻ kinh doanh cho người không rành số liệu: thay vì nhìn hàng chục chỉ số,
- * trả lời 5 câu hỏi theo thứ tự, mỗi câu có màu, số liệu chính và việc nên làm.
+ * Trang Hướng dẫn hệ thống: mục lục theo nhóm, mỗi hướng dẫn một trang. “Cách đọc sức khoẻ kinh doanh” là một hướng dẫn trong đó (có số liệu thật).
+ * Điện thoại: /guide là mục lục, bấm vào mới mở bài. Máy tính: mục lục luôn ở bên trái.
  */
 export default function Guide() {
-  const { shopId, isAll, shop } = useSession();
-  const from = monthStart();
-  const to = today();
-  const p = { from, to, shop_id: isAll ? undefined : shopId };
-  const state = useAsync(async () => {
-    const [health, overview, cash, aging, accounts, inventory, expense] = await Promise.all([
-      api.get('/reports/health', p), api.get('/reports/overview', p), api.get('/reports/cashflow', p), api.get('/reports/aging', { shop_id: p.shop_id }),
-      api.get('/cash/accounts'), api.get('/reports/inventory', { shop_id: p.shop_id }), api.get('/reports/expenses', p),
-    ]);
-    return { health, overview: overview.data, cash: cash.data, aging: aging.data, accounts, inventory: inventory.data, expense: expense.data };
-  }, [shopId]);
+  const { id } = useParams();
+  const [q, setQ] = useState('');
+  const guide = id ? byId(id) : null;
+  const term = q.trim().toLowerCase();
+  const hits = useMemo(() => (term ? INDEX.filter((x) => x.text.includes(term)).map((x) => x.g) : GUIDES), [term]);
+  const idx = guide ? GUIDES.indexOf(guide) : -1;
+  const prev = idx > 0 ? GUIDES[idx - 1] : null;
+  const next = idx >= 0 && idx < GUIDES.length - 1 ? GUIDES[idx + 1] : null;
+
+  const list = (
+    <nav className="guide-nav" aria-label="Mục lục hướng dẫn">
+      <input className="guide-search" type="search" placeholder="Tìm hướng dẫn…" aria-label="Tìm hướng dẫn" value={q} onChange={(e) => setQ(e.target.value)} />
+      {!hits.length && <p className="note">Không có hướng dẫn nào khớp “{q}”.</p>}
+      {GROUPS.map((grp) => {
+        const items = hits.filter((g) => g.group === grp);
+        if (!items.length) return null;
+        return (
+          <div key={grp} className="guide-group">
+            <div className="guide-group-name">{grp}</div>
+            {items.map((g) => (
+              <Link key={g.id} to={`/guide/${slugOf(g)}`} className={`guide-link${guide?.id === g.id ? ' on' : ''}`} aria-current={guide?.id === g.id ? 'page' : undefined}>
+                <span className="guide-link-title">{g.title}</span>
+                <span className="guide-link-sum">{g.summary}</span>
+              </Link>
+            ))}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
+  if (id && !guide) return <Navigate to="/guide" replace />;
 
   return (
     <div className="page stack">
-      <PageHeader title="Cách đọc sức khoẻ kinh doanh" sub="Đừng nhìn hết các con số. Mỗi sáng dành 5 phút, đi theo 5 câu hỏi dưới đây theo thứ tự." />
-
-      <Async state={state}>{(d) => {
-        const checks = buildChecks(d);
-        const sum = summarize(checks);
-        return (
-          <>
-            <Card title="Hôm nay thế nào?">
-              <p style={{ marginTop: 0 }}>
-                {sum.red + sum.yellow === 0
-                  ? <>Cả 5 câu hỏi đều <b className="h-green">ổn</b>{sum.none ? ` (còn ${sum.none} câu chưa có dữ liệu)` : ''}. Không có gì cần xử lý gấp.</>
-                  : <>Có {sum.red > 0 && <b className="h-red">{sum.red} việc đỏ</b>}{sum.red > 0 && sum.yellow > 0 && ' và '}{sum.yellow > 0 && <b className="h-yellow">{sum.yellow} việc vàng</b>}. Xử lý trước: <b>{sum.first.question}</b></>}
-              </p>
-              <div className="small muted">Số liệu {isAll ? 'của tất cả shop' : `của ${shop?.name}`}, từ {fmtDate(from)} đến {fmtDate(to)} (tháng này). Tiền trong quỹ và công nợ là số tính đến hôm nay.</div>
-            </Card>
-
-            {checks.map((c, i) => (
-              <Card key={c.id} title={`${i + 1}. ${c.question}`} actions={<Dot status={c.status} />}>
-                <p style={{ marginTop: 0 }}>{c.headline}</p>
-                <div className="grid cols-4" style={{ marginBottom: 12 }}>
-                  {c.facts.map((f) => <div key={f.label}><div className="small muted">{f.label}</div><b className="num">{f.value}</b></div>)}
-                </div>
-                {c.todo.length > 0 && (
-                  <div className="stack" style={{ gap: 6 }}>
-                    <div className="eyebrow">{c.status === 'green' ? 'Ghi chú' : 'Việc nên làm'}</div>
-                    <ul className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>{c.todo.map((t) => <li key={t}>{t}</li>)}</ul>
-                  </div>
-                )}
-                <div style={{ marginTop: 10 }}><Link className="btn sm" to={c.link}>{c.linkLabel}</Link></div>
-              </Card>
-            ))}
-
-            <Card title="Màu xanh, vàng, đỏ nghĩa là gì?">
-              <div className="stack" style={{ gap: 6 }}>
-                {COLOR_MEANING.map((m) => <div key={m.status} className="row"><b className={`h-${m.status}`} style={{ minWidth: 60 }}>● {m.label}</b><span>{m.text}</span></div>)}
+      <PageHeader title="Hướng dẫn" sub={guide ? undefined : 'Cách dùng từng phần của Mở Sổ, viết theo đúng tên nút và tab bạn đang thấy. Chọn một bài để bắt đầu.'} />
+      <div className={`guide-layout${guide ? ' reading' : ''}`}>
+        <aside className="guide-side">{list}</aside>
+        <article className="guide-main">
+          {!guide ? (
+            <div className="guide-start">
+              <div className="guide-box tip">
+                <div className="guide-box-title">Mới dùng lần đầu?</div>
+                <p>Đọc theo thứ tự: <Link to="/guide/bat-dau">Bắt đầu nhanh</Link> → <Link to="/guide/tao-don">Tạo đơn</Link> → <Link to="/guide/nhap-hang">Nhập hàng</Link> → <Link to="/guide/suc-khoe-kinh-doanh">Cách đọc sức khoẻ kinh doanh</Link>.</p>
               </div>
-              <p className="small muted" style={{ marginBottom: 0 }}>Các mức vàng/đỏ của tỷ lệ (biên lợi nhuận, huỷ đơn, hoàn trả, số ngày tồn, khách mua lại) do bạn đặt ở <Link to="/settings">Cài đặt → Ngưỡng & kho</Link>. App chỉ gợi ý mức mặc định, mỗi ngành hợp mức khác nhau nên hãy chỉnh cho đúng với bạn.</p>
-              <div className="stack" style={{ gap: 4, marginTop: 10 }}>
-                {d.health.data.map((h) => <div key={h.key} className="row between small"><span>{h.label}</span><span><b className="num">{h.value === null ? '—' : String(h.value).replace('.', ',')}</b> <Dot status={h.status} /> <span className="muted">(vàng khi {h.threshold.direction === 'higher_better' ? 'dưới' : 'trên'} {h.threshold.warn}, đỏ khi {h.threshold.direction === 'higher_better' ? 'dưới' : 'trên'} {h.threshold.bad})</span></span></div>)}
-              </div>
-            </Card>
-
-            <div className="stack">
-              <h2 style={{ margin: '8px 0 0' }}>Từ điển các con số</h2>
-              <p className="small muted" style={{ margin: 0 }}>Bấm vào từng mục để xem nghĩa, cách tính và việc nên làm.</p>
-              {GLOSSARY.map((g) => (
-                <Card key={g.group} title={g.group}>
-                  {g.items.map((it) => (
-                    <details key={it.name} style={{ padding: '8px 0', borderBottom: '1px solid var(--hairline)' }}>
-                      <summary style={{ cursor: 'pointer', fontWeight: 600 }}>{it.name}{it.key && d.health.data.find((h) => h.key === it.key) && <span className="muted small"> · hiện {pct(d.health.data.find((h) => h.key === it.key).value)}</span>}</summary>
-                      <div className="stack small" style={{ gap: 6, marginTop: 8 }}>
-                        <div><b>Là gì: </b>{it.what}</div>
-                        <div><b>Cách tính: </b>{it.how}</div>
-                        {it.source && <div><b>Lấy từ đâu: </b>{it.source}</div>}
-                        {it.scope && <div><b>Phạm vi: </b>{SCOPES[it.scope]}</div>}
-                        <div><b>Nên làm: </b>{it.tip}</div>
-                      </div>
-                    </details>
-                  ))}
-                </Card>
-              ))}
             </div>
-
-            <Card title="Những điều số liệu không nói được">
-              <ul className="small" style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
-                <li><b>Số đúng khi ghi đủ.</b> Quên nhập một đơn hay một khoản chi là báo cáo lệch. Đếm két và kiểm kê kho định kỳ để bắt chỗ thiếu.</li>
-                <li><b>“Ước tính”</b> nghĩa là chưa tính thuế và các khoản ngoài sổ. Đây không phải sổ kế toán hay tờ khai thuế.</li>
-                <li><b>Phí sàn khi khách trả hàng</b> được giả định sàn không hoàn lại. Nếu sàn có hoàn thì lãi thật cao hơn một chút.</li>
-                <li><b>Một tháng chưa đủ để kết luận.</b> Nhìn xu hướng vài tháng, đặc biệt với hàng theo mùa hoặc dịp lễ.</li>
-              </ul>
-            </Card>
-          </>
-        );
-      }}</Async>
+          ) : (
+            <>
+              <Link to="/guide" className="guide-back">← Tất cả hướng dẫn</Link>
+              <header className="guide-head">
+                <div className="guide-kicker">{guide.group}{guide.time ? ` · ${guide.time}` : ''}</div>
+                <h2>{guide.title}</h2>
+                <p className="guide-summary">{guide.summary}</p>
+              </header>
+              {guide.special === 'health' ? <HealthGuide /> : <Blocks guide={guide} />}
+              <footer className="guide-foot">
+                {prev ? <Link to={`/guide/${prev.id}`} className="guide-pn"><small>Trước</small>{prev.title}</Link> : <span />}
+                {next ? <Link to={`/guide/${next.id}`} className="guide-pn next"><small>Tiếp</small>{next.title}</Link> : <span />}
+              </footer>
+            </>
+          )}
+        </article>
+      </div>
     </div>
   );
 }

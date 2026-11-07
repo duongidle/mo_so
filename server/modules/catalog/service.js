@@ -128,10 +128,12 @@ export function getProduct(id) {
  * Danh sách sản phẩm. Nếu có shopId: chỉ sản phẩm có niêm yết ở shop đó (trừ khi includeUnlisted).
  * categoryId lọc cả danh mục con cháu. type: 'combo' (có biến thể combo) | 'single' (không có).
  */
-export function listProducts({ shopId, q, categoryId, type, includeArchived, includeUnlisted, limit = 50, cursor }) {
+export function listProducts({ shopId, q, categoryId, type, itemType, includeArchived, archivedOnly, includeUnlisted, unlistedOnly, limit = 50, cursor }) {
   const where = [];
   const params = [];
-  if (!includeArchived) where.push('p.archived_at IS NULL');
+  if (archivedOnly) where.push('p.archived_at IS NOT NULL');
+  else if (!includeArchived) where.push('p.archived_at IS NULL');
+  if (itemType) { where.push('p.item_type = ?'); params.push(itemType); }
   const cat = categoryClause(categoryId);
   if (cat.sql) {
     where.push(cat.sql.slice(5));
@@ -143,6 +145,8 @@ export function listProducts({ shopId, q, categoryId, type, includeArchived, inc
     where.push(`(p.name LIKE ? OR EXISTS (SELECT 1 FROM variants v WHERE v.product_id = p.id AND (v.sku LIKE ? OR v.name LIKE ? OR v.barcode = ?)))`);
     params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);
   }
+  // Sản phẩm chưa gắn vào shop nào (vd vật tư, hàng mới tạo): không hiện khi lọc theo shop nên cần một đường riêng để tìm, sửa, xoá chúng
+  if (unlistedOnly) where.push('NOT EXISTS (SELECT 1 FROM variants v JOIN shop_listings l ON l.variant_id = v.id WHERE v.product_id = p.id)');
   if (shopId && !includeUnlisted) {
     where.push(`EXISTS (SELECT 1 FROM variants v JOIN shop_listings l ON l.variant_id = v.id WHERE v.product_id = p.id AND l.shop_id = ?)`);
     params.push(shopId);
@@ -379,6 +383,8 @@ function setVariantImages(productId, pairs) {
 }
 
 export function upsertListing(shopId, variantId, price, active = true) {
+  const sellable = db().prepare("SELECT p.item_type FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id=?").get(variantId);
+  if (sellable && sellable.item_type !== 'product') throw badRequest('MATERIAL_NOT_SELLABLE', 'Vật tư không thể niêm yết để bán');
   const at = nowIso();
   const existing = db().prepare('SELECT * FROM shop_listings WHERE shop_id = ? AND variant_id = ?').get(shopId, variantId);
   if (existing) {
@@ -393,6 +399,8 @@ export function upsertListing(shopId, variantId, price, active = true) {
 }
 
 export function createProduct(input, actor) {
+  if (input.item_type && input.item_type !== 'product' && input.shop_ids?.length) throw badRequest('MATERIAL_NOT_SELLABLE', 'Vật tư không thể gán vào shop bán hàng');
+  if (input.default_supplier_id && !db().prepare('SELECT 1 FROM suppliers WHERE id=? AND archived_at IS NULL').get(input.default_supplier_id)) throw notFound('Nhà cung cấp');
   if (!input.variants?.length) throw badRequest('NO_VARIANT', 'Sản phẩm cần ít nhất 1 biến thể (SKU)');
   const options = normalizeOptions(input.options);
   assertSkusFree(input.variants, null);
@@ -402,10 +410,10 @@ export function createProduct(input, actor) {
   const at = nowIso();
   db()
     .prepare(
-      `INSERT INTO products (id, name, description, category_id, unit, image_url, brand, consumption_days, options, tags, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO products (id, name, description, category_id, unit, image_url, brand, consumption_days, options, tags, item_type, default_supplier_id, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.name, input.description ?? null, input.category_id ?? null, input.unit ?? 'cái', input.image_url ?? null, input.brand ?? null, input.consumption_days ?? null, options.length ? json(options) : null, json(input.tags ?? []), at, at);
+    .run(id, input.name, input.description ?? null, input.category_id ?? null, input.unit ?? 'cái', input.image_url ?? null, input.brand ?? null, input.consumption_days ?? null, options.length ? json(options) : null, json(input.tags ?? []), input.item_type ?? 'product', input.default_supplier_id ?? null, at, at);
   const variantImages = [];
   const bySku = new Map();
   input.variants.forEach((v, i) => {
@@ -426,10 +434,12 @@ export function createProduct(input, actor) {
   return p;
 }
 
-const PRODUCT_FIELDS = ['name', 'description', 'category_id', 'unit', 'image_url', 'brand', 'consumption_days', 'options', 'tags', 'archived_at'];
+const PRODUCT_FIELDS = ['name', 'description', 'category_id', 'unit', 'image_url', 'brand', 'consumption_days', 'options', 'tags', 'archived_at', 'item_type', 'default_supplier_id'];
 
 export function updateProduct(id, input, actor) {
   const before = getProduct(id);
+  if (input.default_supplier_id && !db().prepare('SELECT 1 FROM suppliers WHERE id=? AND archived_at IS NULL').get(input.default_supplier_id)) throw notFound('Nhà cung cấp');
+  if (input.item_type && input.item_type !== 'product' && before.variants.some((v) => v.listings?.some((l) => l.active))) throw conflict('MATERIAL_HAS_LISTINGS', 'Gỡ niêm yết ở các shop trước khi đổi thành vật tư');
   const at = nowIso();
   const next = { ...before };
   for (const f of PRODUCT_FIELDS) if (input[f] !== undefined) next[f] = input[f];
@@ -547,7 +557,7 @@ export function syncListings({ fromShopId, toShopId, variantIds = null, productI
  */
 export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30, onlyListed = true }) {
   const params = [shopId ?? null];
-  const where = ['v.archived_at IS NULL', 'p.archived_at IS NULL'];
+  const where = ["v.archived_at IS NULL", "p.archived_at IS NULL", "p.item_type = 'product'"];
   if (q) {
     where.push('(v.sku LIKE ? OR v.name LIKE ? OR p.name LIKE ? OR v.barcode = ?)');
     params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);

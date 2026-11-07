@@ -157,14 +157,15 @@ export function ledger(code, { from, to = businessDate(), shopIds, limit = 1000 
 }
 
 // ---------- Cân đối phát sinh ----------
-export function trialBalance({ from, to = businessDate() } = {}) {
+export function trialBalance({ from, to = businessDate(), shopIds } = {}) {
   flushJournal();
   const lo = from || BEGIN;
   const accounts = db().prepare('SELECT * FROM accounts ORDER BY code').all();
   const agg = (sql, ...p) => new Map(db().prepare(sql).all(...p).map((r) => [r.c, r]));
+  const shopSql = shopIds?.length ? `AND e.shop_id IN (${ph(shopIds)})` : '';
   const base = 'SELECT l.account_code AS c, SUM(l.debit) AS d, SUM(l.credit) AS k FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id WHERE e.voided_at IS NULL AND ';
-  const before = agg(`${base} e.entry_date < ? GROUP BY l.account_code`, lo);
-  const during = agg(`${base} e.entry_date >= ? AND e.entry_date <= ? GROUP BY l.account_code`, lo, to);
+  const before = agg(`${base} e.entry_date < ? ${shopSql} GROUP BY l.account_code`, lo, ...(shopIds || []));
+  const during = agg(`${base} e.entry_date >= ? AND e.entry_date <= ? ${shopSql} GROUP BY l.account_code`, lo, to, ...(shopIds || []));
   const rows = [];
   for (const a of accounts) {
     const b = before.get(a.code) || { d: 0, k: 0 };
@@ -176,7 +177,7 @@ export function trialBalance({ from, to = businessDate() } = {}) {
   }
   const tot = (k) => rows.reduce((a, r) => a + r[k], 0);
   const totals = Object.fromEntries(['opening_debit', 'opening_credit', 'debit', 'credit', 'closing_debit', 'closing_credit'].map((k) => [k, tot(k)]));
-  return { from: from || null, to, data: rows, totals, balanced: totals.opening_debit === totals.opening_credit && totals.debit === totals.credit && totals.closing_debit === totals.closing_credit };
+  return { from: from || null, to, data: rows, totals, balanced: totals.opening_debit === totals.opening_credit && totals.debit === totals.credit && totals.closing_debit === totals.closing_credit, scope: { shop_filtered: Boolean(shopIds?.length), shop_id: shopIds?.length === 1 ? shopIds[0] : null, account_wide: !shopIds?.length } };
 }
 
 // ---------- Kết quả kinh doanh ----------
@@ -340,28 +341,35 @@ export function cashFlowDirect({ from, to = businessDate(), shopIds } = {}) {
 }
 
 // ---------- Tổng quan kế toán ----------
-export function overview({ asOf = businessDate() } = {}) {
+export function overview({ asOf = businessDate(), shopId } = {}) {
   flushJournal();
   const accounts = listAccounts({ asOf });
-  const by = (re) => accounts.filter((a) => re.test(a.code)).reduce((s, a) => s + (a.debit - a.credit), 0);
+  const by = (re, shopScoped = Boolean(shopId)) => {
+    const codes = accounts.filter((a) => re.test(a.code)).map((a) => a.code);
+    if (!codes.length) return 0;
+    const filterByShop = shopScoped && Boolean(shopId);
+    const shopSql = filterByShop ? 'AND e.shop_id = ?' : '';
+    return db().prepare(`SELECT COALESCE(SUM(l.debit-l.credit),0) AS v FROM journal_lines l JOIN journal_entries e ON e.id=l.entry_id WHERE e.voided_at IS NULL AND e.entry_date<=? AND l.account_code IN (${ph(codes)}) ${shopSql}`).get(asOf, ...codes, ...(filterByShop ? [shopId] : [])).v;
+  };
   const monthFrom = `${asOf.slice(0, 7)}-01`;
-  const month = incomeStatement({ from: monthFrom, to: asOf });
-  const transit = db().prepare("SELECT COUNT(*) AS n, COALESCE(SUM(l.debit - l.credit),0) AS v FROM journal_lines l WHERE l.account_code = '1131'").get();
+  const month = incomeStatement({ from: monthFrom, to: asOf, shopIds: shopId ? [shopId] : null });
+  const transit = db().prepare("SELECT COUNT(*) AS n, COALESCE(SUM(l.debit-l.credit),0) AS v FROM journal_lines l WHERE l.account_code='1131'").get();
   const warnings = [];
   if (transit.n > 0) warnings.push({ code: 'UNASSIGNED_METHOD', message: `${transit.n} dòng tiền thuộc phương thức chưa gán quỹ nào (tài khoản 1131, ${transit.v} ₫). Gán phương thức vào quỹ ở Chi phí & quỹ → Quỹ tiền.`, amount: transit.v });
   const bad = db().prepare('SELECT COUNT(*) AS n FROM journal_dirty').get().n;
   if (bad) warnings.push({ code: 'DIRTY', message: 'Sổ đang chờ tính lại.' });
   return {
     as_of: asOf,
-    cash: by(/^11[12]\d/),
+    cash: by(/^11[12]\d/, false),
     receivable_customers: by(/^131$/),
     receivable_marketplace: by(/^1388$/),
-    inventory: by(/^156$/),
-    payable_suppliers: -by(/^331$/),
+    inventory: by(/^156$/, false),
+    payable_suppliers: -by(/^331$/, false),
     month_from: monthFrom,
     month_profit: month.profit_before_tax,
     month_net_revenue: month.net_revenue,
     warnings,
+    scope: { shop_filtered: Boolean(shopId), shop_id: shopId ?? null, shared_balances_account_wide: Boolean(shopId), profit_shop_filtered: Boolean(shopId), shared_expenses_allocated_to_profit: Boolean(shopId) },
   };
 }
 

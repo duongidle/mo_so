@@ -46,12 +46,12 @@ export default function ExportCustomers({ filters, onClose }) {
 
   return (
     <Modal title="Xuất danh sách khách" onClose={onClose} footer={<button className="btn primary" disabled={busy || !d || d.count === 0} onClick={go}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất {d ? `${num(d.count)} khách` : ''}</button>}>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         <div className="eyebrow">Gồm các khách đang lọc</div>
         <div className="row wrap">{describe(filters, shops).map((t) => <span key={t} className="badge plain">{t}</span>)}</div>
         <p className="small muted" style={{ margin: 0 }}>Đổi bộ lọc ở trang Khách hàng rồi mở lại để xuất phần khác.</p>
       </div>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         <div className="eyebrow">Các cột trong file</div>
         {preview.loading && !d ? <span className="muted small">Đang đếm…</span> : d && <p className="small" style={{ margin: 0 }}>{d.headers.join(' · ')}</p>}
         <p className="small muted" style={{ margin: 0 }}>

@@ -128,8 +128,8 @@ test('KQKD = báo cáo tổng quan: tất cả shop và từng shop', async () =
       const costs = is.selling_expenses.concat(is.admin_expenses).reduce((a, r) => a + r.amount, 0) + 20000;
       assert.equal(costs, ov.platform_fee + ov.seller_shipping + ov.expenses_amount, 'chi phí');
     }
-    // Lợi nhuận: ledger gồm thêm chênh lệch kho/quỹ (không thuộc báo cáo và không thuộc shop nào)
-    assert.equal(is.profit_before_tax - (shop ? 0 : adj), ov.net_profit_estimate, `lợi nhuận ${tag}`);
+    // Tổng toàn shop cộng cả điều chỉnh kho/quỹ; lợi nhuận từng shop không có các khoản không gán shop.
+    assert.equal(is.profit_before_tax, ov.net_profit_estimate, `lợi nhuận ${tag}`);
   }
   const all = ok(await api.get(`/accounting/income-statement?${WIDE()}`));
   const sumShops = ok(await api.get(`/accounting/income-statement?${WIDE()}&shop_id=${nh.id}`)).profit_before_tax + ok(await api.get(`/accounting/income-statement?${WIDE()}&shop_id=${pt.id}`)).profit_before_tax;

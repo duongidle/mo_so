@@ -1,6 +1,7 @@
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
-import { nowIso, businessDate } from '../../lib/time.js';
+import { nowIso, businessDate, addDays } from '../../lib/time.js';
+import { stockLockDate } from '../../lib/stockperiod.js';
 import { conflict, badRequest, notFound } from '../../lib/errors.js';
 import { emit, audit } from '../../lib/events.js';
 import { runningCode } from '../../lib/codes.js';
@@ -37,13 +38,21 @@ export function getLevel(warehouseId, variantId) {
  * @returns {{ unitCost:number, balanceAfter:number, negative:boolean }}
  */
 export function applyMovement(m) {
-  if (!Number.isInteger(m.qty) || m.qty <= 0) throw badRequest('INVALID_QTY', 'Số lượng phải là số nguyên dương');
+  if (!Number.isFinite(m.qty) || m.qty <= 0 || Math.abs(m.qty * 1000 - Math.round(m.qty * 1000)) >= 1e-7) throw badRequest('INVALID_QTY', 'Số lượng phải dương, tối đa 3 chữ số thập phân');
   if (db().prepare("SELECT 1 FROM variants WHERE id = ? AND kind = 'bundle'").get(m.variantId)) {
     throw badRequest('BUNDLE_NO_STOCK', 'Combo không có tồn kho riêng. Nhập, điều chỉnh, chuyển kho cho từng sản phẩm thành phần.', { variant_id: m.variantId });
   }
   const isIn = IN_TYPES.has(m.type);
   const level = getLevel(m.warehouseId, m.variantId);
-  const at = m.at || nowIso();
+  let at = m.at || nowIso();
+  let closedNote = null;
+  const lock = stockLockDate();
+  if (lock && businessDate(at) <= lock) {
+    if (!m.clampIfClosed) throw conflict('STOCK_PERIOD_CLOSED', `Kho đã chốt đến hết ngày ${lock}: không ghi được biến động ngày ${businessDate(at)}. Mở lại kỳ ở Kho → Chốt kho nếu cần sửa.`, { lock_date: lock, date: businessDate(at) });
+    // Đơn đặt trong kỳ đã chốt (import muộn, đơn tạo lùi ngày): vẫn phải trừ kho, ghi vào ngày đầu tiên của kỳ mở để số kỳ đã chốt không đổi
+    closedNote = `Ngày gốc ${businessDate(at)} thuộc kỳ kho đã chốt, ghi vào ${addDays(lock, 1)}`;
+    at = new Date(`${addDays(lock, 1)}T00:00:00+07:00`).toISOString();
+  }
   let unitCost;
   let newOnHand;
   let newAvg = level.avg_cost;
@@ -96,8 +105,8 @@ export function applyMovement(m) {
   db()
     .prepare(
       `INSERT INTO stock_movements (id, warehouse_id, variant_id, type, qty, unit_cost, balance_after, avg_cost_after,
-        ref_type, ref_id, ref_line_id, shop_id, note, actor_id, created_at, business_date)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ref_type, ref_id, ref_line_id, shop_id, note, actor_id, created_at, business_date, expense_account_code)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       newId('mov'),
@@ -112,10 +121,11 @@ export function applyMovement(m) {
       m.refId ?? null,
       m.refLineId ?? null,
       m.shopId ?? null,
-      m.note ?? null,
+      closedNote ? (m.note ? `${m.note} · ${closedNote}` : closedNote) : m.note ?? null,
       m.actorId ?? null,
       at,
       businessDate(at),
+      m.expenseAccountCode ?? null,
     );
 
   emit('stock.changed', {
@@ -140,6 +150,11 @@ export function listStock({ warehouseId, shopId, q, categoryId, filter, limit = 
   if (warehouseId) {
     levelJoin += ' AND s.warehouse_id = ?';
     params.push(warehouseId);
+    // Chọn một kho thì chỉ liệt kê hàng đã từng có mặt ở kho đó (có dòng tồn, kể cả đã về 0). Hàng chưa từng nhập vào kho này không phải
+    // "sắp hết" của kho này. Combo hiện khi có thành phần nào từng nằm trong kho.
+    where.push(`(s.warehouse_id IS NOT NULL OR (v.kind = 'bundle' AND EXISTS (
+      SELECT 1 FROM bundle_components bc JOIN stock_levels sl ON sl.variant_id = bc.component_variant_id AND sl.warehouse_id = ? WHERE bc.bundle_variant_id = v.id)))`);
+    params.push(warehouseId); // thứ tự ? trong WHERE: điều kiện kho đứng trước ô tìm và danh mục
   }
   if (q) {
     where.push('(v.sku LIKE ? OR v.name LIKE ? OR p.name LIKE ?)');
@@ -149,7 +164,7 @@ export function listStock({ warehouseId, shopId, q, categoryId, filter, limit = 
   if (cat.sql) where.push(cat.sql.slice(5));
   const rows = db()
     .prepare(
-      `SELECT v.id AS variant_id, v.sku, v.kind, v.name AS variant_name, v.min_stock, p.id AS product_id, p.name AS product_name, p.unit,
+      `SELECT v.id AS variant_id, v.sku, v.kind, v.name AS variant_name, v.min_stock, p.id AS product_id, p.name AS product_name, p.unit, p.item_type,
               COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url,
               COALESCE(SUM(s.on_hand),0) AS on_hand,
               CASE WHEN SUM(CASE WHEN s.on_hand > 0 THEN s.on_hand END) > 0
@@ -181,9 +196,9 @@ export function listStock({ warehouseId, shopId, q, categoryId, filter, limit = 
     }
     const sold30 = soldMap.get(r.variant_id) || 0;
     const perDay = sold30 / 30;
-    const daysLeft = perDay > 0 ? Math.floor(r.on_hand / perDay) : null;
+    const daysLeft = r.item_type === 'product' && perDay > 0 ? Math.floor(r.on_hand / perDay) : null;
     const low = r.on_hand <= r.min_stock || (daysLeft !== null && daysLeft < lowDays);
-    const slow = r.on_hand > 0 && (!r.last_out_at || r.last_out_at < slowBefore);
+    const slow = r.item_type === 'product' && r.on_hand > 0 && (!r.last_out_at || r.last_out_at < slowBefore);
     return { ...r, stock_value: Math.max(0, r.on_hand) * r.avg_cost, sold_30d: sold30, days_left: daysLeft, is_low: low, is_slow: slow, is_negative: r.on_hand < 0 };
   });
   if (filter === 'low') out = out.filter((r) => r.is_low);

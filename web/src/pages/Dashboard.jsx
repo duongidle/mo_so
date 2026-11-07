@@ -61,7 +61,7 @@ export default function Dashboard({ progress, reopenGuide }) {
                   {d.period.change_pct.net_revenue === null ? 'Chưa có kỳ trước để so sánh' : `${d.period.change_pct.net_revenue >= 0 ? '▲' : '▼'} ${Math.abs(d.period.change_pct.net_revenue).toString().replace('.', ',')}% so với kỳ trước`} · hôm nay {vnd(d.today.net_revenue)} ({d.today.order_count} đơn) <MetricInfo metric="today_revenue" />
                 </div>
                 <AreaChart data={series.map((s) => ({ value: s.net_revenue }))} />
-                <div className="row between small" style={{ color: 'color-mix(in srgb, var(--linen) 65%, transparent)', marginTop: 6 }}><span>30 ngày gần nhất</span><span>hôm nay</span></div>
+                <div className="row between small" style={{ color: 'color-mix(in srgb, var(--linen) 65%, transparent)', marginTop: 8 }}><span>30 ngày gần nhất</span><span>hôm nay</span></div>
                 <div className="stats">
                   <div><b>{vnd(cur.gross_profit)}</b><span><MetricLabel metric="gross_profit">Lợi nhuận gộp</MetricLabel> · <MetricLabel metric="gross_margin_pct">biên {pct(cur.gross_margin_pct)}</MetricLabel></span></div>
                   <div><b>{vnd(cur.net_profit_estimate)}</b><span><MetricLabel metric="net_profit_estimate">Lãi ròng ước tính</MetricLabel></span></div>
@@ -82,7 +82,7 @@ export default function Dashboard({ progress, reopenGuide }) {
                 </Card>
 
                 <div className="stack">
-                  <Card title={flagged.length ? 'Cần để ý' : 'Sức khoẻ kinh doanh'} actions={<><Link to="/guide" className="small">Cách đọc</Link><Link to="/reports" className="small">Chi tiết</Link></>}>
+                  <Card title={flagged.length ? 'Cần để ý' : 'Sức khoẻ kinh doanh'} actions={<><Link to="/guide/suc-khoe-kinh-doanh" className="small">Cách đọc</Link><Link to="/reports" className="small">Chi tiết</Link></>}>
                     {flagged.length === 0 ? <span className="muted">Mọi chỉ số đang trong ngưỡng an toàn.</span> : flagged.map((h) => (
                       <div key={h.key} className="meter">
                         <span className={`dot h-${h.status}`} />

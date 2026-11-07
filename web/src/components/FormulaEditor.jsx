@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
-import { useAsync, useDebounced } from './ui.jsx';
+import { useAsync, useDebounced, useSlider } from './ui.jsx';
 
 const TYPE_LABEL = { text: 'chữ', number: 'số', money: 'tiền', date: 'ngày', boolean: 'có/không', percent: '%' };
 
@@ -84,7 +84,9 @@ export default function FormulaEditor({ value, onChange, entity, shopId = null, 
   const [cursor, setCursor] = useState(0);
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
-  const [panel, setPanel] = useState(null); // null | 'vars' | 'fns'
+  const [panel, setPanel] = useState('vars'); // 'vars' | 'fns'
+  const [find, setFind] = useState('');
+  const sliderRef = useSlider(panel);
   const needShop = entity === 'customer' && !shopId;
 
   const vars = useAsync(
@@ -162,9 +164,9 @@ export default function FormulaEditor({ value, onChange, entity, shopId = null, 
 
   const groups = useMemo(() => {
     const g = new Map();
-    for (const v of varList) { if (!g.has(v.group)) g.set(v.group, []); g.get(v.group).push(v); }
+    for (const v of filterVariables(varList, find)) { if (!g.has(v.group)) g.set(v.group, []); g.get(v.group).push(v); }
     return [...g.entries()];
-  }, [varList]);
+  }, [varList, find]);
 
   const listId = `${uid}-list`;
   const err = preview?.error;
@@ -183,7 +185,7 @@ export default function FormulaEditor({ value, onChange, entity, shopId = null, 
         onClick={(e) => { setCursor(e.target.selectionStart); setDismissed(false); }}
         onBlur={() => setTimeout(() => setDismissed(true), 150)}
         onFocus={(e) => { setCursor(e.target.selectionStart); setDismissed(false); }}
-        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 14, resize: 'vertical' }}
+        className="formula-input"
       />
       {open && (
         <ul id={listId} role="listbox" aria-label={trigger.kind === 'var' ? 'Biến gợi ý' : 'Hàm gợi ý'} className="formula-list">
@@ -200,43 +202,61 @@ export default function FormulaEditor({ value, onChange, entity, shopId = null, 
         </ul>
       )}
 
-      <div className="row wrap" style={{ gap: 6 }}>
-        <button type="button" className={`chip ${panel === 'vars' ? 'on' : ''}`} aria-pressed={panel === 'vars'} onClick={() => setPanel(panel === 'vars' ? null : 'vars')}>Biến</button>
-        <button type="button" className={`chip ${panel === 'fns' ? 'on' : ''}`} aria-pressed={panel === 'fns'} onClick={() => setPanel(panel === 'fns' ? null : 'fns')}>Hàm</button>
-        {templates.length > 0 && <span className="small muted">Mẫu:</span>}
-        {templates.map(([name, f]) => <button type="button" key={name} className="chip" title={f} onClick={() => setText(f, f.length)}>{name}</button>)}
-      </div>
-
-      {panel === 'vars' && (
-        <div className="formula-panel" role="region" aria-label="Biến có thể dùng">
-          {vars.loading && <span className="muted small">Đang tải…</span>}
-          {!vars.loading && !varList.length && <span className="muted small">Không có biến nào.</span>}
-          {groups.map(([g, list]) => (
-            <div key={g}>
-              <div className="eyebrow">{g}</div>
-              <div className="row wrap" style={{ gap: 6, margin: '4px 0 10px' }}>
-                {list.map((v) => <button type="button" key={v.key} className="chip" title={`${v.ref} · ${TYPE_LABEL[v.type] || v.type}`} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(v.ref)}>{v.label}</button>)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {panel === 'fns' && (
-        <div className="formula-panel" role="region" aria-label="Hàm có thể dùng">
-          {fnList.map((f) => (
-            <button type="button" key={f.name} className="formula-fn" onMouseDown={(e) => e.preventDefault()} onClick={() => insert(`${f.name}()`, { caretBack: f.name === 'TODAY' ? 0 : 1 })}>
-              <code>{f.signature}</code><span className="small muted">{f.description} VD: <code>{f.example}</code></span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div aria-live="polite" className="small">
-        {err && <div className="alert err" role="alert"><div>{err.message}{err.position !== null && err.position !== undefined ? ` (ký tự thứ ${err.position + 1})` : ''}</div><ErrorSpot text={debounced} position={err.position} /></div>}
+      <div aria-live="polite" className={`formula-result${err ? ' bad' : ''}`}>
+        {!value.trim() && !err && <span className="muted">Kết quả thử sẽ hiện ở đây khi bạn gõ công thức.</span>}
+        {err && <div role="alert"><div>{err.message}{err.position !== null && err.position !== undefined ? ` (ký tự thứ ${err.position + 1})` : ''}</div><ErrorSpot text={debounced} position={err.position} /></div>}
         {!err && preview && !stale && value.trim() && (
           preview.sample === null
             ? <span className="muted">{preview.note || 'Công thức hợp lệ.'}</span>
-            : <span>Kết quả thử: <b data-testid="formula-result">{fmt(preview.value) ?? 'trống'}</b>{preview.value === null || preview.value === undefined ? <span className="muted" data-testid="formula-reason"> ({preview.reason || 'thiếu dữ liệu'})</span> : null} <span className="muted">· trên {preview.sample.label}</span></span>
+            : <><span className="muted">Kết quả thử</span><b className="formula-value" data-testid="formula-result">{fmt(preview.value) ?? 'trống'}</b>{preview.value === null || preview.value === undefined ? <span className="muted" data-testid="formula-reason">({preview.reason || 'thiếu dữ liệu'})</span> : null}<span className="muted formula-sample">trên {preview.sample.label}</span></>
+        )}
+      </div>
+
+      {templates.length > 0 && (
+        <div className="formula-templates">
+          <span className="small muted">Bắt đầu từ mẫu</span>
+          {templates.map(([name, f]) => <button type="button" key={name} className="tpl" title={f} onClick={() => setText(f, f.length)}>{name}</button>)}
+        </div>
+      )}
+
+      <div className="formula-insert">
+        <div className="formula-insert-head">
+          <span className="small" style={{ fontWeight: 600 }}>Chèn vào công thức</span>
+          <div ref={sliderRef} className="chips" role="group" aria-label="Loại thành phần">
+            <button type="button" className="chip" aria-pressed={panel === 'vars'} onClick={() => setPanel('vars')}>Biến</button>
+            <button type="button" className="chip" aria-pressed={panel === 'fns'} onClick={() => setPanel('fns')}>Hàm</button>
+          </div>
+        </div>
+        {panel === 'vars' && (
+          <div className="formula-panel" role="region" aria-label="Biến có thể dùng">
+            <input className="formula-find" type="search" placeholder="Tìm biến…" aria-label="Tìm biến" value={find} onChange={(e) => setFind(e.target.value)} />
+            {vars.loading && <span className="muted small">Đang tải…</span>}
+            {!vars.loading && !varList.length && <span className="muted small">Không có biến nào.</span>}
+            {!vars.loading && varList.length > 0 && !groups.length && <span className="muted small">Không có biến khớp “{find}”.</span>}
+            {groups.map(([g, list]) => (
+              <div key={g} className="formula-group">
+                <div className="formula-group-name">{g}</div>
+                <div className="formula-rows">
+                  {list.map((v) => (
+                    <button type="button" key={v.key} className="formula-row" aria-label={v.label} title={`${v.ref} · ${TYPE_LABEL[v.type] || v.type}`} onMouseDown={(e) => e.preventDefault()} onClick={() => insert(v.ref)}>
+                      <span>{v.label}</span><code>{v.ref}</code>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {panel === 'fns' && (
+          <div className="formula-panel" role="region" aria-label="Hàm có thể dùng">
+            <div className="formula-rows one">
+              {fnList.map((f) => (
+                <button type="button" key={f.name} className="formula-row fn" onMouseDown={(e) => e.preventDefault()} onClick={() => insert(`${f.name}()`, { caretBack: f.name === 'TODAY' ? 0 : 1 })}>
+                  <code>{f.signature}</code><span className="small muted">{f.description} VD: <code>{f.example}</code></span>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

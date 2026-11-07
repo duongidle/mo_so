@@ -41,7 +41,8 @@ r.get('/ledger/:code', (c) => {
 });
 r.get('/trial-balance', (c) => {
   const q = query(c, period);
-  return c.json({ data: svc.trialBalance({ from: q.from, to: q.to }), meta: { scope: { account_wide: true } } });
+  const shopIds = ids(q.shop_id);
+  return c.json({ data: svc.trialBalance({ from: q.from, to: q.to, shopIds }), meta: { scope: { account_wide: !shopIds?.length, shop_filtered: Boolean(shopIds?.length) } } });
 });
 r.get('/income-statement', (c) => {
   const q = query(c, period);
@@ -56,7 +57,8 @@ r.get('/cash-flow', (c) => {
   return c.json({ data: svc.cashFlowDirect({ from: q.from, to: q.to, shopIds: ids(q.shop_id) }) });
 });
 r.get('/overview', (c) => {
-  const data = svc.overview({ asOf: query(c, z.object({ as_of: date.optional() })).as_of });
+  const q = query(c, z.object({ as_of: date.optional(), shop_id: z.string().optional() }));
+  const data = svc.overview({ asOf: q.as_of, shopId: q.shop_id });
   data.warnings.push(...lockWarnings());
   data.lock_date = lockStatus().lock_date;
   return c.json({ data });

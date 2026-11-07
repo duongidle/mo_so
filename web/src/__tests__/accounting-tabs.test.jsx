@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../api.js', () => ({ api: { get: vi.fn() } }));
-vi.mock('../session.jsx', () => ({ useSession: () => ({ shopId: 'all', isAll: true, shop: null, has: () => false }) }));
+vi.mock('../session.jsx', () => ({ useSession: () => ({ shopId: 'all', isAll: true, shop: null, shops: [], methodLabels: {}, methodList: () => [['cash', 'Tiền mặt']], has: () => false }) }));
 vi.mock('xlsx', () => ({ utils: {}, writeFile: () => {} }));
 import { api } from '../api.js';
 import Accounting, { GROUPS } from '../pages/Accounting.jsx';
@@ -34,5 +34,27 @@ describe('Sổ kế toán: tab chia nhóm', () => {
     expect(await screen.findByText(/Số dư quỹ âm: kiểm tra thu chi chưa ghi hoặc số dư đầu kỳ/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Mở Quỹ tiền' }).getAttribute('href')).toBe('/expenses?tab=cash');
     expect(screen.getByText('− 500.000 ₫').className).toMatch(/h-red/);
+  });
+  it('form chi phí định kỳ mở thành trang nhập liệu, không nằm trong popup', async () => {
+    api.get.mockImplementation(async (path) => path === '/accounting/recurring-expenses' || path === '/recurring-expenses'
+      ? { data: [] }
+      : path === '/expense-categories' ? { data: [{ id: 'ecat_rent', name: 'Thuê' }] }
+        : { data: [] });
+    renderAt('/accounting?tab=recurring');
+    fireEvent.click(await screen.findByRole('button', { name: '+ Chi phí định kỳ' }));
+    expect(await screen.findByText('Thiết lập khoản chi và lịch tạo tự động.')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Huỷ' })).toBeTruthy();
+  });
+  it('form tài sản mở thành trang nhập liệu, không nằm trong popup', async () => {
+    api.get.mockImplementation(async (path) => path === '/accounting/assets'
+      ? { data: [] }
+      : path === '/accounting/accounts' ? { data: [{ code: '6428', name: 'Chi phí quản lý khác' }] }
+        : { data: [] });
+    renderAt('/accounting?tab=assets');
+    fireEvent.click(await screen.findByRole('button', { name: '+ Tài sản / chi phí trả trước' }));
+    expect(await screen.findByText('Ghi nhận nguyên giá, sau đó phân bổ đều theo tháng.')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Huỷ' })).toBeTruthy();
   });
 });

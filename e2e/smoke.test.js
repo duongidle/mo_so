@@ -458,7 +458,9 @@ test('tài chính: chi phí trả bằng ngân hàng, quỹ tiền (chuyển qu�
   // Trang hướng dẫn: có trong menu, 5 câu hỏi, từ điển mở được
   await page.goto(base);
   await page.locator('nav a[href="/guide"]').click();
-  await page.waitForSelector('h1:has-text("Cách đọc sức khoẻ kinh doanh")');
+  await page.waitForSelector('h1:has-text("Hướng dẫn")');
+  await page.locator('a.guide-link:has-text("Cách đọc sức khoẻ kinh doanh")').first().click();
+  await page.waitForSelector('h2:has-text("Cách đọc sức khoẻ kinh doanh")');
   for (const q of ['Tiền có đủ không?', 'Bán có lời không?', 'Hàng có bị kẹt hoặc sắp hết không?', 'Khách có quay lại không?', 'Chi phí có đang phình ra không?']) assert.ok(await page.locator(`text=${q}`).count(), q);
   await page.click('summary:has-text("Biên lợi nhuận gộp")');
   await page.waitForSelector('text=/giá bán chưa đủ cao/i');

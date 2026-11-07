@@ -1,0 +1,50 @@
+/*
+  shadcn/ui trong Mở Sổ — chỉ dùng cho các thành phần có hành vi khó (Dialog, Popover: khoá focus, aria, định vị).
+  Quy tắc cách ly để không đụng giao diện CSS thuần sẵn có (CLAUDE.md mục 3, nhật ký 2026-11-07):
+   1. KHÔNG nhập preflight của Tailwind (không reset lại button, heading, form của app).
+   2. Tailwind chỉ quét src/components/ui (source(none) + @source), nên không sinh class từ phần còn lại của app.
+   3. Mọi thứ nằm trong @layer; CSS của app không nằm trong layer nên luôn thắng khi trùng.
+   4. Màu, bo góc lấy từ token của Mở Sổ (brand/tokens.css, styles.css) nên tự đổi theo theme ngành.
+*/
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source "./components/ui";
+
+/* Màu ngữ nghĩa của shadcn ánh xạ thẳng vào token Mở Sổ (không tạo biến :root mới nên không đè token thương hiệu như --accent).
+   Giá trị đổi theo [data-theme] vì var() được tính tại phần tử dùng. */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--paper);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--paper);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--seal);
+  --color-primary-foreground: var(--linen);
+  --color-secondary: var(--paper-sunk);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--paper-sunk);
+  --color-muted-foreground: var(--ink-soft);
+  --color-accent: var(--tint);
+  --color-accent-foreground: var(--text);
+  --color-destructive: var(--st-cancelled);
+  --color-border: var(--rule);
+  --color-input: var(--field-border);
+  --color-ring: var(--terracotta);
+  --radius-sm: calc(var(--control-radius) - 4px);
+  --radius-md: var(--control-radius);
+  --radius-lg: var(--radius);
+  --radius-xl: 22px;
+}
+
+/* Chuyển động của lớp phủ và hộp thoại: ngắn, easing mũ của app, có chiều thoát (Radix giữ phần tử cho tới khi animation xong) */
+@keyframes ms-fade-in { from { opacity: 0; } }
+@keyframes ms-fade-out { to { opacity: 0; } }
+@keyframes ms-sheet-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes ms-sheet-out { to { opacity: 0; transform: translateY(8px); } }
+@keyframes ms-pop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+@keyframes ms-pop-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-slot=dialog-overlay], [data-slot=dialog-content], [data-slot=popover-content] { animation: none !important; }
+}

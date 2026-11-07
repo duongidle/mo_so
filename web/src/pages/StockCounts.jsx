@@ -78,7 +78,7 @@ function CountSheet({ id, onClose }) {
             </div>
             {draft && c.lines.some((l) => l.moved_since && l.counted_qty === null) && <div className="alert warn small">Có hàng đã bán/nhập từ lúc tạo phiếu (dòng đánh dấu ⚠). Nhập số bạn đếm được ngay lúc đếm: chênh lệch sẽ tính so với tồn hệ thống tại lúc nhập.</div>}
             {draft && (
-              <div className="stack" style={{ gap: 6 }}>
+              <div className="stack" style={{ gap: 8 }}>
                 <SearchBox value={q} onChange={setQ} placeholder="Thêm mã vào phiếu (SKU, tên)…" />
                 {found.data?.data?.filter((v) => v.kind !== 'bundle' && !c.lines.some((l) => l.variant_id === v.id)).map((v) => (
                   <div key={v.id} className="pick" onClick={async () => { await patch({ add_variant_ids: [v.id] }); setQ(''); }}>{v.product_name}{v.variant_name ? ` — ${v.variant_name}` : ''} <span className="small muted">{v.sku} · tồn {num(v.on_hand)}</span></div>

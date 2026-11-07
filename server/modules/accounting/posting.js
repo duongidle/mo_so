@@ -95,22 +95,35 @@ function paymentEntry({ p, order, purchase, marketplace }, ctx) {
   if (p.ref_type === 'order') {
     counter = recvAccount(marketplace);
     extra = { channel_id: order?.channel_id ?? null, ...(order?.customer_id ? { partner_type: 'customer', partner_id: order.customer_id } : {}) };
-    what = p.direction === 'in' ? `Thu tiền đơn ${order?.code ?? p.ref_id}` : `Hoàn tiền khách đơn ${order?.code ?? p.ref_id}`;
+    what = p.method === 'customer_credit'
+      ? (p.direction === 'in' ? `Dùng tiền khách gửi đơn ${order?.code ?? p.ref_id}` : `Chuyển hoàn thành tiền khách gửi ${order?.code ?? p.ref_id}`)
+      : p.direction === 'in' ? `Thu tiền đơn ${order?.code ?? p.ref_id}` : `Hoàn tiền khách đơn ${order?.code ?? p.ref_id}`;
   } else if (p.ref_type === 'purchase') {
     counter = '331';
     extra = purchase?.supplier_id ? { partner_type: 'supplier', partner_id: purchase.supplier_id } : {};
     what = p.direction === 'in' ? `NCC hoàn tiền phiếu ${purchase?.code ?? p.ref_id}` : `Trả NCC phiếu ${purchase?.code ?? p.ref_id}`;
+  } else if (p.ref_type === 'purchase_carrier') {
+    // Ship nhập trả bên vận chuyển: bù khoản phải trả khác (3388) đã ghi lúc nhận hàng
+    what = p.direction === 'in' ? `Hoàn tiền ship nhập phiếu ${purchase?.code ?? p.ref_id}` : `Trả ship nhập phiếu ${purchase?.code ?? p.ref_id}`;
   }
-  const lines = p.direction === 'in' ? [dr(cash, p.amount, sc), cr(counter, p.amount, { ...sc, ...extra })] : [dr(counter, p.amount, { ...sc, ...extra }), cr(cash, p.amount, sc)];
+  const lines = p.method === 'customer_credit'
+    ? (p.direction === 'in'
+        ? [dr('3388', p.amount, sc), cr(counter, p.amount, { ...sc, ...extra })]
+        : [dr(counter, p.amount, { ...sc, ...extra }), cr('3388', p.amount, sc)])
+    : p.direction === 'in' ? [dr(cash, p.amount, sc), cr(counter, p.amount, { ...sc, ...extra })] : [dr(counter, p.amount, { ...sc, ...extra }), cr(cash, p.amount, sc)];
   return entry({ source_type: 'payment', source_id: p.id, date: p.business_date, description: what, shop_id: p.shop_id }, lines);
 }
 
 function purchaseEntry({ pu }) {
-  if (pu.status !== 'received' || !pu.received_at || pu.total_amount <= 0) return null;
+  if (pu.status !== 'received' || !pu.received_at || pu.total_amount + (pu.carrier_amount || 0) <= 0) return null;
   const sc = { shop_id: pu.shop_id };
   return entry(
     { source_type: 'purchase', source_id: pu.id, date: businessDate(pu.received_at), description: `Nhập hàng ${pu.code}`, shop_id: pu.shop_id },
-    [dr('156', pu.total_amount, sc), cr('331', pu.total_amount, { ...sc, ...(pu.supplier_id ? { partner_type: 'supplier', partner_id: pu.supplier_id } : {}) })],
+    [
+      dr('156', pu.total_amount + (pu.carrier_amount || 0), sc),
+      ...(pu.total_amount > 0 ? [cr('331', pu.total_amount, { ...sc, ...(pu.supplier_id ? { partner_type: 'supplier', partner_id: pu.supplier_id } : {}) })] : []),
+      ...(pu.carrier_amount > 0 ? [cr('3388', pu.carrier_amount, sc)] : []),
+    ],
   );
 }
 
@@ -126,14 +139,21 @@ function expenseEntry({ e }, ctx) {
 
 function stockEntry({ movements, label }) {
   if (!movements.length) return null;
-  const sum = (types) => movements.filter((m) => types.includes(m.type)).reduce((a, m) => a + Math.abs(m.qty) * m.unit_cost, 0);
+  const sum = (types) => movements.filter((m) => types.includes(m.type)).reduce((a, m) => a + Math.round(Math.abs(m.qty) * m.unit_cost), 0);
   const inV = sum(['adjust_in']);
-  const outV = sum(['adjust_out', 'damage_out']);
+  const outMovements = movements.filter((m) => ['adjust_out', 'damage_out'].includes(m.type));
+  const materialOut = outMovements.filter((m) => ['packaging_run','material_issue'].includes(m.ref_type));
+  const outV = outMovements.filter((m) => !['packaging_run','material_issue'].includes(m.ref_type)).reduce((a,m)=>a+Math.round(Math.abs(m.qty)*m.unit_cost),0);
+  const materialByAccount = new Map();
+  for (const m of materialOut) {
+    const account = m.expense_account_code || '6428';
+    materialByAccount.set(account, (materialByAccount.get(account) || 0) + Math.round(Math.abs(m.qty) * m.unit_cost));
+  }
   const openV = sum(['opening']);
   const first = movements[0];
   return entry(
     { source_type: 'stock', source_id: first.ref_id ?? first.id, date: first.business_date, description: label || 'Điều chỉnh kho', shop_id: null },
-    [dr('156', inV), cr('711', inV, { memo: 'Điều chỉnh tăng' }), dr('811', outV, { memo: 'Điều chỉnh giảm / hỏng' }), cr('156', outV), dr('156', openV), cr('411', openV, { memo: 'Tồn đầu kỳ' })],
+    [dr('156', inV), cr('711', inV, { memo: 'Điều chỉnh tăng' }), dr('811', outV, { memo: 'Điều chỉnh giảm / hỏng' }), ...[...materialByAccount].map(([account, amount]) => dr(account, amount, { memo: 'Tiêu hao vật tư kho' })), cr('156', outV + [...materialByAccount.values()].reduce((a,v)=>a+v,0)), dr('156', openV), cr('411', openV, { memo: 'Tồn đầu kỳ' })],
   );
 }
 

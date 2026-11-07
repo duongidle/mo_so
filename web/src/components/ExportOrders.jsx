@@ -60,7 +60,7 @@ export default function ExportOrders({ filters, onClose }) {
 
   return (
     <Modal title="Xuất đơn hàng" onClose={onClose} footer={<button className="btn primary" disabled={busy || !rows || tooMany} onClick={go}><Icon name="upload" style={{ transform: 'rotate(180deg)' }} />Xuất {rows !== null ? `${num(rows)} dòng` : ''}</button>}>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         <div className="eyebrow">Gồm các đơn đang lọc</div>
         <div className="row wrap">{describe(filters, { shops, channels }).map((t) => <span key={t} className="badge plain">{t}</span>)}</div>
         <p className="small muted" style={{ margin: 0 }}>Đổi bộ lọc ở trang Đơn hàng rồi mở lại để xuất phần khác. {n && `Khớp ${num(n.orders)} đơn, ${num(n.lines)} dòng hàng.`}</p>

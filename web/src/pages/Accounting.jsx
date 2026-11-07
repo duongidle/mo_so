@@ -24,10 +24,10 @@ const INTRO = {
   recurring: 'Khoản chi lặp lại (thuê kho, internet, lương). App tự tạo chi phí mỗi kỳ, tạo bù cả kỳ bỏ lỡ khi máy tắt.',
   assets: 'Tài sản cố định và chi phí trả trước: ghi vào tài sản khi mua, rồi chia đều theo tháng thành chi phí (khấu hao hoặc phân bổ).',
   lock: 'Khoá sổ để chốt số kỳ cũ: không ai sửa nhầm chi phí, thanh toán, chứng từ tay của kỳ đã chốt.',
-  overview: 'Tiền, công nợ, hàng tồn và lãi của tháng này theo sổ kế toán. Sổ tự sinh từ đơn, thu chi, nhập hàng, kho và quỹ: không cần nhập tay.',
+  overview: 'Tiền, công nợ, hàng tồn và lãi của tháng này theo sổ kế toán. Có thể xem số gắn với shop; các khoản chung xem ở Tất cả shop.',
   journal: 'Mọi bút toán theo thời gian, mỗi bút toán có Nợ bằng Có. Bấm mã chứng từ để mở đơn hay phiếu gốc.',
   ledger: 'Một tài khoản: số dư đầu, từng dòng phát sinh, số dư cuối. Bấm diễn giải để mở chứng từ gốc.',
-  trial: 'Số dư đầu, phát sinh và số dư cuối của mọi tài khoản. Tổng Nợ phải bằng tổng Có.',
+  trial: 'Số dư đầu, phát sinh và số dư cuối của mọi tài khoản; có thể lọc các bút toán theo shop.',
   income: 'Doanh thu, giá vốn, chi phí và lãi trong kỳ. Lọc theo shop được (chi phí chung chia về shop như ở Báo cáo).',
   balance: 'Tài sản bằng nợ phải trả cộng vốn cộng lợi nhuận. Luôn tính cho cả tài khoản, không lọc theo shop.',
   cashflow: 'Tiền vào và ra các quỹ trong kỳ, chia theo nguồn.',
@@ -50,10 +50,10 @@ export default function Accounting() {
   const ctx = { range, shopParam, isAll, report: setExportData, go: changeTab };
   const scopeName = isAll ? 'Tất cả shop' : shop?.name;
   const hasRange = !['overview', 'accounts', 'balance', 'recurring', 'assets', 'lock'].includes(tab);
-  const scopeText = ['journal', 'ledger', 'income', 'cashflow', 'vouchers'].includes(tab) ? `Shop: ${scopeName || 'một shop'}` : null;
+  const scopeText = ['journal', 'ledger', 'trial', 'income', 'cashflow', 'vouchers'].includes(tab) ? `Shop: ${scopeName || 'một shop'}` : null;
   return (
     <div className="page stack">
-      <PageHeader title="Sổ kế toán" actions={<ExportButton tab={tab} data={exportData} range={range} shopName={tab === 'income' && !isAll ? shop?.name : null} />} />
+      <PageHeader title="Sổ kế toán" actions={<ExportButton tab={tab} data={exportData} range={range} shopName={['income', 'trial'].includes(tab) && !isAll ? shop?.name : null} />} />
       <Toolbar>
         <div className="tabs group-tabs" role="tablist" aria-label="Nhóm">
           {GROUPS.map(([k, label]) => <button key={k} className="tab" role="tab" aria-selected={group === k} onClick={() => changeGroup(k)}>{label}</button>)}
@@ -108,21 +108,22 @@ function useReport(fn, deps, report, pick = (r) => r.data) {
 const Th = ({ m, children, className = 'num' }) => <th className={className}>{m ? <MetricLabel metric={m}>{children}</MetricLabel> : children}</th>;
 const Src = ({ row, children }) => (row.source_path ? <Link to={row.source_path}>{children}</Link> : <>{children}</>);
 
-function Overview({ go }) {
-  const state = useAsync(() => api.get('/accounting/overview'), []);
+function Overview({ go, shopParam }) {
+  const state = useAsync(() => api.get('/accounting/overview', { shop_id: shopParam }), [shopParam]);
   return (
     <Async state={state}>
       {({ data: d }) => (
         <>
+          {d.scope?.shop_filtered && <Note>Doanh thu, lợi nhuận và phải thu được lọc theo shop; chi phí chung đã phân bổ vào lợi nhuận. Tiền/quỹ, phải trả người bán và hàng tồn vẫn là số toàn tài khoản.</Note>}
           {d.warnings.map((w) => <div key={w.code} className="alert warn" role="alert">{w.message}{w.code === 'LOCKED_PERIOD_CHANGED' && <> <button className="btn sm" onClick={() => go('lock')}>Xem chi tiết</button></>}</div>)}
           {d.lock_date && <Note>Sổ đã khoá đến hết {fmtDate(d.lock_date)}.</Note>}
           <div className="grid cols-3">
-            <Kpi label="Tiền (quỹ)" metric="acc_cash" value={signed(d.cash)} tone={d.cash < 0 ? 'red' : undefined} hint={d.cash < 0 ? <>Số dư quỹ âm: kiểm tra thu chi chưa ghi hoặc số dư đầu kỳ. <Link to="/expenses?tab=cash">Mở Quỹ tiền</Link></> : undefined} />
-            <Kpi label="Phải thu khách" metric="acc_receivable" value={vnd(d.receivable_customers)} hint={`Sàn còn nợ: ${vnd(d.receivable_marketplace)}`} />
+            <Kpi label="Tiền" metric="acc_cash" value={signed(d.cash)} tone={d.cash < 0 ? 'red' : undefined} hint={d.cash < 0 ? <>Số dư quỹ âm: kiểm tra thu chi chưa ghi hoặc số dư đầu kỳ. <Link to="/expenses?tab=cash">Mở Quỹ tiền</Link></> : undefined} />
+            <Kpi label={shopParam ? 'Phải thu gắn shop' : 'Phải thu khách'} metric="acc_receivable" value={vnd(d.receivable_customers)} hint={`Sàn còn nợ: ${vnd(d.receivable_marketplace)}`} />
             <Kpi label="Phải trả người bán" metric="acc_payable" value={vnd(d.payable_suppliers)} />
             <Kpi label="Hàng tồn" metric="acc_inventory" value={vnd(d.inventory)} />
             <Kpi label="Doanh thu thuần tháng này" metric="acc_net_revenue" value={vnd(d.month_net_revenue)} />
-            <Kpi label="Lợi nhuận tháng này" metric="acc_profit" value={signed(d.month_profit)} tone={d.month_profit < 0 ? 'red' : undefined} hint={`Từ ${fmtDate(d.month_from)} · tất cả shop`} />
+            <Kpi label="Lợi nhuận tháng này" metric="acc_profit" value={signed(d.month_profit)} tone={d.month_profit < 0 ? 'red' : undefined} hint={`Từ ${fmtDate(d.month_from)} · ${shopParam ? 'shop đang chọn' : 'tất cả shop'}`} />
           </div>
         </>
       )}
@@ -188,13 +189,14 @@ function Ledger({ range, shopParam, report }) {
   );
 }
 
-function Trial({ range, report }) {
-  const state = useReport(() => api.get('/accounting/trial-balance', { from: range.from, to: range.to }), [range.from, range.to], report);
+function Trial({ range, shopParam, report }) {
+  const state = useReport(() => api.get('/accounting/trial-balance', { from: range.from, to: range.to, shop_id: shopParam }), [range.from, range.to, shopParam], report);
   return (
     <Async state={state}>
       {({ data: d }) => (
         <>
-          <div className={`alert ${d.balanced ? 'ok' : 'err'}`} role="status">{d.balanced ? 'Cân: tổng Nợ bằng tổng Có ở cả ba cặp cột.' : 'KHÔNG CÂN: tổng Nợ khác tổng Có. Báo để kiểm tra sổ.'} Tính cho cả tài khoản (không lọc shop).</div>
+          {d.scope?.shop_filtered && <Note>Đang xem các bút toán gắn với shop; bút toán chung không thuộc shop được loại khỏi góc nhìn này. Chọn “Tất cả shop” để xem cân đối của toàn tài khoản.</Note>}
+          <div className={`alert ${d.balanced ? 'ok' : 'err'}`} role="status">{d.balanced ? 'Cân: tổng Nợ bằng tổng Có ở cả ba cặp cột.' : 'KHÔNG CÂN: tổng Nợ khác tổng Có. Báo để kiểm tra sổ.'} {d.scope?.shop_filtered ? 'Phạm vi: shop đang chọn.' : 'Phạm vi: toàn tài khoản.'}</div>
           <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Tài khoản</th><Th m="acc_trial">Đầu kỳ Nợ</Th><th className="num">Đầu kỳ Có</th><th className="num">Phát sinh Nợ</th><th className="num">Phát sinh Có</th><th className="num">Cuối kỳ Nợ</th><th className="num">Cuối kỳ Có</th></tr></thead>
             <tbody>{d.data.map((r) => <tr key={r.code}><td>{r.code} <span className="muted small">{r.name}</span></td>{['opening_debit', 'opening_credit', 'debit', 'credit', 'closing_debit', 'closing_credit'].map((k) => <td key={k} className="num">{r[k] ? vnd(r[k]) : ''}</td>)}</tr>)}
@@ -308,7 +310,7 @@ function Accounts({ report }) {
         {({ data }) => (
           <Card flat className="list-card"><div className="table-wrap"><table>
             <thead><tr><th>Mã</th><th>Tên</th><th>Loại</th><th>Bên</th><th className="num">Số dư</th></tr></thead>
-            <tbody>{data.map((a) => <tr key={a.code}><td style={{ paddingLeft: a.parent_code ? 24 : undefined }}>{a.code}</td><td>{a.name}{a.is_system ? <span className="badge plain" style={{ marginLeft: 6 }}>Hệ thống</span> : null}</td><td className="small">{TYPES[a.type]}</td><td>{a.normal_side === 'debit' ? 'Nợ' : 'Có'}</td><td className="num">{signed(a.balance)}</td></tr>)}</tbody>
+            <tbody>{data.map((a) => <tr key={a.code}><td style={{ paddingLeft: a.parent_code ? 24 : undefined }}>{a.code}</td><td>{a.name}{a.is_system ? <span className="badge plain" style={{ marginLeft: 8 }}>Hệ thống</span> : null}</td><td className="small">{TYPES[a.type]}</td><td>{a.normal_side === 'debit' ? 'Nợ' : 'Có'}</td><td className="num">{signed(a.balance)}</td></tr>)}</tbody>
           </table></div></Card>
         )}
       </Async>

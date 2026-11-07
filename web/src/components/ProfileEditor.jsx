@@ -29,10 +29,10 @@ function ColumnPicker({ value, onChange, columns, multi, id }) {
   const [text, setText] = useState('');
   const add = (c) => { const v = c.trim(); if (!v || value.includes(v)) return; onChange(multi ? [...value, v] : [v]); setText(''); };
   return (
-    <div className="stack" style={{ gap: 6 }}>
+    <div className="stack" style={{ gap: 8 }}>
       <div className="row wrap">
         {value.map((c) => (
-          <span key={c} className="chip on" style={{ cursor: 'default', minHeight: 30, padding: '2px 6px 2px 12px' }}>
+          <span key={c} className="chip on" style={{ cursor: 'default', minHeight: 30, padding: '2px 8px 2px 12px' }}>
             {c}{!columns.includes(c) && columns.length > 0 && <span title="Không thấy cột này trong file đang mở" style={{ color: 'var(--champagne)' }}> ⚠</span>}
             <button type="button" aria-label={`Bỏ cột ${c}`} onClick={() => onChange(value.filter((x) => x !== c))} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', marginLeft: 4 }}>✕</button>
           </span>

@@ -231,3 +231,53 @@ test('Kênh sàn: hàng trả giảm phải thu sàn (1388); không có hoàn sh
   void nh;
   await sound(api);
 });
+
+test('Hoàn tiền trả hàng thành tiền khách gửi; dùng lại ở đơn sau, số dư và sổ cái khớp', async () => {
+  const { api, nh, sample } = await world();
+  const customer = ok(await api.post('/customers', { name: 'Khách đổi', phone: '0901112233', shop_id: nh.id }), 201);
+  const old = await sample({ customer_id: customer.id });
+  const returned = ok(await api.post(`/orders/${old.id}/returns`, {
+    lines: [{ order_line_id: old.lines[0].id, qty: 1, restock: true }],
+    refund: { amount: 135000, method: 'customer_credit', to_credit: true },
+  }));
+  assert.equal(returned.customer_credit_balance, 135000);
+  assert.equal(ok(await api.get(`/customers/${customer.id}?shop_id=${nh.id}`)).credit_balance, 135000);
+  const next = ok(await api.post('/orders', { shop_id: nh.id, customer_id: customer.id, status: 'completed', lines: [{ sku: 'B1', qty: 1, unit_price: 80000 }], payments: [{ amount: 80000, method: 'customer_credit' }] }), 201);
+  assert.equal(next.paid_amount, 80000);
+  assert.equal(next.customer_credit_balance, 55000);
+  assert.equal(-bal('3388'), 55000, 'phần tiền khách gửi còn lại là khoản phải trả');
+  assert.deepEqual(verifyJournal(), []);
+});
+
+test('Đổi hàng một bước: trả hàng, cấn tiền gửi vào đơn mới và thu phần chênh trong cùng giao dịch', async () => {
+  const { api, nh, sample } = await world();
+  const customer = ok(await api.post('/customers', { name: 'Khách đổi', phone: '0901112244', shop_id: nh.id }), 201);
+  const old = await sample({ customer_id: customer.id });
+  const exchange = ok(await api.post(`/orders/${old.id}/exchange`, {
+    return_lines: [{ order_line_id: old.lines[0].id, qty: 1, restock: true }],
+    new_lines: [{ sku: 'B1', qty: 2, unit_price: 80000 }],
+    payment_method: 'cash',
+  }), 201);
+  assert.equal(exchange.credit_issued, 135000);
+  assert.equal(exchange.credit_used, 135000);
+  assert.equal(exchange.cash_due, 25000);
+  assert.equal(exchange.created.paid_amount, 160000);
+  assert.equal(exchange.created.payments.filter((p) => !p.voided_at).length, 2);
+  assert.equal(exchange.returned.lines[0].returned_qty, 1);
+  assert.equal((await api.get(`/orders/${exchange.created.id}`)).status, 200);
+  assert.deepEqual(verifyJournal(), []);
+});
+
+test('Phiếu trả sàn có thể chờ hàng về; chỉ cộng tồn và hoàn giá vốn khi xác nhận nhận hàng', async () => {
+  const { api, nh, sell, wh } = await world();
+  const o = await sell({ channel_id: 'shopee', external_id: 'SP-WAIT', lines: [{ sku: 'A1', qty: 2, unit_price: 150000 }], platform_fee_amount: 30000 });
+  const before = one('SELECT on_hand FROM stock_levels WHERE warehouse_id=? AND variant_id=?', wh.id, o.lines[0].variant_id).on_hand;
+  const pending = ok(await api.post(`/orders/${o.id}/returns`, { lines: [{ order_line_id: o.lines[0].id, qty: 1, restock: true }], awaiting_goods: true }));
+  assert.equal(pending.returns[0].awaiting_goods, true);
+  assert.equal(one('SELECT on_hand FROM stock_levels WHERE warehouse_id=? AND variant_id=?', wh.id, o.lines[0].variant_id).on_hand, before);
+  const received = ok(await api.post(`/orders/${o.id}/returns/${pending.returns[0].id}/receive`, {}));
+  assert.equal(received.returns[0].awaiting_goods, false);
+  assert.equal(one('SELECT on_hand FROM stock_levels WHERE warehouse_id=? AND variant_id=?', wh.id, o.lines[0].variant_id).on_hand, before + 1);
+  assert.equal((await api.post(`/orders/${o.id}/returns/${pending.returns[0].id}/receive`, {})).body.error.code, 'RETURN_ALREADY_RECEIVED');
+  assert.deepEqual(verifyJournal(), []);
+});

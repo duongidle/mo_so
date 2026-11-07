@@ -25,9 +25,9 @@ export default function CashAccounts() {
           {r.unassigned.has_activity && <div className="alert warn small">Có {vnd(r.unassigned.net)} ở các phương thức chưa gán quỹ nào ({r.unassigned.methods.map((m) => METHODS[m]).join(', ')}). Tiền đó đã ghi sổ nhưng không nằm trong quỹ nào. Sửa một quỹ để gán phương thức.</div>}
           {!r.data.length ? <Empty>Chưa có quỹ nào.</Empty> : r.data.map((a) => (
             <Card key={a.id} title={a.name} actions={<><span className="badge plain">{KINDS[a.kind]}</span><button className="btn sm" onClick={() => setLedger(a)}>Sổ quỹ</button><button className="btn sm" onClick={() => setCount(a)}>Kiểm đếm</button><button className="btn sm" onClick={() => setEdit({ ...a, opening_date: a.opening_date || '' })}>Sửa</button></>}>
-              <div className="row between"><b className={`num ${a.balance < 0 ? 'h-red' : ''}`} style={{ fontSize: 22 }}>{vnd(a.balance)}</b>
+              <div className="row between"><b className={`num ${a.balance < 0 ? 'h-red' : ''}`} style={{ fontSize: 24 }}>{vnd(a.balance)}</b>
                 <span className="small muted">Nhận: {a.methods.length ? a.methods.map((m) => METHODS[m]).join(', ') : 'chưa gán phương thức nào'}</span></div>
-              <div className="small muted" style={{ marginTop: 6 }}>Số dư đầu {vnd(a.opening_balance)}{a.opening_date ? ` (từ ${fmtDate(a.opening_date)})` : ' (tính từ toàn bộ lịch sử)'} + thu {vnd(a.cash_in)} − chi {vnd(a.cash_out)} − chi phí {vnd(a.expenses_out)}{a.entries ? ` ${a.entries > 0 ? '+' : '−'} chuyển quỹ/điều chỉnh ${vnd(Math.abs(a.entries))}` : ''}</div>
+              <div className="small muted" style={{ marginTop: 8 }}>Số dư đầu {vnd(a.opening_balance)}{a.opening_date ? ` (từ ${fmtDate(a.opening_date)})` : ' (tính từ toàn bộ lịch sử)'} + thu {vnd(a.cash_in)} − chi {vnd(a.cash_out)} − chi phí {vnd(a.expenses_out)}{a.entries ? ` ${a.entries > 0 ? '+' : '−'} chuyển quỹ/điều chỉnh ${vnd(Math.abs(a.entries))}` : ''}</div>
             </Card>
           ))}
           <p className="small muted">Mỗi phương thức thanh toán chỉ thuộc một quỹ. Thu tiền đơn, trả nhà cung cấp, hoàn tiền và chi phí tự đổ vào quỹ theo phương thức. Số dư không nhập tay: muốn khớp với tiền thật thì <b>nhập số dư đầu</b> hoặc bấm <b>Kiểm đếm</b> (app ghi phần chênh thành một dòng điều chỉnh, thu chi cũ giữ nguyên).</p>
@@ -58,7 +58,7 @@ function AccountForm({ init, onClose, onSaved }) {
         <Field label="Tên quỹ"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label="Loại"><select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>{Object.entries(KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
       </div>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack" style={{ gap: 8 }}>
         <div className="eyebrow">Nhận các phương thức thanh toán</div>
         <div className="row wrap">{Object.entries(METHODS).map(([k, v]) => <label key={k} className="check"><input type="checkbox" checked={f.methods.includes(k)} onChange={() => toggle(k)} />{v}</label>)}</div>
         <span className="small muted">Phương thức đã thuộc quỹ khác sẽ bị từ chối: bỏ khỏi quỹ kia trước.</span>

@@ -117,9 +117,15 @@ const LIST = [
     tip: 'Nhìn tỷ lệ chi phí trên doanh thu và khoản nào tăng nhanh nhất, đừng chỉ nhìn tổng.', drill: () => '/expenses',
   }),
   M('net_profit_estimate', 'Lợi nhuận ròng ước tính', {
-    group: 'Doanh thu và lãi', scope: 'shop_plus_shared', what: 'Lãi gộp trừ chi phí. Gọi là “ước tính” vì chưa tính thuế và các khoản không ghi vào sổ.',
-    formula: 'Lợi nhuận gộp − chi phí (đã gồm phần chi phí chung chia về)', source: 'Lợi nhuận gộp (đơn tính theo ngày đặt) trừ chi phí cùng kỳ (tính theo ngày chi, chia chi phí chung theo quy tắc ở Cài đặt).',
+    group: 'Doanh thu và lãi', scope: 'shop_plus_shared', what: 'Lãi gộp trừ chi phí, cộng chênh lệch kho và kiểm đếm quỹ khi xem tất cả shop. Chưa gồm khấu hao và chứng từ thu/chi khác lập tay.',
+    formula: 'Lợi nhuận gộp − chi phí + điều chỉnh kho/kiểm đếm quỹ (nếu xem tất cả shop)', source: 'Lợi nhuận gộp (đơn tính theo ngày đặt) trừ chi phí cùng kỳ (tính theo ngày chi, chia chi phí chung theo quy tắc ở Cài đặt). Điều chỉnh kho và kiểm đếm quỹ lấy từ sổ cái, không gắn shop nên không hiện khi lọc shop hoặc kênh.',
     tip: 'Âm nghĩa là kỳ đó đang lỗ sau chi phí.',
+  }),
+  M('report_other_adjustment', 'Điều chỉnh kho và kiểm đếm quỹ', {
+    group: 'Doanh thu và lãi', scope: 'account', what: 'Lãi/lỗ từ điều chỉnh tăng giảm tồn kho, hàng hỏng và chênh lệch khi kiểm đếm quỹ.',
+    formula: 'Thu nhập 711 − chi phí 811 từ nghiệp vụ kho và kiểm đếm quỹ',
+    source: 'Chỉ hiện khi xem tất cả shop vì các nghiệp vụ này không thuộc shop nào. Tiền phạt và chứng từ thu/chi khác không nằm trong dòng này.',
+    tip: 'Số dương làm tăng lợi nhuận; số âm là hao hụt kho hoặc thiếu tiền khi kiểm đếm.',
   }),
   M('tax_estimate', 'Thuế ước tính', {
     group: 'Doanh thu và lãi', scope: 'account', what: 'Chỉ có khi bạn bật và tự nhập mức thuế ở Cài đặt → Thuế. Để thấy lợi nhuận sau thuế, không phải tờ khai.',
@@ -323,16 +329,16 @@ const LIST = [
   }),
   M('acc_profit', 'Lợi nhuận trước thuế (KQKD)', {
     group: 'Kế toán', what: 'Lãi thuần từ bán hàng cộng thu nhập khác trừ chi phí khác (hao hụt, tiền phạt, chênh lệch kiểm đếm).', formula: 'Lãi gộp − chi phí 641x/642x − khấu hao/phân bổ + 711 − 811',
-    source: 'Từ sổ cái. Chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên chỉ có khi xem tất cả shop. Trừ các khoản đó và trừ khấu hao/phân bổ tài sản, bằng “Lợi nhuận ròng ước tính” ở Báo cáo (chi phí định kỳ có ở cả hai vì là chi phí thật).', tip: 'Âm nhiều kỳ: xem chi phí và giá vốn.', drill: () => '/reports?tab=profit',
+    source: 'Từ sổ cái. Chênh lệch kho và kiểm đếm quỹ không thuộc shop nào nên chỉ có khi xem tất cả shop. Trừ khấu hao/phân bổ và chứng từ thu/chi khác lập tay để đối chiếu với “Lợi nhuận ròng ước tính” ở Báo cáo (chi phí định kỳ có ở cả hai vì là chi phí thật).', tip: 'Âm nhiều kỳ: xem chi phí và giá vốn.', drill: () => '/reports?tab=profit',
   }),
   M('acc_depreciation', 'Khấu hao và phân bổ (KQKD)', {
     group: 'Kế toán', what: 'Phần nguyên giá tài sản cố định và chi phí trả trước được tính vào chi phí của kỳ (mỗi tháng một khoản, ghi vào ngày cuối tháng).', formula: 'Nguyên giá chia đều theo số tháng (khoản dư rải từ tháng đầu); chỉ tính các tháng đã qua',
-    source: 'Từ danh sách Tài sản & phân bổ. KHÔNG phải một khoản chi phí ở Chi phí & quỹ nên KHÔNG có trong “Lợi nhuận ròng ước tính” của Báo cáo: lợi nhuận trước thuế ở Sổ kế toán thấp hơn Báo cáo đúng bằng khoản này (cộng chênh lệch kho/quỹ và thu/chi khác). Chi phí định kỳ thì khác: nó là khoản chi thật nên có ở cả hai nơi.',
+    source: 'Từ danh sách Tài sản & phân bổ. KHÔNG phải khoản chi ở Chi phí & quỹ nên chưa có trong “Lợi nhuận ròng ước tính” của Báo cáo. Chi phí định kỳ thì khác: nó là khoản chi thật nên có ở cả hai nơi.',
     tip: 'Muốn thấy lãi như Báo cáo: xem dòng “Lãi thuần trước khấu hao”.', drill: () => '/accounting?tab=assets',
   }),
   M('acc_other', 'Thu nhập khác và chi phí khác (KQKD)', {
     group: 'Kế toán', what: 'Khoản ngoài bán hàng: thu nhập khác (711: kiểm đếm thừa, điều chỉnh tăng, thu khác) và chi phí khác (811: tiền phạt, hao hụt, kiểm đếm thiếu, giá trị còn lại khi thanh lý tài sản).', formula: '711 và 811',
-    source: 'Từ sổ cái, gồm cả phiếu thu/chi khác bạn lập tay. Báo cáo không có các khoản này (trừ tiền phạt nhập qua danh mục chi phí “Tiền phạt”).', tip: 'Góp vốn hay rút vốn (411) KHÔNG phải thu chi khác: không vào lợi nhuận.', drill: () => '/accounting?tab=vouchers',
+    source: 'Từ sổ cái, gồm cả phiếu thu/chi khác bạn lập tay. Báo cáo cộng điều chỉnh kho và kiểm đếm quỹ ở tổng toàn shop; các khoản thu/chi khác lập tay chưa đưa vào báo cáo. Tiền phạt nhập qua danh mục chi phí đã nằm trong chi phí báo cáo.', tip: 'Góp vốn hay rút vốn (411) KHÔNG phải thu chi khác: không vào lợi nhuận.', drill: () => '/accounting?tab=vouchers',
   }),
   M('acc_lock', 'Khoá sổ', {
     group: 'Kế toán', scope: 'account', time: 'today', what: 'Từ ngày khoá trở về trước, chứng từ tay, chi phí, thanh toán, chuyển quỹ và tài sản không tạo, sửa, huỷ được.', formula: 'Chứng từ có ngày ≤ ngày khoá bị chặn (PERIOD_LOCKED)',
@@ -375,7 +381,7 @@ export const scopeLabel = (m) => SCOPES[m.scope];
 
 // Mục lục từ điển ở trang "Cách đọc số liệu": nhóm → khoá chỉ số, theo thứ tự hiển thị
 const GROUP_KEYS = [
-  ['Doanh thu và lãi', ['net_revenue', 'gross_profit', 'gross_margin_pct', 'expenses_amount', 'net_profit_estimate', 'tax_estimate']],
+  ['Doanh thu và lãi', ['net_revenue', 'gross_profit', 'gross_margin_pct', 'expenses_amount', 'report_other_adjustment', 'net_profit_estimate', 'tax_estimate']],
   ['Đơn hàng và khách', ['aov', 'cancel_rate_pct', 'return_rate_pct', 'repeat_rate_pct']],
   ['Kho', ['stock_value', 'days_of_inventory', 'low_stock']],
   ['Tiền và công nợ', ['fund_balance', 'customer_receivable', 'customer_refund_owed', 'marketplace_pending', 'supplier_payable', 'aging_customer']],

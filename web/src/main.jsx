@@ -14,6 +14,7 @@ import '@fontsource/noto-serif/vietnamese-500.css';
 import '@fontsource/noto-serif/latin-600.css';
 import '@fontsource/noto-serif/vietnamese-600.css';
 import './styles.css';
+import './shadcn.css';
 import App from './App.jsx';
 
 document.documentElement.dataset.theme = 'general';

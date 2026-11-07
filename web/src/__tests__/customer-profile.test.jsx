@@ -7,7 +7,7 @@ const session = vi.hoisted(() => ({ value: null }));
 vi.mock('../session.jsx', () => ({ useSession: () => session.value }));
 vi.mock('../components/ExportCustomers.jsx', () => ({ default: () => null }));
 import { api } from '../api.js';
-import { CustomerDetail } from '../pages/Customers.jsx';
+import { CustomerDetail, CustomerList } from '../pages/Customers.jsx';
 
 const pt = { id: 'pt', name: 'Phong thuỷ', code: 'PT' };
 const fields = [
@@ -68,5 +68,24 @@ describe('Hồ sơ khách: thông tin chung trước, mệnh hiệu lực, lý d
     current = detail({ values: { tuoi: null }, reasons: { tuoi: 'Khách chưa có Ngày sinh' }, element: null });
     open();
     expect(await screen.findByText(/Khách chưa có Ngày sinh/)).toBeTruthy();
+  });
+
+  it('tạo khách từ Tất cả shop bắt buộc chọn shop để khách dùng được trong đơn', async () => {
+    const nh = { id: 'nh', name: 'Nước hoa' };
+    const pt = { id: 'pt', name: 'Phong thuỷ' };
+    session.value = { shop: null, shops: [nh, pt], isAll: true, has: () => false };
+    api.get.mockImplementation(async (path) => path === '/customers/duplicates'
+      ? { data: [] }
+      : path === '/customers' ? { data: [], columns: [] }
+        : { data: [] });
+    api.post.mockResolvedValue({ data: { id: 'cus_new' } });
+    render(<MemoryRouter><CustomerList /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: /Khách$/ }));
+    expect(await screen.findByLabelText('Tạo khách trong shop')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Lưu' }).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Tạo khách trong shop'), { target: { value: 'nh' } });
+    fireEvent.change(screen.getByLabelText('Tên'), { target: { value: 'Chị Mai' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/customers', expect.objectContaining({ shop_id: 'nh', name: 'Chị Mai' })));
   });
 });

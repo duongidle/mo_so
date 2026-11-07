@@ -1,4 +1,5 @@
 import { getDb } from '../../db/index.js';
+import { customerCreditBalance } from '../payments/credit.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
 import { audit, emit } from '../../lib/events.js';
@@ -152,6 +153,7 @@ export function getCustomer(id) {
 export function getCustomerDetail(id, { shopId } = {}) {
   const c = getCustomer(id);
   if (shopId) {
+    c.credit_balance = customerCreditBalance(c.id, shopId);
     // Phần thông tin riêng của shop đang xem; shop khác không lọt vào
     c.is_member = isMember(c.id, shopId);
     const meta = getValuesWithMeta('customer', c.id, { shopId });
