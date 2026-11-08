@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CH, SL, coverHTML, cheatHTML, faqHTML } from '../../guides/handbook/data.js';
 import { MOCK_CSS } from '../../guides/handbook/mockCss.js';
+import { Tabs } from '../../components/ui.jsx';
 
 const CURSOR = '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 2l12 7-5.2 1.3L7.4 16z" fill="#301f12" stroke="#fdfcf9" stroke-width="1.4" stroke-linejoin="round"/></svg>';
 const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SPECIAL = { cover: coverHTML, cheat: cheatHTML, faq: faqHTML };
-const chapterName = (k) => CH.find((c) => c[0] === k)?.[1] || '';
 const firstOf = (ch) => Math.max(0, SL.findIndex((s) => s.ch === ch));
 
 /**
@@ -69,7 +69,7 @@ export default function Handbook() {
         for (const st of slide.script) {
           if (!alive) return;
           const [op, a, b2, c] = st;
-          if (op === 's') { setStep(a); setCap(slide.steps[a] || ''); await sleep(500); }
+          if (op === 's') { setStep(a); await sleep(500); }
           else if (op === 'w') await sleep(a);
           else if (op === 'click') {
             const el = q(a);
@@ -108,7 +108,6 @@ export default function Handbook() {
         if (!alive) return;
         setStep(slide.steps.length);
         if (RM) { setCap('Đã phát xong. Nhấn “Xem lại” để phát lại.'); return; }
-        setCap('Đang phát lại từ đầu…');
         await sleep(3200);
       }
     })();
@@ -126,34 +125,31 @@ export default function Handbook() {
 
   return (
     <div className="hb" tabIndex={-1} onKeyDown={onKey}>
-      <div className="hb-chaps" role="tablist" aria-label="Các phần của cẩm nang">
-        {CH.map(([k, name]) => <button key={k} type="button" role="tab" aria-selected={chap === k} className={chap === k ? 'on' : ''} onClick={() => go(firstOf(k) === 0 ? 1 : firstOf(k))}>{name}</button>)}
-      </div>
+      <Tabs options={CH} value={chap} onChange={(k) => go(firstOf(k) === 0 ? 1 : firstOf(k))} />
       {special ? (
         <div key={`full-${cur}`} className="hb-full" ref={fullRef} />
       ) : (
         <div key={`slide-${cur}`} className="hb-slide">
           <div className="hb-text">
-            <p className="hb-kick">{chapterName(chap)}</p>
             <h3 className="hb-title">{slide.title}</h3>
             <p className="hb-lead">{slide.lead}</p>
             <ol className="hb-steps">{slide.steps.map((t, i) => <li key={t} className={i < step ? 'done' : i === step ? 'now' : ''}>{t}</li>)}</ol>
-            {slide.warn && <p className="hb-note warn"><b>Lưu ý.</b> {slide.warn}</p>}
+            {slide.warn && <p className="hb-note"><b>Lưu ý.</b> {slide.warn}</p>}
             {slide.tip && <p className="hb-note"><b>Nên biết.</b> {slide.tip}</p>}
           </div>
           <div className="hb-stagewrap">
             <div ref={hostRef} className="hb-host" aria-label="Màn hình mô phỏng" role="img" />
-            <div className="hb-cap"><span aria-live="off">{cap || ' '}</span>
-              <span className="hb-capb"><button type="button" className="btn sm" aria-pressed={paused} onClick={togglePause}>{paused ? '▶ Tiếp tục' : '⏸ Tạm dừng'}</button><button type="button" className="btn sm" onClick={replay}>↻ Xem lại</button></span>
+            <div className="hb-cap">
+              <span className="hb-sample">{cap || 'Màn hình mô phỏng, số liệu và tên là ví dụ.'}</span>
+              <span className="hb-capb"><button type="button" className="btn sm" aria-pressed={paused} onClick={togglePause}>{paused ? 'Tiếp tục' : 'Tạm dừng'}</button><button type="button" className="btn sm" onClick={replay}>Xem lại</button></span>
             </div>
-            <p className="hb-sample">Màn hình mô phỏng. Số liệu và tên là ví dụ.</p>
           </div>
         </div>
       )}
       <div className="hb-nav">
-        <button type="button" className="btn" onClick={() => go(cur - 1)} disabled={cur === 0}>← Trang trước</button>
-        <span className="hb-count">{cur + 1} / {SL.length}{slide.title ? ` · ${slide.title}` : ''}</span>
-        <button type="button" className="btn primary" onClick={() => go(cur + 1)} disabled={cur === SL.length - 1}>Trang sau →</button>
+        <button type="button" className="btn" onClick={() => go(cur - 1)} disabled={cur === 0}>← Trước</button>
+        <span className="hb-count">{cur + 1} / {SL.length}</span>
+        <button type="button" className="btn primary" onClick={() => go(cur + 1)} disabled={cur === SL.length - 1}>Sau →</button>
       </div>
     </div>
   );

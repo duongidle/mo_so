@@ -6,13 +6,13 @@ import AuditLog from './AuditLog.jsx';
 import RemoveWarehouse from '../components/RemoveWarehouse.jsx';
 import ShopColors from '../components/ShopColors.jsx';
 import { colorProblem } from '../lib/colors.js';
-import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
+import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Modal, Note, useAction, useAsync, PageHeader, Toolbar } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 import FieldsManager from '../components/FieldsManager.jsx';
 import FormulaEditor from '../components/FormulaEditor.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 
-const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['notify', 'Thông báo'], ['audit', 'Nhật ký'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['notify', 'Thông báo'], ['audit', 'Nhật ký'], ['backup', 'Sao lưu'], ['account', 'Tài khoản']];
 
 export default function Settings() {
   const [tab, setTab] = useState('shops');
@@ -366,16 +366,47 @@ function ApiAndHooks() {
   );
 }
 
+const BACKUP_KEYS = ['backup_enabled', 'backup_time', 'backup_frequency', 'backup_weekday', 'backup_keep_days', 'backup_keep_weeks', 'backup_include_images'];
+const WEEKDAYS = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'];
+const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
 function Backup() {
+  const { settings, reload } = useSession();
   const list = useAsync(() => api.get('/system/backups'), []);
+  const status = useAsync(() => api.get('/system/backup/status'), []);
   const exp = useAsync(() => api.get('/system/export'), []);
+  const [f, setF] = useState(() => Object.fromEntries(BACKUP_KEYS.map((k) => [k, settings[k]])));
+  const [saved, setSaved] = useState(false);
   const { busy, error, run } = useAction();
+  const set = (k, v) => { setF({ ...f, [k]: v }); setSaved(false); };
+  const refresh = () => { list.reload(); status.reload(); };
+  const st = status.data?.data;
   return (
     <>
-      <Card title="Sao lưu" actions={<><a className="btn sm" href="/api/v1/system/backup/download">Tải bản mới nhất</a><button className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api.post('/system/backups'); list.reload(); })}>Sao lưu ngay</button></>}>
-        <p className="small muted">Tự động mỗi ngày, giữ 14 bản ngày và 8 bản tuần trong thư mục <code>data/backups</code>. Nhớ copy thư mục này lên Google Drive / iCloud — mất máy là mất cả bản sao lưu nếu chỉ để trong máy.</p>
-        <ErrorBox error={error} />
-        <Async state={list}>{({ data }) => !data.length ? <Empty>Chưa có bản sao lưu.</Empty> : data.slice(0, 10).map((b) => <div key={b.name} className="row between small" style={{ padding: '8px 0' }}><a href={`/api/v1/system/backups/${b.name}`}>{b.name}</a><span className="muted">{Math.round(b.size / 1024)} KB · {fmtDate(b.created_at)}</span></div>)}</Async>
+      <Card title="Lịch sao lưu tự động">
+        <div className="stack">
+          <label className="check"><input type="checkbox" checked={!!f.backup_enabled} onChange={(e) => set('backup_enabled', e.target.checked)} />Tự động sao lưu theo lịch</label>
+          <div className="grid cols-3">
+            <Field label="Giờ sao lưu"><input type="time" value={f.backup_time} disabled={!f.backup_enabled} onChange={(e) => set('backup_time', e.target.value)} /></Field>
+            <Field label="Tần suất"><select value={f.backup_frequency} disabled={!f.backup_enabled} onChange={(e) => set('backup_frequency', e.target.value)}><option value="daily">Mỗi ngày</option><option value="weekly">Mỗi tuần</option></select></Field>
+            {f.backup_frequency === 'weekly' && <Field label="Vào"><select value={f.backup_weekday} disabled={!f.backup_enabled} onChange={(e) => set('backup_weekday', Number(e.target.value))}>{WEEKDAYS.map((d, i) => <option key={d} value={i + 1}>{d}</option>)}</select></Field>}
+          </div>
+          <div className="grid cols-2">
+            <Field label="Giữ bản của mỗi ngày trong (ngày)" hint="Mỗi ngày giữ bản mới nhất."><input type="number" min="1" max="365" value={f.backup_keep_days} onChange={(e) => set('backup_keep_days', Number(e.target.value))} /></Field>
+            <Field label="Giữ thêm bản của mỗi tuần trong (tuần)" hint="Mỗi tuần giữ bản mới nhất. 0 = không giữ thêm."><input type="number" min="0" max="104" value={f.backup_keep_weeks} onChange={(e) => set('backup_keep_weeks', Number(e.target.value))} /></Field>
+          </div>
+          <div className="stack" style={{ gap: 8 }}>
+            <span className="small muted">Dữ liệu được sao lưu</span>
+            <label className="check"><input type="checkbox" checked disabled />Cơ sở dữ liệu: shop, sản phẩm, đơn, kho, khách, sổ sách, cài đặt (luôn sao lưu)</label>
+            <label className="check"><input type="checkbox" checked={!!f.backup_include_images} onChange={(e) => set('backup_include_images', e.target.checked)} />Ảnh sản phẩm</label>
+          </div>
+          <Note>{st ? (st.config.enabled ? `Lần tới: ${st.next_at ? fmtDate(st.next_at) : '—'}. ` : 'Đang tắt sao lưu tự động. ') + (st.last_backup_at ? `Gần nhất: ${fmtDate(st.last_backup_at)}.` : 'Chưa có bản sao lưu nào.') : ''}</Note>
+          <ErrorBox error={error} />{saved && <div className="alert ok">Đã lưu lịch sao lưu.</div>}
+          <div><button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.patch('/settings', f); setSaved(true); reload(); status.reload(); })}>Lưu lịch</button></div>
+        </div>
+      </Card>
+      <Card title="Bản sao lưu" actions={<><a className="btn sm" href="/api/v1/system/backup/download">Tải bản mới nhất</a><button className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api.post('/system/backups'); refresh(); })}>Sao lưu ngay</button></>}>
+        <Async state={list}>{({ data }) => !data.length ? <Empty>Chưa có bản sao lưu.</Empty> : data.slice(0, 10).map((b) => <div key={b.name} className="row between small" style={{ padding: '8px 0' }}><a href={`/api/v1/system/backups/${b.name}`}>{b.name}</a><span className="muted">{fmtSize(b.size)} · {fmtDate(b.created_at)}</span></div>)}</Async>
       </Card>
       <Card title="Xuất CSV"><div className="row wrap"><Async state={exp}>{({ data }) => data.map((t) => <a key={t} className="btn sm" href={`/api/v1/system/export/${t}.csv`}>{t}</a>)}</Async></div></Card>
     </>

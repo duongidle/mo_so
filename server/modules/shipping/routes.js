@@ -45,6 +45,11 @@ r.post('/carrier-statements', async (c) => {
   return c.json({ data: tx(() => svc.createStatement({ carrierId: input.carrier_id, date: input.date, rows: input.rows, note: input.note }, c.get('actor'))) }, 201);
 });
 r.get('/carrier-statements', (c) => c.json({ data: svc.listStatements({ carrierId: c.req.query('carrier_id') }) }));
+r.get('/carrier-statements/:id/void-preview', (c) => c.json({ data: svc.previewVoidStatement(c.req.param('id')) }));
+r.post('/carrier-statements/:id/void', async (c) => {
+  const input = await body(c, z.object({ reason: z.string().trim().min(3, 'Cần ghi lý do huỷ phiếu đối soát').max(300) }));
+  return c.json({ data: tx(() => svc.voidStatement(c.req.param('id'), input, c.get('actor'))) });
+});
 r.get('/carrier-statements/:id', (c) => c.json({ data: svc.getStatement(c.req.param('id')) }));
 
 export default r;

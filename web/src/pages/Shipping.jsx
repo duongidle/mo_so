@@ -17,6 +17,7 @@ export default function Shipping() {
   const [bucket, setBucket] = useState('');
   const [carrierId, setCarrierId] = useState('');
   const [open, setOpen] = useState(null); // 'statement' | 'carriers'
+  const [voiding, setVoiding] = useState(null); // phiếu đối soát đang xem để huỷ
   const carriers = useAsync(() => api.get('/carriers'), []);
   const summary = useAsync(() => api.get('/shipments/summary', { carrier_id: carrierId || undefined, shop_id: isAll ? undefined : shopId }), [carrierId, shopId]);
   const list = useAsync(() => api.get('/shipments', { bucket: bucket || undefined, carrier_id: carrierId || undefined, shop_id: isAll ? undefined : shopId }), [bucket, carrierId, shopId]);
@@ -64,12 +65,21 @@ export default function Shipping() {
       <Async state={stmts}>
         {({ data }) => data.length > 0 && (
           <Card title="Phiếu đối soát đã chốt">
-            {data.slice(0, 8).map((s) => <div key={s.id} className="row between small"><span><b>{s.code}</b> · {s.carrier_name} · {fmtDate(s.statement_date)} · {s.line_count} dòng</span><span>COD {vnd(s.total_cod)} − phí {vnd(s.total_fees)} = <b>{vnd(s.net_amount)}</b></span></div>)}
+            {data.slice(0, 8).map((s) => (
+              <div key={s.id} className="row between small wrap" style={s.voided_at ? { opacity: 0.6 } : undefined}>
+                <span style={s.voided_at ? { textDecoration: 'line-through' } : undefined}><b>{s.code}</b> · {s.carrier_name} · {fmtDate(s.statement_date)} · {s.line_count} dòng</span>
+                <span className="row">
+                  <span>COD {vnd(s.total_cod)} − phí {vnd(s.total_fees)} = <b>{vnd(s.net_amount)}</b></span>
+                  {s.voided_at ? <span className="badge plain" title={s.void_reason || ''}>Đã huỷ</span> : <button className="btn sm" onClick={() => setVoiding(s)}>Huỷ phiếu</button>}
+                </span>
+              </div>
+            ))}
           </Card>
         )}
       </Async>
       {open === 'statement' && <StatementModal carriers={carriers.data?.data || []} onClose={() => setOpen(null)} onDone={() => { setOpen(null); reload(); }} />}
       {open === 'carriers' && <CarriersModal state={carriers} onClose={() => setOpen(null)} />}
+      {voiding && <VoidStatementModal statement={voiding} onClose={() => setVoiding(null)} onDone={() => { setVoiding(null); reload(); }} />}
     </div>
   );
 }
@@ -84,6 +94,47 @@ function CarriersModal({ state, onClose }) {
       <Field label="Tên hãng mới"><input value={name} onChange={(e) => setName(e.target.value)} aria-label="Tên hãng" /></Field>
       <Field label="Link tra cứu (dùng {code} cho mã vận đơn)" hint="Ví dụ https://donhang.ghn.vn/?order_code={code}"><input value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Link tra cứu" /></Field>
       <button className="btn primary" disabled={busy || !name.trim()} onClick={() => run(async () => { await api.post('/carriers', { name, tracking_url: url || null }); setName(''); setUrl(''); state.reload(); })}>Thêm hãng</button>
+      <ErrorBox error={error} />
+    </Modal>
+  );
+}
+
+/** Huỷ cả phiếu đối soát: cho xem trước từng thứ sẽ được hoàn tác và những gì đang cản, rồi bắt ghi lý do */
+function VoidStatementModal({ statement, onClose, onDone }) {
+  const { busy, error, run } = useAction();
+  const [reason, setReason] = useState('');
+  const pv = useAsync(() => api.get(`/carrier-statements/${statement.id}/void-preview`), [statement.id]);
+  const canSubmit = pv.data?.data?.can_void && reason.trim().length >= 3;
+  return (
+    <Modal
+      title={`Huỷ phiếu đối soát ${statement.code}`}
+      onClose={onClose}
+      footer={<button className="btn primary" disabled={busy || !canSubmit} onClick={() => run(async () => { await api.post(`/carrier-statements/${statement.id}/void`, { reason: reason.trim() }); onDone(); })}>Huỷ phiếu đối soát</button>}
+    >
+      <Async state={pv}>
+        {({ data }) => (
+          <div className="stack small">
+            {data.blockers.length > 0 ? (
+              <div className="alert warn">
+                <b>Chưa huỷ được:</b>
+                {data.blockers.map((b, i) => <div key={i}>{b.order_code ? `${b.order_code}: ` : ''}{b.message}</div>)}
+              </div>
+            ) : (
+              <>
+                <p className="muted">Huỷ phiếu sẽ hoàn tác toàn bộ những gì lúc chốt phiếu đã ghi. Phiếu vẫn được giữ lại để tra cứu, đánh dấu đã huỷ. Vận đơn trở về trạng thái trước đó nên đối soát lại được.</p>
+                <ul className="stack" style={{ gap: 4, paddingLeft: 18 }}>
+                  {data.undo.payments > 0 && <li>Huỷ {data.undo.payments} khoản thanh toán qua hãng ({vnd(data.undo.payments_amount)}): tiền COD đã thu và phí giao đã bù</li>}
+                  {data.undo.expenses > 0 && <li>Huỷ {data.undo.expenses} chi phí vận chuyển ({vnd(data.undo.expenses_amount)})</li>}
+                  {data.undo.returns > 0 && <li>Gỡ {data.undo.returns} phiếu trả hàng chờ hàng về, đơn quay lại “Đang giao”</li>}
+                  {data.undo.orders_reopened > 0 && <li>Đưa {data.undo.orders_reopened} đơn từ “Hoàn thành” về “Đang giao”</li>}
+                  <li>Trả {data.undo.shipments} vận đơn về trạng thái trước đối soát</li>
+                </ul>
+              </>
+            )}
+            <Field label="Lý do huỷ" hint="Ghi vào nhật ký, ví dụ: hãng gửi nhầm bảng, chọn nhầm cột."><input value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Lý do huỷ phiếu đối soát" disabled={!data.can_void} /></Field>
+          </div>
+        )}
+      </Async>
       <ErrorBox error={error} />
     </Modal>
   );

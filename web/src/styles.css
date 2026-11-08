@@ -755,6 +755,8 @@ b, strong { font-weight: 600; }
 .guide-box ul { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .guide-faq details { padding: 8px 0; border-bottom: 1px solid var(--hair); }
 .guide-faq summary { cursor: pointer; font-weight: 500; }
+.guide-qa { display: flex; flex-direction: column; gap: 24px; }
+.guide-qa-title { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 600; }
 .guide-faq p { margin: 8px 0 0; color: var(--ink-soft); line-height: 24px; }
 .guide-foot { display: flex; justify-content: space-between; gap: 16px; padding-top: 24px; border-top: 1px solid var(--hair); }
 .guide-pn { display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--text); font-weight: 500; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--rule); background: var(--paper); max-width: 48%; }
@@ -814,32 +816,29 @@ b, strong { font-weight: 600; }
 .bell-item.unread { background: var(--tint); }
 
 /* Cẩm nang từng bước (Hướng dẫn → Cẩm nang): lời hướng dẫn bên trái, màn hình mô phỏng bên phải */
-.hb { display: flex; flex-direction: column; gap: var(--sp-4); container-type: inline-size; outline: none; }
-.hb-chaps { display: flex; gap: var(--sp-1); overflow-x: auto; padding: var(--sp-1); border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); align-self: flex-start; max-width: 100%; }
-.hb-chaps button { font: inherit; font-weight: 500; font-size: 14px; color: var(--ink-soft); background: none; border: 0; border-radius: 7px; padding: var(--sp-2) var(--sp-3); cursor: pointer; white-space: nowrap; min-height: 32px; }
-.hb-chaps button.on { background: var(--seal); color: var(--paper); }
-.hb-slide { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--sp-6); align-items: start; }
-@container (max-width: 760px) { .hb-slide { grid-template-columns: minmax(0, 1fr); } .hb-stagewrap { order: -1; } }
-.hb-kick { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--terracotta); margin: 0 0 var(--sp-2); }
-.hb-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text); margin: 0 0 var(--sp-2); line-height: 1.25; }
-.hb-lead { color: var(--ink-soft); margin: 0 0 var(--sp-4); }
-.hb-steps { list-style: none; margin: 0 0 var(--sp-4); padding: 0; display: grid; gap: var(--sp-2); counter-reset: hb; }
-.hb-steps li { counter-increment: hb; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; border: 1px solid transparent; color: var(--ink-soft); transition: background .25s, color .25s; }
-.hb-steps li::before { content: counter(hb); width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--rule); display: grid; place-items: center; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hb { display: flex; flex-direction: column; gap: var(--sp-6); container-type: inline-size; outline: none; }
+.hb-slide { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--sp-8); align-items: start; }
+@container (max-width: 760px) { .hb-slide { grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); } .hb-stagewrap { order: -1; position: static; } }
+.hb-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text); margin: 0 0 var(--sp-2); line-height: 28px; }
+.hb-lead { color: var(--ink-soft); margin: 0 0 var(--sp-5); }
+.hb-steps { list-style: none; margin: 0 0 var(--sp-5); padding: 0; display: grid; gap: var(--sp-1); counter-reset: hb; }
+.hb-steps li { counter-increment: hb; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--sp-2); padding: var(--sp-1) 0 var(--sp-1) var(--sp-3); border-left: 2px solid var(--hair); color: var(--ink-soft); transition: color .25s, border-color .25s; }
+.hb-steps li::before { content: counter(hb); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .hb-steps li.done { color: var(--text); }
-.hb-steps li.done::before { background: var(--tint); }
-.hb-steps li.now { color: var(--text); background: var(--paper); border-color: var(--rule); }
-.hb-steps li.now::before { background: var(--seal); color: var(--paper); border-color: var(--seal); }
-.hb-note { font-size: 14px; background: var(--tint); border-radius: 10px; padding: var(--sp-3) var(--sp-4); margin: 0 0 var(--sp-2); }
-.hb-note.warn { background: color-mix(in srgb, var(--st-returned, #b8651b) 14%, var(--paper)); }
+.hb-steps li.now { color: var(--text); border-left-color: var(--seal); }
+.hb-steps li.now::before { color: var(--seal); font-weight: 600; }
+.hb-note { font-size: 14px; color: var(--ink-soft); margin: 0 0 var(--sp-2); }
+.hb-note b { color: var(--text); font-weight: 600; }
 .hb-stagewrap { min-width: 0; position: sticky; top: var(--sp-4); }
 .hb-host { display: block; }
-.hb-cap { display: flex; gap: var(--sp-3); align-items: center; justify-content: space-between; margin-top: var(--sp-2); font-size: 14px; color: var(--ink-soft); min-height: 44px; }
-.hb-cap > span:first-child { min-width: 0; }
+.hb-cap { display: flex; gap: var(--sp-3); align-items: center; justify-content: space-between; margin-top: var(--sp-2); }
+.hb-sample { min-width: 0; font-size: 12px; color: var(--ink-soft); }
 .hb-capb { display: flex; gap: var(--sp-2); flex: none; }
-.hb-sample { font-size: 12px; color: var(--ink-soft); margin: var(--sp-1) 0 0; }
-.hb-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); border-top: 1px solid var(--hair); padding-top: var(--sp-3); }
-.hb-count { font-size: 13px; color: var(--ink-soft); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hb-nav { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.hb-count { font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.guide-main.wide { max-width: none; }
+.guide-layout.focus { grid-template-columns: minmax(0, 1fr); }
+.guide-layout.focus .guide-side { display: none; }
 .hb-full h1, .hb-full h2 { font-family: var(--font-display); font-weight: 600; margin: 0 0 var(--sp-3); line-height: 1.2; }
 .hb-full h1 { font-size: 28px; } .hb-full h2 { font-size: 24px; }
 .hb-full .kick { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--terracotta); margin: 0 0 var(--sp-2); }

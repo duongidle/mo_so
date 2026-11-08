@@ -10,7 +10,7 @@ import { sha256 } from '../../lib/auth.js';
 import { indexApiKey, unindexApiKey } from '../../db/tenancy.js';
 import { audit } from '../../lib/events.js';
 import { badRequest, forbidden, notFound } from '../../lib/errors.js';
-import { runBackup, listBackups, backupDir } from '../../jobs/backup.js';
+import { runBackup, listBackups, backupDir, backupStatus } from '../../jobs/backup.js';
 import { processDue, deliver } from '../../jobs/webhooks.js';
 import { toCsv, EXPORTS } from './export.js';
 import { EVENT_TYPES } from './events.js';
@@ -129,6 +129,7 @@ r.get('/events', (c) => {
 
 // ---------- Sao lưu & xuất dữ liệu ----------
 r.get('/backups', (c) => c.json({ data: listBackups() }));
+r.get('/backup/status', (c) => c.json({ data: backupStatus() }));
 r.post('/backups', async (c) => {
   const b = await runBackup();
   return c.json({ data: { name: b.name, size: b.size, pruned: b.pruned } }, 201);

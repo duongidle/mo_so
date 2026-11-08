@@ -6,7 +6,8 @@ import { audit, emit } from '../../lib/events.js';
 import { config as appConfig } from '../../lib/config.js';
 import { listStock } from '../inventory/service.js';
 import { lotSummary } from '../inventory/lots.js';
-import { customerDebts, supplierPayables } from '../loyalty/debts.js';
+import { customerDebts } from '../loyalty/debts.js';
+import { supplierPayables } from '../expenses/payables.js';
 import { pendingPayouts } from '../expenses/service.js';
 
 const db = () => getDb();
@@ -138,7 +139,7 @@ export async function runNotifications({ at = new Date(), fetchImpl = fetch } = 
 
   if (R.payables_due.enabled) {
     const p = supplierPayables({ today });
-    await emitOne('payables_due', R.payables_due, p.data.length && { title: `${p.data.length} khoản sắp đến hạn trả nhà cung cấp`, body: `Tổng ${vnd(p.total)}, quá hạn ${p.overdue_count} khoản`, link: '/loyalty', severity: p.overdue_count ? 'warning' : 'info' });
+    await emitOne('payables_due', R.payables_due, p.data.length && { title: `${p.data.length} khoản sắp đến hạn trả nhà cung cấp`, body: `Tổng ${vnd(p.total)}, quá hạn ${p.overdue_count} khoản`, link: '/expenses?tab=payables', severity: p.overdue_count ? 'warning' : 'info' });
   }
 
   if (R.payout_overdue.enabled) {

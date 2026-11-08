@@ -38,13 +38,13 @@ function useCompose() {
 
 /** Khách sắp hết hàng cần mua lại + sinh nhật sắp tới */
 const DEBT_LABEL = { overdue: 'Quá hạn', due_soon: 'Sắp đến hạn', no_due: 'Chưa đặt hạn' };
-/** Nhắc nợ: khách còn nợ đơn và các khoản shop sắp đến hạn trả nhà cung cấp */
+/** Nhắc nợ: khách còn nợ đơn. Khoản shop phải trả (nhà cung cấp, hãng vận chuyển) ở Chi phí & quỹ → Công nợ phải trả */
 function DebtCards({ state, compose, busy }) {
   const { busy: acting, error, run } = useAction();
   const snooze = (id) => run(async () => { await api.post('/loyalty/debts/action', { order_id: id, days: 3 }); state.reload(); });
   return (
     <Async state={state}>
-      {({ customers, suppliers }) => (
+      {({ customers }) => (
         <>
           <Card title={`Nhắc nợ khách (${customers.data.length})`}>
             <ErrorBox error={error} />
@@ -64,11 +64,6 @@ function DebtCards({ state, compose, busy }) {
               </>
             )}
           </Card>
-          {suppliers.data.length > 0 && (
-            <Card title={`Sắp đến hạn trả nhà cung cấp (${suppliers.data.length})`}>
-              {suppliers.data.map((p) => <div key={p.id} className="row between small" style={{ padding: '6px 0' }}><span><Link to={`/purchases/${p.id}`}><b>{p.code}</b></Link> · {p.supplier_name || 'Không có nhà cung cấp'} · {p.bucket === 'overdue' ? `quá hạn ${p.days_overdue} ngày` : `hạn ${fmtDate(p.due_date)}`}</span><b className="num">{vnd(p.debt)}</b></div>)}
-            </Card>
-          )}
         </>
       )}
     </Async>

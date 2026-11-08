@@ -7,7 +7,7 @@ import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { audit, emit } from '../../lib/events.js';
 import { dailyCode, runningCode } from '../../lib/codes.js';
 import { applyMovement, getLevel } from '../inventory/service.js';
-import { recordPayment, listPaymentsFor } from '../payments/service.js';
+import { recordPayment, listPaymentsFor, voidPaymentRow } from '../payments/service.js';
 
 const db = () => getDb();
 
@@ -231,6 +231,19 @@ export function addPurchasePayment(id, { amount, method, paidAt, note }, actor) 
   db().prepare('UPDATE purchases SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), id);
   const after = getPurchase(id);
   audit(actor, 'purchase.payment', 'purchase', id, null, { amount, method });
+  return after;
+}
+
+/** Huỷ một lần trả tiền ghi nhầm (trả NCC hoặc trả ship): trừ lại số đã trả, công nợ tăng lại đúng bằng số đó. */
+export function voidPurchasePayment(p, reason, actor) {
+  const pur = getPurchase(p.ref_id);
+  if (pur.status === 'cancelled') throw conflict('INVALID_STATUS', 'Phiếu nhập đã huỷ, các khoản tiền của nó đã được cấn bằng khoản NCC hoàn tiền');
+  if (p.direction !== 'out') throw conflict('PAYMENT_NOT_VOIDABLE', 'Chỉ huỷ được khoản đã trả; khoản NCC hoàn tiền do huỷ phiếu tạo ra.');
+  voidPaymentRow(p);
+  const col = p.ref_type === 'purchase_carrier' ? 'carrier_paid_amount' : 'paid_amount';
+  db().prepare(`UPDATE purchases SET ${col} = ${col} - ?, updated_at = ? WHERE id = ?`).run(p.amount, nowIso(), pur.id);
+  const after = getPurchase(pur.id);
+  audit(actor, 'payment.voided', 'purchase', pur.id, { payment: { id: p.id, amount: p.amount, method: p.method, ref_type: p.ref_type } }, { reason: reason ?? null, paid_amount: after.paid_amount, carrier_paid_amount: after.carrier_paid_amount });
   return after;
 }
 

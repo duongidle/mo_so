@@ -42,7 +42,7 @@ r.post('/promotions/evaluate', async (c) => {
 });
 r.get('/debts', (c) => {
   const q = query(c, z.object({ shop_id: z.string().optional(), lookahead_days: z.coerce.number().int().min(0).max(30).default(3) }));
-  return c.json({ customers: debts.customerDebts({ shopId: q.shop_id, lookahead: q.lookahead_days }), suppliers: debts.supplierPayables({ lookahead: q.lookahead_days }) });
+  return c.json({ customers: debts.customerDebts({ shopId: q.shop_id, lookahead: q.lookahead_days }) });
 });
 r.post('/debts/action', async (c) => {
   const i = await body(c, z.object({ order_id: z.string(), days: z.coerce.number().int().min(1).max(60).default(3) }));

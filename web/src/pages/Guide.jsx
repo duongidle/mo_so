@@ -34,6 +34,16 @@ function Blocks({ guide }) {
             {b.items.map(([q, a]) => <details key={q}><summary>{q}</summary><p>{a}</p></details>)}
           </div>
         );
+        if (b.t === 'qa') return (
+          <div key={i} className="guide-qa">
+            {b.sections.map((sec) => (
+              <section key={sec.title} className="guide-faq">
+                <h3 className="guide-qa-title">{sec.title}</h3>
+                {sec.items.map(([q, a]) => <details key={q}><summary>{q}</summary><p>{a}</p></details>)}
+              </section>
+            ))}
+          </div>
+        );
         return null;
       })}
       {guide.links?.length > 0 && <div className="row wrap">{guide.links.map(([to, label]) => <Link key={to} className="btn" to={to}>{label}</Link>)}</div>}
@@ -82,9 +92,9 @@ export default function Guide() {
   return (
     <div className="page stack">
       <PageHeader title="Hướng dẫn" sub={guide ? undefined : 'Cách dùng từng phần của Mở Sổ, viết theo đúng tên nút và tab bạn đang thấy. Chọn một bài để bắt đầu.'} />
-      <div className={`guide-layout${guide ? ' reading' : ''}`}>
+      <div className={`guide-layout${guide ? ' reading' : ''}${guide?.special === 'handbook' ? ' focus' : ''}`}>
         <aside className="guide-side">{list}</aside>
-        <article className="guide-main">
+        <article className={`guide-main${guide?.special === 'handbook' ? ' wide' : ''}`}>
           {!guide ? (
             <div className="guide-start">
               <div className="guide-box tip">
@@ -101,10 +111,10 @@ export default function Guide() {
                 <p className="guide-summary">{guide.summary}</p>
               </header>
               {guide.special === 'health' ? <HealthGuide /> : guide.special === 'handbook' ? <Handbook /> : <Blocks guide={guide} />}
-              <footer className="guide-foot">
+              {guide.special !== 'handbook' && <footer className="guide-foot">
                 {prev ? <Link to={`/guide/${prev.id}`} className="guide-pn"><small>Trước</small>{prev.title}</Link> : <span />}
                 {next ? <Link to={`/guide/${next.id}`} className="guide-pn next"><small>Tiếp</small>{next.title}</Link> : <span />}
-              </footer>
+              </footer>}
             </>
           )}
         </article>

@@ -7,7 +7,7 @@ import { api } from '../api.js';
 let session;
 vi.mock('../session.jsx', () => ({ useSession: () => session }));
 import ProductPage from '../pages/products/ProductPage.jsx';
-import { NewPurchasePage } from '../pages/Purchases.jsx';
+import { NewPurchasePage, EditPurchasePage } from '../pages/Purchases.jsx';
 
 const mount = (routes, initial) => render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: [initial] })} />);
 
@@ -16,6 +16,8 @@ beforeEach(() => {
   session = { shops: [{ id: 'shp_1', name: 'NH' }], shopId: 'shp_1', isAll: false, warehouses: [{ id: 'whs_1', name: 'Kho' }] };
   api.get.mockImplementation(async (path) => {
     if (path === '/categories') return { data: [] };
+    if (path === '/purchases/pur_1') return { data: { id: 'pur_1', code: 'PN-1', status: 'draft', supplier_id: 'sup_1', warehouse_id: 'whs_1', shipping_fee: 8000, other_fee: 0, discount_amount: 0, shipping_payee: 'supplier', due_date: null, lines: [{ variant_id: 'var_1', sku: 'TD-1', product_name: 'Tinh dầu', qty: 5, unit_cost: 40000 }] } };
+    if (path === '/purchases/pur_2') return { data: { id: 'pur_2', code: 'PN-2', status: 'received', lines: [] } };
     if (path === '/suppliers') return { data: [{ id: 'sup_1', name: 'NCC A' }] };
     if (path === '/variants') return { data: [{ id: 'var_1', sku: 'TD-1', product_name: 'Tinh dầu', avg_cost: 40000 }] };
     if (path === '/products/prd_1') return { data: { id: 'prd_1', name: 'Tinh dầu', unit: 'chai', options: [], images: [], variants: [{ id: 'var_1', sku: 'TD-1', default_price: 99000, min_stock: 0, option_values: null, listings: [{ shop_id: 'shp_1' }] }] } };
@@ -102,5 +104,32 @@ describe('phiếu nhập dạng trang', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Lưu nháp' }));
     await waitFor(() => expect(api.post).toHaveBeenCalled());
     expect(api.post.mock.calls[0][1]).toMatchObject({ receive: false, paid_amount: 0 });
+  });
+});
+
+describe('sửa phiếu nhập nháp', () => {
+  const routes = [{ path: '/purchases/:id/edit', element: <EditPurchasePage /> }, { path: '/purchases/:id', element: <div>CHI TIẾT</div> }];
+  it('nạp sẵn dòng hàng, Lưu thay đổi gửi PATCH rồi quay về chi tiết', async () => {
+    mount(routes, '/purchases/pur_1/edit');
+    expect(await screen.findByDisplayValue('5')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Số lượng'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+    await waitFor(() => expect(api.patch).toHaveBeenCalled());
+    const [path, body] = api.patch.mock.calls[0];
+    expect(path).toBe('/purchases/pur_1');
+    expect(body).toMatchObject({ supplier_id: 'sup_1', warehouse_id: 'whs_1', shipping_fee: 8000, lines: [{ variant_id: 'var_1', qty: 9, unit_cost: 40000 }] });
+    expect(api.post).not.toHaveBeenCalled();
+    await screen.findByText('CHI TIẾT');
+  });
+  it('Nhận hàng & lưu: PATCH rồi receive', async () => {
+    mount(routes, '/purchases/pur_1/edit');
+    await screen.findByDisplayValue('5');
+    fireEvent.click(screen.getByRole('button', { name: /Nhận hàng/ }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/purchases/pur_1/receive'));
+    expect(api.patch).toHaveBeenCalled();
+  });
+  it('phiếu đã nhận thì không cho sửa', async () => {
+    mount(routes, '/purchases/pur_2/edit');
+    expect(await screen.findByText(/Chỉ sửa được phiếu nháp/)).toBeTruthy();
   });
 });

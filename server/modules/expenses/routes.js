@@ -5,6 +5,8 @@ import { body, money, query, optionalText, patchOf } from '../../lib/http.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
 import * as svc from './service.js';
 import * as rec from './recurring.js';
+import { payables } from './payables.js';
+import { voidPaymentById } from '../payments/void.js';
 
 const r = new Hono();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -53,6 +55,10 @@ const recurringInput = z.object({
   start_date: date,
   end_date: date.nullish(),
 });
+r.get('/payables', (c) => {
+  const q = query(c, z.object({ shop_id: z.string().optional(), lookahead_days: z.coerce.number().int().min(0).max(60).default(7) }));
+  return c.json(payables({ shopId: q.shop_id, lookahead: q.lookahead_days }));
+});
 r.get('/recurring-expenses', (c) => c.json({ data: rec.listRecurring({ includeArchived: query(c, z.object({ include_archived: z.enum(['0', '1']).optional() })).include_archived === '1' }) }));
 r.post('/recurring-expenses', async (c) => {
   const input = await body(c, recurringInput);
@@ -72,6 +78,11 @@ r.get('/recurring-expenses/:id/preview', (c) => c.json({ data: rec.preview(c.req
 r.get('/payments', (c) => {
   const q = query(c, z.object({ direction: z.enum(['in', 'out']).optional(), ref_type: z.string().optional(), method: z.string().optional(), shop_id: z.string().optional(), from: date.optional(), to: date.optional(), limit: z.coerce.number().int().min(1).max(500).default(100), cursor: z.string().optional() }));
   return c.json(svc.listPayments({ direction: q.direction, refType: q.ref_type, method: q.method, from: q.from, to: q.to, shopIds: ids(q.shop_id), limit: q.limit, cursor: q.cursor }));
+});
+
+r.post('/payments/:id/void', async (c) => {
+  const input = await body(c, z.object({ reason: optionalText }));
+  return c.json({ data: tx(() => voidPaymentById(c.req.param('id'), { reason: input.reason }, c.get('actor'))) });
 });
 
 // Đối soát tiền sàn

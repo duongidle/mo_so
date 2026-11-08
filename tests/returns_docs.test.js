@@ -243,6 +243,100 @@ test('vận chuyển: giao đơn cho hãng, đối soát COD trừ phí, hãng b
   assert.deepEqual(verifyJournal().filter((x) => x), []);
 });
 
+test('huỷ cả phiếu đối soát hãng: hoàn tác COD, phí, phiếu trả chờ hàng, trạng thái đơn và vận đơn; đối soát lại được', async () => {
+  const { api, order, onHand } = await world();
+  const car = ok(await api.post('/carriers', { name: 'GHN' }));
+  const o1 = await order({ seller_shipping_amount: 25000 }, 'confirmed', 3);
+  ok(await api.post(`/orders/${o1.id}/ship`, { carrier_id: car.id, tracking_code: 'V001' }));
+  const o2 = await order({}, 'confirmed', 2);
+  ok(await api.post(`/orders/${o2.id}/ship`, { carrier_id: car.id, tracking_code: 'V002' }));
+  const rows = [
+    { tracking_code: 'V001', outcome: 'delivered', cod_amount: 630000, ship_fee: 25000, cod_fee: 6000 },
+    { tracking_code: 'V002', outcome: 'returned', ship_fee: 20000, return_fee: 15000 },
+  ];
+  const st = ok(await api.post('/carrier-statements', { carrier_id: car.id, rows }));
+  const stock = await onHand();
+  const pv = ok(await api.get(`/carrier-statements/${st.id}/void-preview`));
+  assert.equal(pv.can_void, true);
+  assert.equal(pv.undo.payments, 2); // thu COD + phí giao bù ship shop chịu
+  assert.equal(pv.undo.expenses, 1);
+  assert.equal(pv.undo.returns, 1);
+  assert.equal(pv.undo.orders_reopened, 1);
+  assert.equal(pv.undo.shipments, 2);
+  // lý do bắt buộc
+  assert.equal((await api.post(`/carrier-statements/${st.id}/void`, {})).status, 400);
+  const v = ok(await api.post(`/carrier-statements/${st.id}/void`, { reason: 'Hãng gửi nhầm bảng' }));
+  assert.ok(v.voided_at);
+  const d1 = ok(await api.get(`/orders/${o1.id}`));
+  assert.equal(d1.status, 'shipping');
+  assert.equal(d1.paid_amount, 0);
+  assert.equal(d1.seller_shipping_due, 25000);
+  const d2 = ok(await api.get(`/orders/${o2.id}`));
+  assert.equal(d2.status, 'shipping');
+  assert.equal(d2.returns.length, 0);
+  assert.equal(d2.returned_amount, 0);
+  assert.equal(d2.lines[0].returned_qty, 0);
+  assert.equal(await onHand(), stock);
+  const exp = ok(await api.get('/expenses'));
+  assert.equal(exp.filter((e) => e.method === 'carrier_payout').length, 0); // chi phí đã huỷ nên không còn trong danh sách mặc định
+  const ships = ok(await api.get('/shipments?bucket=in_transit'));
+  assert.equal(ships.length, 2);
+  assert.equal(ok(await api.get('/shipments?bucket=done')).length, 0);
+  // huỷ lần hai bị từ chối; huỷ lẻ khoản do đối soát tạo ra cũng chỉ dẫn về huỷ cả phiếu
+  assert.equal((await api.post(`/carrier-statements/${st.id}/void`, { reason: 'lần hai' })).status, 409);
+  // đối soát lại bảng đúng: được, và sổ kế toán vẫn cân
+  const again = ok(await api.post('/carrier-statements', { carrier_id: car.id, rows }));
+  assert.equal(again.total_cod, 630000);
+  assert.equal(ok(await api.get(`/orders/${o1.id}`)).status, 'completed');
+  const { verifyJournal } = await import('../server/modules/accounting/journal.js');
+  assert.deepEqual(verifyJournal().filter((x) => x), []);
+});
+
+test('huỷ phiếu đối soát hãng bị chặn khi đảo ngược sẽ làm sai số liệu', async () => {
+  const { api, order } = await world();
+  const car = ok(await api.post('/carriers', { name: 'GHN' }));
+  const o = await order({}, 'confirmed', 2);
+  ok(await api.post(`/orders/${o.id}/ship`, { carrier_id: car.id, tracking_code: 'B001' }));
+  const st = ok(await api.post('/carrier-statements', { carrier_id: car.id, rows: [{ tracking_code: 'B001', outcome: 'delivered', cod_amount: 430000 }] }));
+  // đơn đã có phiếu trả sau đối soát → không đưa đơn về đang giao được
+  ok(await api.post(`/orders/${o.id}/returns`, { lines: [{ order_line_id: o.lines[0].id, qty: 1, restock: true }] }));
+  const pv = ok(await api.get(`/carrier-statements/${st.id}/void-preview`));
+  assert.equal(pv.can_void, false);
+  assert.ok(pv.blockers.some((b) => b.code === 'HAS_RETURNS'));
+  const r = await api.post(`/carrier-statements/${st.id}/void`, { reason: 'thử huỷ' });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error.code, 'STATEMENT_VOID_BLOCKED');
+  // không đổi gì
+  assert.equal(ok(await api.get(`/orders/${o.id}`)).status, 'completed');
+  assert.equal(ok(await api.get(`/carrier-statements/${st.id}`)).voided_at, null);
+  // khoản COD không huỷ lẻ được, lời nhắn chỉ về huỷ cả phiếu
+  const pay = ok(await api.get('/payments?ref_type=order')).find((p) => p.method === 'carrier_payout');
+  const one = await api.post(`/payments/${pay.id}/void`, {});
+  assert.equal(one.status, 409);
+  assert.match(one.body.error.message, /phiếu đối soát/);
+});
+
+test('huỷ phiếu đối soát hãng: kỳ đã khoá sổ thì chặn; phiếu lập trước khi có bản ghi tác động không huỷ tự động', async () => {
+  const { api, order } = await world();
+  const car = ok(await api.post('/carriers', { name: 'GHN' }));
+  const o = await order({}, 'confirmed', 1);
+  ok(await api.post(`/orders/${o.id}/ship`, { carrier_id: car.id, tracking_code: 'L001' }));
+  const day = '2020-01-15';
+  const st = ok(await api.post('/carrier-statements', { carrier_id: car.id, date: day, rows: [{ tracking_code: 'L001', outcome: 'delivered', cod_amount: 230000, cod_fee: 3000 }] }));
+  ok(await api.post('/accounting/lock', { date: '2020-01-31' }));
+  const pv = ok(await api.get(`/carrier-statements/${st.id}/void-preview`));
+  assert.equal(pv.can_void, false);
+  assert.ok(pv.blockers.some((b) => b.code === 'PERIOD_LOCKED'));
+  assert.equal((await api.post(`/carrier-statements/${st.id}/void`, { reason: 'thử huỷ' })).status, 409);
+  assert.equal(ok(await api.get(`/orders/${o.id}`)).status, 'completed');
+  // phiếu cũ (không có bản ghi tác động)
+  const { getDb } = await import('../server/db/index.js');
+  getDb().prepare('UPDATE carrier_statements SET effects_tracked = 0 WHERE id = ?').run(st.id);
+  const legacy = await api.post(`/carrier-statements/${st.id}/void`, { reason: 'phiếu cũ' });
+  assert.equal(legacy.status, 409);
+  assert.equal(legacy.body.error.code, 'STATEMENT_LEGACY');
+});
+
 test('đối soát sàn: trả lệch thì cộng phần lệch vào phí sàn của đơn, đơn hết treo, lãi đúng', async () => {
   const { api, nh, v } = await world();
   const imp = await api.post('/imports/orders/commit', { shop_id: nh.id, channel_id: 'shopee', orders: [{ external_id: 'SP-1', status: 'completed', ordered_at: new Date(Date.now() - 12 * 86400000).toISOString(), platform_fee_amount: 20000, lines: [{ sku: 'A1', qty: 1, unit_price: 200000 }] }] });
@@ -419,10 +513,15 @@ test('nhắc nợ: hạn mặc định, quá hạn, sắp đến hạn, đã nh�
   // nợ nhà cung cấp
   const sup = ok(await api.post('/suppliers', { name: 'NCC nợ' }));
   const pur = ok(await api.post('/purchases', { supplier_id: sup.id, warehouse_id: wh.id, receive: true, due_date: day(-1), lines: [{ variant_id: v.id, qty: 2, unit_cost: 100000 }] }));
-  const pay = (await api.get('/loyalty/debts')).body.suppliers;
-  assert.equal(pay.data.length, 1);
-  assert.equal(pay.data[0].code, pur.code);
-  assert.equal(pay.data[0].bucket, 'overdue');
+  assert.equal((await api.get('/loyalty/debts')).body.suppliers, undefined, 'nợ nhà cung cấp không nằm ở Loyalty');
+  const pay = (await api.get('/payables')).body;
+  const sp = pay.data.find((r) => r.kind === 'supplier' && r.code === pur.code);
+  assert.equal(sp.bucket, 'overdue');
+  assert.equal(sp.amount, 200000);
+  assert.equal(pay.overdue.count >= 1, true);
+  // trả hết thì biến mất khỏi danh sách
+  ok(await api.post(`/purchases/${pur.id}/payments`, { amount: 200000, method: 'cash' }));
+  assert.equal((await api.get('/payables')).body.data.some((r) => r.code === pur.code), false);
   void nh;
 });
 
@@ -549,4 +648,119 @@ test('quà tặng kèm khác sản phẩm: đủ điều kiện thì thêm dòng
   assert.equal(ev.gifts.length, 0);
   assert.ok(ev.rejected.some((r) => /hết hàng/.test(r.reason)));
   void order;
+});
+
+test('đơn huỷ đã nhận cọc: hoàn lại được tới số đã thu, không quá', async () => {
+  const { api, order } = await world();
+  const o = await order({ payments: [{ amount: 100000, method: 'cash' }] }, 'confirmed', 1);
+  ok(await api.post(`/orders/${o.id}/status`, { status: 'cancelled' }));
+  assert.equal(ok(await api.get(`/orders/${o.id}`)).paid_amount, 100000);
+  assert.equal((await api.post(`/orders/${o.id}/payments`, { direction: 'out', amount: 100001, method: 'cash' })).status, 400);
+  ok(await api.post(`/orders/${o.id}/payments`, { direction: 'out', amount: 100000, method: 'cash' }));
+  const after = ok(await api.get(`/orders/${o.id}`));
+  assert.equal(after.paid_amount, 0);
+  assert.equal(after.payment_status, 'refunded');
+});
+
+test('huỷ khoản thu ghi nhầm: đơn tính lại số đã thu, khoản đã huỷ không tính, huỷ hai lần bị chặn', async () => {
+  const { api, order } = await world();
+  const o = await order({ payments: [{ amount: 100000, method: 'cash' }] });
+  const o2 = ok(await api.post(`/orders/${o.id}/payments`, { amount: 500000, method: 'bank' })); // ghi nhầm số tiền
+  assert.equal(o2.paid_amount, 600000);
+  const wrong = o2.payments.find((p) => p.amount === 500000);
+  const after = ok(await api.post(`/payments/${wrong.id}/void`, { reason: 'Nhập nhầm' })).data;
+  assert.equal(after.paid_amount, 100000);
+  assert.equal(after.payment_status, 'partial');
+  assert.ok(after.payments.find((p) => p.id === wrong.id).voided_at);
+  const again = await api.post(`/payments/${wrong.id}/void`, {});
+  assert.equal(again.status, 409);
+  assert.equal(again.body.error.code, 'ALREADY_VOIDED');
+});
+
+test('huỷ khoản thu khi đã có khoản hoàn dựa trên nó bị chặn; khoản hoàn từ phiếu trả hàng không huỷ riêng được', async () => {
+  const { api, order } = await world();
+  const o = await order({}, 'completed'); // chưa thu
+  const paid = ok(await api.post(`/orders/${o.id}/payments`, { amount: o.total_amount, method: 'cash' }));
+  const pay = paid.payments[0];
+  const ret = ok(await api.post(`/orders/${o.id}/returns`, { lines: [{ order_line_id: o.lines[0].id, qty: 1, restock: true }], refund: { amount: 100000, method: 'cash' } }));
+  const refund = ret.payments.find((p) => p.direction === 'out');
+  const r1 = await api.post(`/payments/${refund.id}/void`, {});
+  assert.equal(r1.status, 409);
+  assert.equal(r1.body.error.code, 'PAYMENT_FROM_RETURN');
+  const manual = ok(await api.post(`/orders/${o.id}/payments`, { amount: 50000, method: 'cash', direction: 'out' }));
+  assert.ok(manual.payments.some((p) => p.direction === 'out' && p.amount === 50000));
+  // thu 630k, hoàn theo phiếu trả 100k, hoàn tay 50k → huỷ khoản thu 630k làm đã thu âm
+  const r2 = await api.post(`/payments/${pay.id}/void`, {});
+  assert.equal(r2.status, 409);
+  assert.equal(r2.body.error.code, 'PAYMENT_HAS_REFUND');
+  const tay = manual.payments.find((p) => p.direction === 'out' && p.amount === 50000);
+  const back = ok(await api.post(`/payments/${tay.id}/void`, {})).data; // huỷ khoản hoàn tay: đã thu tăng lại
+  assert.equal(back.paid_amount, o.total_amount - 100000);
+});
+
+test('huỷ khoản trả nhà cung cấp và trả ship ghi nhầm: số đã trả và công nợ tính lại; phiếu đã huỷ thì không', async () => {
+  const { api, v, wh } = await world();
+  const sup = ok(await api.post('/suppliers', { name: 'NCC2' }));
+  const p = ok(await api.post('/purchases', { supplier_id: sup.id, warehouse_id: wh.id, receive: true, shipping_fee: 40000, shipping_payee: 'carrier', lines: [{ variant_id: v.id, qty: 2, unit_cost: 100000 }] }));
+  assert.equal(p.total_amount, 200000);
+  const a = ok(await api.post(`/purchases/${p.id}/payments`, { amount: 150000, method: 'bank' }));
+  assert.equal(a.paid_amount, 150000);
+  const b = ok(await api.post(`/purchases/${p.id}/carrier-payments`, { amount: 40000, method: 'cash' }));
+  assert.equal(b.carrier_debt, 0);
+  const vp = ok(await api.post(`/payments/${a.payments[0].id}/void`, { reason: 'Sai số' }));
+  assert.equal(vp.kind, 'purchase');
+  assert.equal(vp.data.paid_amount, 0);
+  assert.equal(vp.data.debt, 200000);
+  const vc = ok(await api.post(`/payments/${b.carrier_payments[0].id}/void`, {}));
+  assert.equal(vc.data.carrier_paid_amount, 0);
+  assert.equal(vc.data.carrier_debt, 40000);
+  // huỷ phiếu chưa trả: không còn khoản nào để huỷ lẻ
+  const c = ok(await api.post(`/purchases/${p.id}/cancel`, {}));
+  assert.equal(c.status, 'cancelled');
+  assert.equal((await api.post(`/payments/${a.payments[0].id}/void`, {})).status, 409);
+});
+
+test('khoản đối soát hãng vận chuyển không huỷ lẻ được; loại lạ bị từ chối', async () => {
+  const { api, order } = await world();
+  const o = await order({}, 'completed');
+  const paid = ok(await api.post(`/orders/${o.id}/payments`, { amount: 100000, method: 'cod' })); // cod vẫn huỷ được
+  assert.equal(ok(await api.post(`/payments/${paid.payments[0].id}/void`, {})).data.paid_amount, 0);
+  const cp = ok(await api.post(`/orders/${o.id}/payments`, { amount: 10000, method: 'carrier_payout' }));
+  const r = await api.post(`/payments/${cp.payments.find((p) => !p.voided_at).id}/void`, {});
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error.code, 'PAYMENT_NOT_VOIDABLE');
+  assert.equal((await api.post('/payments/pay_khong_co/void', {})).status, 404);
+});
+
+test('sửa phiếu nhập nháp rồi nhận hàng: dòng, phí và kho theo bản sửa', async () => {
+  const { api, v, wh, onHand } = await world();
+  const d = ok(await api.post('/purchases', { warehouse_id: wh.id, lines: [{ variant_id: v.id, qty: 5, unit_cost: 100000 }] }));
+  assert.equal(d.status, 'draft');
+  const e = ok(await api.patch(`/purchases/${d.id}`, { lines: [{ variant_id: v.id, qty: 8, unit_cost: 90000 }], shipping_fee: 8000, due_date: '2027-01-10' }));
+  assert.equal(e.lines[0].qty, 8);
+  assert.equal(e.total_amount, 8 * 90000 + 8000);
+  assert.equal(e.due_date, '2027-01-10');
+  const before = await onHand();
+  ok(await api.post(`/purchases/${d.id}/receive`));
+  assert.equal(await onHand(), before + 8);
+  assert.equal((await api.patch(`/purchases/${d.id}`, { note: 'x' })).status, 409); // đã nhận thì không sửa
+});
+
+test('tiền sàn trả ghi nhầm: huỷ được, đơn hiện lại tiền treo; đã đối soát lệch thì chặn', async () => {
+  const { api, ctx, v } = await world().then((w) => ({ ...w, ctx: w }));
+  const mk = async () => ok(await api.post('/orders', { shop_id: ctx.nh.id, channel_id: 'shopee', status: 'completed', external_id: 'SP' + Math.random().toString(36).slice(2, 8), platform_fee_amount: 10000, lines: [{ variant_id: v.id, qty: 1, unit_price: 200000 }] }));
+  const o = await mk();
+  const rec = ok(await api.post('/reconciliation/payouts', { channel_id: 'shopee', items: [{ order_id: o.id, amount: 190000 }] }));
+  assert.equal(rec.recorded, 1);
+  let got = ok(await api.get(`/orders/${o.id}`));
+  const pay = got.payments.find((p) => p.method === 'shopee_payout');
+  assert.equal(got.paid_amount, 190000);
+  const after = ok(await api.post(`/payments/${pay.id}/void`, { reason: 'Nhập nhầm' })).data;
+  assert.equal(after.paid_amount, 0);
+  const o2 = await mk();
+  ok(await api.post('/reconciliation/payouts', { channel_id: 'shopee', settle_difference: true, items: [{ order_id: o2.id, amount: 180000 }] }));
+  got = ok(await api.get(`/orders/${o2.id}`));
+  const r = await api.post(`/payments/${got.payments.find((p) => p.method === 'shopee_payout').id}/void`, {});
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error.code, 'PAYOUT_HAS_ADJUSTMENT');
 });

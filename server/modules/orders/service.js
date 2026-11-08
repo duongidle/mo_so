@@ -7,7 +7,7 @@ import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { dailyCode } from '../../lib/codes.js';
 import { RETURN_REASON_CODES } from '../../lib/returnReasons.js';
 import { applyMovement } from '../inventory/service.js';
-import { recordPayment, netPaid, listPaymentsFor } from '../payments/service.js';
+import { recordPayment, netPaid, listPaymentsFor, voidPaymentRow } from '../payments/service.js';
 import { getSetting } from '../settings/service.js';
 import { reservedByVariant } from './reservation.js';
 import { evaluate as evaluatePromotions, recordUses } from '../loyalty/promotions.js';
@@ -651,6 +651,32 @@ export function addOrderPayment(id, { amount, method, paidAt, note, direction = 
   return after;
 }
 
+/**
+ * Huỷ một khoản thanh toán ghi nhầm của đơn (không xoá: đánh dấu `voided_at`, giữ trong sổ và nhật ký).
+ * Chỉ khoản thu/hoàn nhập tay và khoản trả ship cho hãng; khoản do trả hàng hoặc đối soát tạo ra phải xử lý ở nơi tạo ra chúng.
+ */
+export function voidOrderPayment(p, reason, actor) {
+  const o = getOrder(p.ref_id);
+  if (p.ref_type === 'order') {
+    if (p.direction === 'out' && /^(Hoàn tiền trả hàng|Chuyển tiền trả hàng)/.test(p.note || '')) {
+      throw conflict('PAYMENT_FROM_RETURN', 'Khoản hoàn này do phiếu trả hàng tạo ra, không huỷ riêng được.');
+    }
+    if (/_payout$/.test(p.method) && db().prepare('SELECT 1 FROM payout_adjustments WHERE order_id = ? LIMIT 1').get(o.id)) {
+      throw conflict('PAYOUT_HAS_ADJUSTMENT', 'Đơn này đã đối soát lệch và cộng phần lệch vào phí sàn. Sửa lại phí sàn của đơn trước, rồi mới huỷ khoản tiền sàn trả.');
+    }
+    if (p.direction === 'in' && o.paid_amount - p.amount < 0) {
+      throw conflict('PAYMENT_HAS_REFUND', 'Đã có khoản hoàn tiền dựa trên khoản thu này. Huỷ khoản hoàn trước, rồi huỷ khoản thu.');
+    }
+  }
+  const at = nowIso();
+  voidPaymentRow(p, at);
+  if (p.ref_type === 'order') refreshDerived(o.id);
+  const after = getOrder(o.id);
+  audit(actor, 'payment.voided', 'order', o.id, { payment: { id: p.id, direction: p.direction, amount: p.amount, method: p.method } }, { reason: reason ?? null, paid_amount: after.paid_amount });
+  emit('order.updated', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: after });
+  return after;
+}
+
 // ---------- Trả hàng ----------
 /**
  * Giá trị hàng của một lần trả = giá trị luỹ kế sau lần này − tổng đã trả trước đó, với
@@ -788,6 +814,53 @@ export function receiveReturn(orderId, returnId, { actor, receivedAt, damagedLin
   const after = getOrder(orderId);
   audit(actor, 'order.return_goods_received', 'order', o.id, null, { return_id: returnId, received_at: at });
   emit('order.return_goods_received', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: returnId, order: after } });
+  return after;
+}
+
+/**
+ * Gỡ phiếu trả hàng đang chờ hàng về (hàng chưa nhập kho, chưa có tiền trả khách, chưa có phiếu hàng huỷ): phiếu này chưa tạo ra
+ * thay đổi nào ngoài con số trên đơn, nên là dữ liệu nháp theo quy ước 6. Bản sao đầy đủ lưu vào audit_log.
+ * `restoreStatus`: nếu phiếu làm đơn thành "đã trả hết" thì đưa đơn về trạng thái này.
+ */
+export function removeAwaitingReturn(orderId, returnId, { actor, restoreStatus = null } = {}) {
+  const o = getOrder(orderId);
+  const ret = db().prepare('SELECT * FROM order_returns WHERE id = ? AND order_id = ?').get(returnId, orderId);
+  if (!ret) throw notFound('Phiếu trả hàng');
+  if (ret.goods_received_at) throw conflict('RETURN_ALREADY_RECEIVED', 'Hàng của phiếu trả này đã nhập kho, không gỡ được');
+  if (ret.refund_amount > 0) throw conflict('RETURN_HAS_REFUND', 'Phiếu trả này đã hoàn tiền cho khách, không gỡ được');
+  if (db().prepare('SELECT 1 FROM return_write_offs WHERE return_id = ? LIMIT 1').get(returnId)) throw conflict('RETURN_HAS_WRITE_OFF', 'Phiếu trả này đã có phiếu hàng huỷ, không gỡ được');
+  for (const item of JSON.parse(ret.lines || '[]')) {
+    db().prepare('UPDATE order_lines SET returned_qty = MAX(0, returned_qty - ?) WHERE id = ? AND order_id = ?').run(item.qty, item.order_line_id, orderId);
+  }
+  db().prepare('DELETE FROM order_returns WHERE id = ?').run(returnId);
+  if (o.status === 'returned' && restoreStatus) {
+    const left = db().prepare('SELECT SUM(qty - returned_qty) AS n FROM order_lines WHERE order_id = ?').get(orderId).n;
+    if (left > 0) {
+      db().prepare('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?').run(restoreStatus, nowIso(), orderId);
+      logStatus(orderId, 'returned', restoreStatus, 'Gỡ phiếu trả hàng chờ hàng về', actor);
+    }
+  }
+  refreshDerived(orderId);
+  if (o.customer_id) recalcCustomerStats(o.customer_id);
+  const after = getOrder(orderId);
+  audit(actor, 'order.return_removed', 'order', orderId, { return: ret }, { status: after.status });
+  emit('order.updated', { entityType: 'order', entityId: orderId, shopId: o.shop_id, data: after });
+  return after;
+}
+
+/** Đưa đơn "hoàn thành" về "đang giao" (hoàn tác việc đánh dấu giao thành công). Chỉ khi đơn vẫn đang hoàn thành và chưa có phiếu trả. */
+export function revertOrderCompletion(orderId, { actor, note } = {}) {
+  const o = db().prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!o) throw notFound('Đơn hàng');
+  if (o.status !== 'completed') throw conflict('ORDER_CHANGED', `Đơn ${o.code} đã đổi trạng thái sang “${o.status}” sau đối soát`);
+  if (db().prepare('SELECT 1 FROM order_returns WHERE order_id = ? LIMIT 1').get(orderId)) throw conflict('HAS_RETURNS', `Đơn ${o.code} đã có phiếu trả hàng sau đối soát`);
+  db().prepare("UPDATE orders SET status = 'shipping', completed_at = NULL, updated_at = ? WHERE id = ?").run(nowIso(), orderId);
+  logStatus(orderId, 'completed', 'shipping', note, actor);
+  refreshDerived(orderId);
+  if (o.customer_id) recalcCustomerStats(o.customer_id);
+  const after = getOrder(orderId);
+  audit(actor, 'order.completion_reverted', 'order', orderId, { status: 'completed' }, { status: 'shipping' });
+  emit('order.status_changed', { entityType: 'order', entityId: orderId, shopId: o.shop_id, data: { from: 'completed', to: 'shipping', order: after } });
   return after;
 }
 

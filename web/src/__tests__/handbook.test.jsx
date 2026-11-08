@@ -45,16 +45,16 @@ describe('Cẩm nang trong trang Hướng dẫn', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Bán hàng' }));
     expect(await screen.findByRole('heading', { name: 'Bán trực tiếp trong 30 giây' })).toBeTruthy();
     expect(screen.queryByText(/Dùng Mở Sổ từ ngày đầu đến chốt tháng/)).toBeNull(); // nội dung bìa phải biến mất khi sang trang khác
-    fireEvent.click(screen.getByText('Trang sau →'));
+    fireEvent.click(screen.getByText('Sau →'));
     expect(await screen.findByRole('heading', { name: /Đơn có giao hàng/ })).toBeTruthy();
-    fireEvent.click(screen.getByText('← Trang trước'));
+    fireEvent.click(screen.getByText('← Trước'));
     expect(screen.getByRole('heading', { name: 'Bán trực tiếp trong 30 giây' })).toBeTruthy();
   });
 
   it('chạy kịch bản trong màn hình mô phỏng tới trạng thái cuối', async () => {
     render(<Handbook />);
     fireEvent.click(screen.getByRole('tab', { name: 'Bắt đầu' }));
-    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByText('Trang sau →')); // tạo shop → sản phẩm → nhập hàng → trả nhà cung cấp → trả nhiều đợt
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByText('Sau →')); // tạo shop → sản phẩm → nhập hàng → trả nhà cung cấp → trả nhiều đợt
     await screen.findByRole('heading', { name: 'Nhập hàng, trả nhà cung cấp nhiều đợt' });
     const host = document.querySelector('.hb-host');
     await waitFor(() => expect(host.shadowRoot.getElementById('st').textContent).toBe('Đã trả đủ'));

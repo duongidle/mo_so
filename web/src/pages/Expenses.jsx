@@ -8,18 +8,20 @@ import { vnd, fmtDate, monthStart, today } from '../lib.js';
 import CashAccounts from './CashAccounts.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 import FormPage from '../components/FormPage.jsx';
+import { Recurring } from './accounting/Extras.jsx';
+import Payables from './Payables.jsx';
 
 export default function Expenses() {
   const [params] = useSearchParams();
   const { marketplaces } = useSession();
   const hasMarket = marketplaces.length > 0; // chưa bật sàn nào thì không có gì để đối soát
   const want = params.get('tab');
-  const [tab, setTab] = useState(['expenses', 'cash'].includes(want) || (want === 'reconcile' && hasMarket) ? want : 'expenses');
+  const [tab, setTab] = useState(['expenses', 'recurring', 'payables', 'cash', 'shipping'].includes(want) || (want === 'reconcile' && hasMarket) ? want : 'expenses');
   return (
     <div className="page stack">
       <PageHeader title="Chi phí & quỹ" />
-      <Toolbar><Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ['shipping', 'Vận chuyển'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} /></Toolbar>
-      {tab === 'expenses' && <ExpenseList />}{tab === 'cash' && <CashAccounts />}{tab === 'shipping' && <Shipping />}{tab === 'reconcile' && hasMarket && <Reconcile />}
+      <Toolbar><Tabs options={[['expenses', 'Chi phí'], ['recurring', 'Chi phí định kỳ'], ['payables', 'Công nợ phải trả'], ['cash', 'Quỹ tiền'], ['shipping', 'Vận chuyển'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} /></Toolbar>
+      {tab === 'expenses' && <ExpenseList />}{tab === 'recurring' && <Recurring report={() => {}} />}{tab === 'payables' && <Payables />}{tab === 'cash' && <CashAccounts />}{tab === 'shipping' && <Shipping />}{tab === 'reconcile' && hasMarket && <Reconcile />}
     </div>
   );
 }

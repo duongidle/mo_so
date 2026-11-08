@@ -1,7 +1,7 @@
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso, businessDate, toIso } from '../../lib/time.js';
-import { notFound } from '../../lib/errors.js';
+import { notFound, conflict } from '../../lib/errors.js';
 
 import { paymentMethods } from '../../lib/platforms.js';
 import { assertUnlocked } from '../../lib/period.js';
@@ -23,12 +23,17 @@ export function recordPayment({ direction, refType, refId, shopId, amount, metho
   return getDb().prepare('SELECT * FROM payments WHERE id = ?').get(id);
 }
 
-export function voidPayment(id) {
+/** Đánh dấu huỷ một dòng thanh toán (không xoá). Chặn khi ngày của khoản đó đã khoá sổ. */
+export function voidPaymentRow(p, at = nowIso()) {
+  if (p.voided_at) throw conflict('ALREADY_VOIDED', 'Khoản thanh toán này đã huỷ');
+  assertUnlocked(p.business_date, 'Thanh toán');
+  getDb().prepare('UPDATE payments SET voided_at = ? WHERE id = ? AND voided_at IS NULL').run(at, p.id);
+}
+
+export function getPayment(id) {
   const p = getDb().prepare('SELECT * FROM payments WHERE id = ?').get(id);
   if (!p) throw notFound('Thanh toán');
-  assertUnlocked(p.business_date, 'Thanh toán');
-  getDb().prepare('UPDATE payments SET voided_at = ? WHERE id = ?').run(nowIso(), id);
-  return { ...p, voided_at: nowIso() };
+  return p;
 }
 
 /** Tổng tiền thực đã thu/chi cho chứng từ (thu − hoàn) */

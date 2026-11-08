@@ -1,12 +1,79 @@
 // Nội dung trang Hướng dẫn. Viết cho người dùng cuối, theo đúng tên nút và tab đang có trong hệ thống.
-// Khối nội dung: p (đoạn), steps (các bước đánh số, mỗi bước có thể kèm liên kết), tips (mẹo), warn (lưu ý dễ sai), faq (hỏi đáp).
+// Khối nội dung: p (đoạn), steps (các bước đánh số, mỗi bước có thể kèm liên kết), tips (mẹo), warn (lưu ý dễ sai), faq (hỏi đáp ngắn cuối bài), qa (nhiều nhóm hỏi đáp, dùng cho trang Hỏi đáp tình huống).
 export const GROUPS = ['Cẩm nang', 'Bắt đầu', 'Bán hàng', 'Hàng hoá & kho', 'Tiền & sổ sách', 'Khách hàng', 'Đọc số liệu', 'Hệ thống'];
 
 export const GUIDES = [
   {
-    id: 'cam-nang', group: 'Cẩm nang', title: 'Cẩm nang từng bước có hình mô phỏng', time: '20 phút', special: 'handbook',
-    summary: 'Xem thao tác thật từ lúc tạo shop đến chốt tháng: nhập hàng, bán hàng, thu tiền nhiều lần, trả hàng, kho, báo cáo.',
+    id: 'cam-nang', group: 'Cẩm nang', title: 'Cẩm nang từng bước', time: '20 phút', special: 'handbook',
+    summary: 'Xem thao tác thật từ lúc tạo shop đến chốt tháng.',
     keywords: 'cẩm nang slide mô phỏng thao tác từng bước tình huống thanh toán nhiều đợt',
+  },
+  {
+    id: 'hoi-dap', group: 'Cẩm nang', title: 'Hỏi đáp tình huống', time: 'Tra khi cần',
+    summary: 'Gặp việc thực tế thì xem cách xử lý: nhập sai, trả nhiều lần, khách không nhận hàng, kho lệch…',
+    keywords: 'q&a hỏi đáp tình huống thực tế sai số lượng thanh toán nhiều lần cọc ship hoàn tiền huỷ đơn',
+    blocks: [
+      { t: 'p', text: 'Mỗi câu hỏi là một tình huống shop hay gặp. Nhấn vào câu hỏi để xem cách xử lý, theo đúng tên nút bạn đang thấy trong hệ thống.' },
+      { t: 'qa', sections: [
+        { title: 'Nhập hàng và nhà cung cấp', items: [
+          ['Tạo phiếu nhập sai số lượng thì sao?', 'Phiếu chưa nhận hàng (nháp): mở phiếu, nhấn “Sửa phiếu”, đổi số lượng, giá, phí hoặc nhà cung cấp rồi “Lưu thay đổi” (hoặc “Nhận hàng & lưu” nếu đã đủ hàng). Kho chưa bị ảnh hưởng gì. Phiếu đã nhận hàng không sửa trực tiếp: nhấn “Huỷ phiếu” rồi tạo phiếu mới đúng số lượng. Hệ thống rút lại số hàng đã cộng, và nếu phiếu đã trả tiền thì bạn chọn cách nhà cung cấp hoàn lại số đã trả. Nếu hàng đã bán bớt nên không còn đủ để rút, hệ thống từ chối huỷ: giữ phiếu và dùng Kho → Điều chỉnh +/− để sửa phần chênh lệch, ghi rõ lý do.'],
+          ['Nhà cung cấp giao thiếu hoặc dư so với phiếu?', 'Cách xử lý giống phiếu nhập sai số lượng. Tốt nhất đếm hàng trước khi nhấn “Nhận hàng & lưu”: lưu nháp thì chưa cộng kho và chưa ghi nợ, nên sửa lại hoặc huỷ đi tạo lại không để lại hậu quả.'],
+          ['Ghi nhầm số tiền trả nhà cung cấp hoặc trả ship?', 'Ở chi tiết phiếu, mỗi khoản đã trả có nút “Huỷ khoản này”. Khoản bị huỷ gạch ngang, số đã trả và số còn nợ tính lại ngay, rồi ghi lại khoản đúng. Khoản huỷ vẫn nằm trong nhật ký. Phiếu đã huỷ thì không huỷ lẻ từng khoản được, và ngày đã khoá sổ thì bị chặn.'],
+          ['Thanh toán nhiều lần cho một phiếu nhập thì sao?', 'Mở chi tiết phiếu nhập, nhập số tiền vào ô “Trả nợ (còn …)”, chọn phương thức rồi nhấn nút trả. Làm bao nhiêu lần cũng được, mỗi lần là một dòng và có thể dùng phương thức khác nhau (đợt đầu chuyển khoản, đợt sau tiền mặt). Tổng các lần không được vượt tổng phiếu: trả quá sẽ bị từ chối. Phần còn nợ hiện ở Chi phí & quỹ → Công nợ phải trả.'],
+          ['Phí giao hàng nhập là trả cho bên vận chuyển, không phải nhà cung cấp?', 'Khi lập phiếu, ở phần phí ship chọn “Hãng vận chuyển”. Ship vẫn được chia vào giá vốn từng món, nhưng không cộng vào số nợ nhà cung cấp. Bạn trả ship riêng ở chi tiết phiếu, ô “Trả ship (còn …)”; trả nhiều lần được, không vượt số ship của phiếu.'],
+          ['Quên ghi phí ship sau khi đã nhận hàng?', 'Phiếu đã nhận không sửa được phí. Nếu muốn giá vốn gồm cả ship thì huỷ phiếu và tạo lại. Nếu chỉ cần ghi khoản chi thì thêm ở Chi phí & quỹ → Chi phí; khi đó khoản này là chi phí kỳ này và không nằm trong giá vốn.'],
+          ['Làm sao biết shop đang nợ ai, bao nhiêu, bao giờ đến hạn?', 'Chi phí & quỹ → Công nợ phải trả. Trang gom nợ nhà cung cấp, ship còn nợ hãng vận chuyển, tiền còn nợ khách và các chi phí định kỳ sắp đến kỳ, xếp theo quá hạn, sắp đến hạn, chưa đặt hạn. Hạn trả nhà cung cấp đặt ở phiếu nhập. Muốn được báo, bật “Sắp đến hạn trả nhà cung cấp” ở Cài đặt → Thông báo.'],
+          ['Mỗi lần nhập giá khác nhau thì giá vốn tính thế nào?', 'Mặc định hệ thống dùng bình quân gia quyền: giá vốn được tính lại sau mỗi lần nhập. Nếu giá nhập lên xuống nhiều và bạn muốn lãi bám sát từng đợt hàng, đổi sang nhập trước xuất trước (FIFO) ở Cài đặt → Ngưỡng & kho. Xem bài “Chọn cách tính giá vốn”.'],
+        ] },
+        { title: 'Bán hàng và thu tiền', items: [
+          ['Khách thanh toán nhiều lần thì sao, tối đa mấy lần?', 'Không giới hạn số lần. Ở chi tiết đơn nhấn “Thu tiền (số còn nợ)”, nhập số tiền và phương thức; mỗi lần thêm một dòng ở mục Thanh toán. Trạng thái đổi từ Chưa thu sang Thu một phần rồi Đã thu đủ. Mỗi lần có thể một phương thức khác nhau. Thu thừa thì hệ thống không chặn mà báo “cần hoàn lại khách”.'],
+          ['Khách đặt cọc, mấy hôm sau mới lấy hàng?', 'Tạo đơn rồi xác nhận (xác nhận thì hàng bị trừ kho). Nếu chưa muốn trừ kho, để đơn nháp và nhấn “Giữ hàng” kèm hạn giữ: đơn khác không xác nhận được phần hàng đó. Nhấn “Thu tiền” ghi số cọc, đơn ở trạng thái Thu một phần. Khi khách lấy hàng, thu nốt phần còn lại. Đơn đã giao xong mà khách còn nợ sẽ vào danh sách Nhắc nợ ở Loyalty → Hôm nay.'],
+          ['Khách đã cọc rồi không lấy nữa?', 'Nhấn “Huỷ đơn”: hàng được cộng lại kho. Nếu shop trả lại cọc, nhấn “Hoàn tiền” và chọn phương thức; số hoàn tối đa bằng số đã thu. Nếu shop giữ cọc thì không cần ghi hoàn.'],
+          ['Phí ship do shop tự trả thì ghi ở đâu?', 'Trong form đơn, nhập ở ô “Ship shop chịu”. Khoản này không tính vào số tiền khách phải trả mà làm giảm lãi của đơn. Khi trả cho hãng vận chuyển, nhấn “Ghi đã trả ship cho hãng vận chuyển” ở chi tiết đơn; số còn nợ hãng hiện ở Công nợ phải trả. Đơn sàn thì sàn đã trừ ship vào tiền trả shop nên không cần ghi.'],
+          ['Tạo đơn nhầm sản phẩm hoặc số lượng?', 'Đơn nháp: nhấn “Sửa”. Đơn đã xác nhận mà chưa giao: cũng nhấn “Sửa”, hệ thống cộng hàng về kho rồi trừ lại theo nội dung mới, tiền đã thu giữ nguyên. Đơn đang giao thì không sửa được dòng hàng. Đơn đã hoàn thành: dùng “Trả hàng” hoặc “Đổi hàng”.'],
+          ['Ghi nhầm khoản thu hoặc hoàn tiền của đơn?', 'Ở mục Thanh toán của đơn, mỗi khoản có nút “Huỷ” (cả khoản trả ship cho hãng). Số đã thu và công nợ của đơn tính lại ngay; khoản huỷ gạch ngang và vẫn nằm trong nhật ký. Không huỷ lẻ được khoản do phiếu trả hàng tạo ra, khoản dùng tiền khách gửi, khoản đối soát hãng vận chuyển (huỷ cả phiếu đối soát, xem câu bên dưới), và khoản thu đã có tiền hoàn dựa trên nó (huỷ khoản hoàn trước). Tiền sàn trả ghi nhầm thì huỷ được, đơn hiện lại là tiền đang treo; riêng đơn đã đối soát lệch (có cộng phần lệch vào phí sàn) phải sửa phí sàn trước.'],
+          ['Đơn hết hàng thì xác nhận được không?', 'Hệ thống báo thiếu tồn và hỏi có cho phép âm kho không. Nên nhập hàng hoặc điều chỉnh tồn trước. Chỉ cho âm kho khi chắc chắn hàng thật vẫn còn, rồi nhập phiếu bổ sung sau để tồn khớp lại.'],
+          ['Khách muốn đổi sang món khác?', 'Nhấn “Đổi hàng” ở chi tiết đơn (đơn phải có hồ sơ khách): chọn hàng khách trả, tìm món mới. Chênh lệch thì thu thêm, hoặc phần dư được giữ thành tiền khách gửi tại shop để lần sau dùng.'],
+          ['Khách mua nợ, hẹn trả sau?', 'Đặt “Hạn thanh toán” ở form đơn (hoặc đặt số ngày nợ mặc định ở Cài đặt). Đến hạn, Loyalty → Hôm nay hiện thẻ Nhắc nợ kèm tin nhắn soạn sẵn. Nhắc rồi thì nhấn “Đã nhắc, hẹn 3 ngày sau” để khoản đó tạm ẩn.'],
+        ] },
+        { title: 'Giao hàng, trả hàng', items: [
+          ['Đơn đang giao có huỷ được không?', 'Không. Hàng đang ở hãng vận chuyển nên cộng kho lúc này là sai. Nếu khách không nhận hoặc giao không thành, nhấn “Giao không thành”.'],
+          ['Giao tới nơi nhưng khách không nhận?', 'Nhấn “Giao không thành” ở đơn đang giao. Hệ thống lập phiếu trả toàn bộ, chọn lý do (khách không nhận…), hoàn ship khách đã trả nếu có, và để hàng ở trạng thái chờ về. Khi hàng về tới shop, nhấn “Đã nhận hàng, nhập kho” ở phiếu trả thì kho mới cộng lại.'],
+          ['Hàng trả về bị hỏng thì sao?', 'Ở form trả hàng, bỏ chọn “Nhập lại kho”. Hệ thống tự lập phiếu hàng huỷ (mã HH-…) ghi số lượng và giá vốn. Hàng không vào kho, giá vốn của nó nằm lại trong đơn nên lãi gộp thể hiện đúng phần thiệt. Xem lại các phiếu ở trang Chứng từ.'],
+          ['Khách trả hàng quá thời hạn?', 'Nếu bạn đặt “Nhận trả hàng trong (ngày)” ở Cài đặt → Ngưỡng & kho, đơn quá hạn sẽ được hỏi lại. Nhận ngoại lệ thì xác nhận, không thì thôi. Đặt 0 để không giới hạn.'],
+          ['Khách trả hàng nhưng shop chỉ muốn giữ lại một phần tiền?', 'Ở form trả hàng nhập “Phí trả hàng shop giữ lại”. Số tiền cần trả khách = hàng trả + ship hoàn − phí trả hàng; bạn nhập số trả ngay, phần chưa trả hiện là khoản còn nợ khách ở Công nợ phải trả.'],
+          ['Khách bảo hàng lỗi, còn bảo hành không?', 'Chứng từ → Tra cứu bảo hành: gõ số điện thoại, tên khách, mã đơn hoặc SKU. Sản phẩm có số ngày bảo hành thì hệ thống tính hạn từ ngày đơn hoàn thành.'],
+        ] },
+        { title: 'Kho', items: [
+          ['Tồn trong hệ thống lệch với hàng thật?', 'Kiểm kê chứ đừng sửa tay: Kho → Kiểm kê, đếm hàng và nhập số thực tế, hoàn tất thì hệ thống tự ghi phần chênh. Kiểm kê để lại dấu vết còn sửa tay thì không. Đếm lâu cũng không sao: trong lúc đếm vẫn bán bình thường.'],
+          ['Kho bị âm?', 'Thường do đơn đã trừ kho trước khi phiếu nhập được ghi. Nhập phiếu nhập còn thiếu thì tồn tự về đúng. Còn nếu hàng thật sự không có thì kiểm kê rồi điều chỉnh.'],
+          ['Hàng vỡ, hỏng, mất?', 'Kho → Điều chỉnh +/−, chọn số lượng giảm và ghi lý do. Phần này được ghi vào sổ kế toán như một khoản chi phí khác.'],
+          ['Chuyển hàng từ kho này sang kho khác?', 'Kho → Chuyển kho. Giá vốn đi theo hàng nên tổng giá trị tồn không đổi.'],
+          ['Đã chốt kho nhưng sau đó mới nhập đơn của kỳ cũ?', 'Đơn bán vẫn nhập được: hệ thống ghi biến động kho vào ngày đầu của kỳ đang mở và ghi chú ngày gốc. Nhập hàng hoặc điều chỉnh thì luôn ghi vào hiện tại, không đụng kỳ đã chốt.'],
+          ['Hàng có hạn dùng, sắp hết hạn?', 'Ghi lô và hạn dùng khi nhập hàng. Kho → Lô & hạn dùng liệt kê lô sắp hết hạn và đã hết hạn, và hệ thống tự lấy lô hết hạn sớm nhất để bán trước.'],
+          ['Sản phẩm không bán nữa, xoá thế nào?', 'Mở sản phẩm → “Xoá sản phẩm…”. Chưa từng phát sinh gì thì xoá hẳn, đã có lịch sử thì chuyển sang “Đã ngừng kinh doanh” và khôi phục được. Còn hàng trong kho thì hệ thống yêu cầu xác nhận xuất huỷ.'],
+        ] },
+        { title: 'Sàn thương mại điện tử và hãng vận chuyển', items: [
+          ['Sàn trả tiền ít hơn số đơn?', 'Chi phí & quỹ → Đối soát sàn: nhập số thực nhận từng đơn. Phần lệch (phí, phạt) tick “cộng vào phí sàn” để đơn hết treo và lãi từng đơn đúng; không tick thì đơn vẫn treo phần thiếu để bạn khiếu nại. Đơn giao xong quá số ngày đã đặt mà sàn chưa trả được đánh dấu riêng.'],
+          ['Chốt nhầm phiếu đối soát của hãng (chọn nhầm cột, nhầm file)?', 'Chi phí & quỹ → Vận chuyển, ở danh sách Phiếu đối soát bấm “Huỷ phiếu”. Hộp thoại cho xem trước sẽ hoàn tác gì: khoản thu COD, phí giao đã bù, chi phí vận chuyển, phiếu trả chờ hàng về, đơn về lại “Đang giao” và vận đơn về trạng thái trước đối soát. Ghi lý do rồi xác nhận, tất cả hoàn tác cùng lúc, lỗi giữa chừng thì không đổi gì. Sau đó chốt lại bảng đúng. Phiếu huỷ vẫn nằm trong danh sách (gạch ngang) và nhật ký. Không huỷ được khi: đơn đã có phiếu trả hoặc đã đổi trạng thái sau đối soát, hàng hoàn của phiếu đã nhập kho, đã có khoản hoàn dựa trên tiền COD, hoặc ngày đối soát thuộc kỳ đã khoá sổ. Phiếu lập trước khi có tính năng này không huỷ tự động được.'],
+          ['Hãng vận chuyển chuyển tiền COD thiếu hoặc lệch?', 'Chi phí & quỹ → Vận chuyển, tạo phiếu đối soát từ file của hãng. Hệ thống ghép theo mã vận đơn, ghi thu COD và phí; mã không khớp hoặc đã đối soát được liệt kê kèm lý do và không ghi tiền. Tiền hãng chuyển về = COD − các khoản phí.'],
+          ['Import đơn từ sàn bị trùng?', 'Không trùng: mỗi đơn có mã đơn của sàn, hệ thống so sánh rồi cập nhật đơn đã có thay vì tạo mới. Luôn có bước chạy thử trước khi ghi.'],
+          ['Đơn import làm kho âm?', 'Đơn đã xảy ra thật trên sàn nên vẫn ghi nhận, kèm cờ cảnh báo để bạn kiểm kho thực tế và nhập hàng bù.'],
+        ] },
+        { title: 'Tiền và sổ sách', items: [
+          ['Có khoản chi lặp lại mỗi tháng (thuê kho, phần mềm, lương)?', 'Chi phí & quỹ → Chi phí định kỳ, thêm một lần, chọn chu kỳ và ngày. Hệ thống tự tạo chi phí mỗi kỳ, kỳ nào bỏ lỡ thì tạo bù, không bao giờ tạo trùng.'],
+          ['Ghi chi phí hay thanh toán bị báo kỳ đã khoá sổ?', 'Ngày bạn chọn thuộc kỳ đã khoá. Nếu cần sửa thật, mở khoá ở Sổ kế toán → Khoá sổ, sửa xong khoá lại. Còn không thì dùng ngày sau ngày khoá.'],
+          ['Số dư két hoặc ngân hàng không khớp thực tế?', 'Chi phí & quỹ → Quỹ tiền → kiểm đếm quỹ, nhập số thực. Hệ thống ghi phần chênh thành một dòng điều chỉnh, không sửa lại các khoản thu chi cũ. Quỹ âm thường là do thu chi chưa ghi hoặc thiếu số dư đầu kỳ.'],
+          ['Lợi nhuận ở Báo cáo khác lợi nhuận ở Sổ kế toán?', 'Sổ kế toán có thêm khấu hao tài sản, thu chi khác và chênh lệch kho/quỹ mà Báo cáo không đếm. Trang Tổng quan của Sổ kế toán giải thích từng khoản lệch.'],
+        ] },
+        { title: 'Khách hàng và hệ thống', items: [
+          ['Một khách có hai hồ sơ?', 'Khách hàng → nhấn “Gộp khách trùng”, chọn hồ sơ giữ lại. Đơn, ghi chú, nhãn của hai hồ sơ được hợp lại và không hoàn tác được.'],
+          ['Muốn nhắc khách mua lại?', 'Loyalty → Hôm nay: khách sắp hết hàng đã mua. Hệ thống soạn tin từ mẫu, bạn sửa rồi sao chép gửi qua Zalo hoặc Messenger. Hệ thống chưa tự gửi tin.'],
+          ['Muốn sao lưu trước khi làm việc lớn?', 'Cài đặt → Sao lưu → “Sao lưu ngay”. Cũng ở đây bạn chọn giờ, tần suất tự động sao lưu và có sao lưu ảnh sản phẩm hay không.'],
+          ['Ai đó sửa dữ liệu, muốn biết ai sửa gì?', 'Cài đặt → Nhật ký: lọc theo đối tượng, hành động, ngày. Mỗi dòng ghi người làm và các trường đã đổi từ gì sang gì.'],
+        ] },
+      ] },
+    ],
   },
   {
     id: 'bat-dau', group: 'Bắt đầu', title: 'Bắt đầu nhanh', time: '5 phút', summary: 'Từ tài khoản trống đến đơn hàng đầu tiên.',
@@ -192,7 +259,7 @@ export const GUIDES = [
         { title: 'Xem ai cần nhắc', text: 'Loyalty & Campaign → Hôm nay → “Nhắc nợ khách”: khoản quá hạn, sắp đến hạn và chưa đặt hạn.', to: '/loyalty', cta: 'Mở Loyalty' },
         { title: 'Soạn tin và ghi nhận', text: 'Nhấn “Soạn tin nhắc nợ”, sửa nếu cần rồi sao chép gửi cho khách. Nhấn “Đã nhắc, hẹn 3 ngày sau” để ẩn khoản đó tới lúc cần nhắc lại.' },
       ] },
-      { t: 'tips', items: ['Nợ nhà cung cấp: đặt “Hạn trả nhà cung cấp” ở phiếu nhập, khoản sắp đến hạn cũng hiện ở Hôm nay.', 'Khách thanh toán đủ thì khoản nợ tự biến mất khỏi danh sách.'] },
+      { t: 'tips', items: ['Nợ nhà cung cấp không nằm ở đây: đặt “Hạn trả nhà cung cấp” ở phiếu nhập, khoản phải trả xem ở Chi phí & quỹ → Công nợ phải trả.', 'Khách thanh toán đủ thì khoản nợ tự biến mất khỏi danh sách.'] },
     ],
   },
   {
@@ -238,7 +305,8 @@ export const GUIDES = [
       { t: 'steps', items: [
         { title: 'Ghi chi phí', text: 'Chi phí & quỹ → Chi phí: chọn danh mục, số tiền, ngày, shop (hoặc chung), phương thức trả. Phương thức trả quyết định tiền ra khỏi quỹ nào.', to: '/expenses', cta: 'Mở Chi phí & quỹ' },
         { title: 'Chi phí chung', text: 'Chi phí không gắn shop được chia về các shop khi xem báo cáo, theo quy tắc ở Cài đặt (theo doanh thu, chia đều hoặc tỷ lệ cố định).' },
-        { title: 'Chi phí định kỳ', text: 'Tiền thuê, phần mềm… đặt một lần, hệ thống tạo từng kỳ (tuần, tháng, năm). Máy tắt thì tạo bù khi bật lại.' },
+        { title: 'Công nợ phải trả', text: 'Chi phí & quỹ → Công nợ phải trả gom một chỗ mọi khoản shop còn nợ: phiếu nhập chưa trả đủ nhà cung cấp, tiền ship còn nợ hãng vận chuyển, tiền còn nợ khách sau khi trả hàng, và các chi phí định kỳ sắp đến kỳ. Xếp theo quá hạn, sắp đến hạn, chưa đặt hạn. Nhấn mã chứng từ để ghi thanh toán.', to: '/expenses?tab=payables', cta: 'Mở Công nợ phải trả' },
+        { title: 'Chi phí định kỳ', text: 'Chi phí & quỹ → Chi phí định kỳ. Tiền thuê, phần mềm… đặt một lần, hệ thống tạo từng kỳ (tuần, tháng, năm). Kỳ nào bị bỏ lỡ thì hệ thống tạo bù, không bao giờ tạo trùng.' },
         { title: 'Quỹ tiền', text: 'Két tiền mặt, ngân hàng, ví. Số dư luôn tính từ sổ, không lưu. Chuyển quỹ và kiểm đếm (phần chênh ghi thành dòng điều chỉnh, không sửa thu chi cũ).' },
       ] },
       { t: 'tips', items: ['Mỗi phương thức thanh toán thuộc đúng một quỹ. Phương thức chưa gán quỹ được cảnh báo ở Tổng quan.', 'Mỗi tuần nên đếm két và so với số dư ngân hàng.', 'Quỹ âm thường là thu chi chưa ghi hoặc thiếu số dư đầu kỳ.'] },
@@ -311,10 +379,9 @@ export const GUIDES = [
         { title: 'Ngưỡng & kho', text: 'Đặt ngưỡng vàng/đỏ của biên lợi nhuận, tỷ lệ huỷ, hoàn trả, số ngày tồn, khách mua lại. Đây là cơ sở của màu trong “Cách đọc sức khoẻ kinh doanh”. Cũng ở đây: cách chia chi phí chung.' },
         { title: 'Thuế ước tính', text: 'Mặc định tắt và hệ thống không tự đặt mức thuế nào vì mức thuế thay đổi. Bạn nhập tỷ lệ, cơ sở tính, ngưỡng miễn thuế. Đây chỉ là ước tính, không phải tờ khai.' },
         { title: 'API key và webhook', text: 'Để nối phần mềm kế toán, Zapier… Xem tài liệu API ở /api/v1/docs.' },
-        { title: 'Sao lưu & xuất', text: 'Hệ thống sao lưu hằng ngày vào thư mục data/backups. Nút “Tải bản sao lưu” và “Xuất CSV toàn bộ” ở đây.' },
+        { title: 'Sao lưu', text: 'Cài đặt → Sao lưu: bật hoặc tắt sao lưu tự động, chọn giờ và tần suất (mỗi ngày hoặc mỗi tuần), số ngày và số tuần giữ bản cũ, và có sao lưu cả ảnh sản phẩm hay không. Nhấn “Sao lưu ngay” khi cần một bản trước khi làm việc lớn. Cơ sở dữ liệu luôn được sao lưu. Cũng ở đây: tải bản sao lưu và xuất CSV.' },
       ] },
-      { t: 'warn', text: 'Dữ liệu nằm trên máy chạy Mở Sổ. Mất máy mà chưa copy sao lưu ra ngoài (iCloud, Google Drive) là mất dữ liệu. Nên đồng bộ thư mục data/backups ra ngoài máy.' },
-      { t: 'tips', items: ['Điện thoại truy cập qua cùng wifi: http://<địa chỉ IP của máy>:3000.', 'Chạy lên VPS thì đặt sau HTTPS và bật cookie Secure.', 'Đổi mật khẩu ở tab Tài khoản. Mỗi tài khoản có dữ liệu riêng hoàn toàn.'] },
+      { t: 'tips', items: ['Đổi mật khẩu ở tab Tài khoản. Mỗi tài khoản có dữ liệu riêng hoàn toàn.'] },
     ],
   },
 ];
@@ -326,6 +393,7 @@ export function searchText(g) {
   const parts = [g.title, g.summary, g.group, g.keywords || ''];
   for (const b of g.blocks || []) {
     if (b.text) parts.push(b.text);
+    for (const sec of b.sections || []) { parts.push(sec.title); for (const it of sec.items) parts.push(it.join(' ')); }
     for (const it of b.items || []) parts.push(typeof it === 'string' ? it : Array.isArray(it) ? it.join(' ') : `${it.title} ${it.text}`);
   }
   return parts.join(' ').toLowerCase();

@@ -18,6 +18,13 @@ export const DEFAULT_SETTINGS = {
   expiry_warn_days: 30, // cảnh báo lô hàng còn dưới số ngày này tới hạn dùng
   payout_overdue_days: 10, // đơn sàn giao xong quá số ngày này mà chưa nhận tiền thì báo nên khiếu nại với sàn (0 = tắt)
   return_window_days: 0, // thời hạn nhận trả hàng kể từ ngày hoàn thành đơn (ngày); 0 = không giới hạn
+  backup_enabled: true, // sao lưu tự động theo lịch
+  backup_time: '02:00', // giờ sao lưu (giờ Việt Nam, HH:MM)
+  backup_frequency: 'daily', // daily | weekly
+  backup_weekday: 1, // khi weekly: 1 = thứ Hai … 7 = Chủ nhật
+  backup_keep_days: 14, // giữ bản mới nhất của mỗi ngày trong N ngày gần đây
+  backup_keep_weeks: 8, // giữ bản mới nhất của mỗi tuần trong N tuần gần đây
+  backup_include_images: true, // sao lưu cả ảnh sản phẩm (cơ sở dữ liệu luôn được sao lưu)
   costing_method: 'average', // average | fifo; chỉ đổi qua PUT /costing-method để lớp giá được dựng lại cùng lúc
   stock_lock_date: null, // chốt kho: chỉ đặt qua POST /stock-close (có chụp tồn), không qua PATCH /settings
   accounting_lock_date: null, // khoá sổ: chứng từ tay, chi phí, thanh toán, chuyển quỹ, tài sản có ngày ≤ ngày này không tạo/sửa/huỷ được (PERIOD_LOCKED). Đặt qua POST /accounting/lock để có ảnh chụp số liệu
@@ -62,6 +69,13 @@ function validate(patch) {
   if ('expiry_warn_days' in patch && !(Number.isInteger(patch.expiry_warn_days) && patch.expiry_warn_days >= 1 && patch.expiry_warn_days <= 730)) throw badRequest('INVALID_SETTING', 'Số ngày cảnh báo hết hạn là số từ 1 tới 730');
   if ('payout_overdue_days' in patch && !(Number.isInteger(patch.payout_overdue_days) && patch.payout_overdue_days >= 0 && patch.payout_overdue_days <= 365)) throw badRequest('INVALID_SETTING', 'Số ngày báo đơn sàn chưa trả tiền là số từ 0 tới 365 (0 = tắt)');
   if ('return_window_days' in patch && !(Number.isInteger(patch.return_window_days) && patch.return_window_days >= 0 && patch.return_window_days <= 3650)) throw badRequest('INVALID_SETTING', 'Thời hạn trả hàng là số ngày từ 0 tới 3650 (0 = không giới hạn)');
+  if ('backup_enabled' in patch && typeof patch.backup_enabled !== 'boolean') throw badRequest('INVALID_SETTING', 'Bật/tắt sao lưu tự động phải là true hoặc false');
+  if ('backup_include_images' in patch && typeof patch.backup_include_images !== 'boolean') throw badRequest('INVALID_SETTING', 'Sao lưu ảnh sản phẩm phải là true hoặc false');
+  if ('backup_time' in patch && !(typeof patch.backup_time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(patch.backup_time))) throw badRequest('INVALID_SETTING', 'Giờ sao lưu có dạng HH:MM, ví dụ 02:00');
+  if ('backup_frequency' in patch && !['daily', 'weekly'].includes(patch.backup_frequency)) throw badRequest('INVALID_SETTING', 'Tần suất sao lưu là daily (mỗi ngày) hoặc weekly (mỗi tuần)');
+  if ('backup_weekday' in patch && !(Number.isInteger(patch.backup_weekday) && patch.backup_weekday >= 1 && patch.backup_weekday <= 7)) throw badRequest('INVALID_SETTING', 'Ngày sao lưu trong tuần là số từ 1 (thứ Hai) đến 7 (Chủ nhật)');
+  if ('backup_keep_days' in patch && !(Number.isInteger(patch.backup_keep_days) && patch.backup_keep_days >= 1 && patch.backup_keep_days <= 365)) throw badRequest('INVALID_SETTING', 'Số ngày giữ bản sao lưu là số từ 1 đến 365');
+  if ('backup_keep_weeks' in patch && !(Number.isInteger(patch.backup_keep_weeks) && patch.backup_keep_weeks >= 0 && patch.backup_keep_weeks <= 104)) throw badRequest('INVALID_SETTING', 'Số tuần giữ bản sao lưu là số từ 0 đến 104');
   if ('expense_allocation' in patch && !['revenue', 'equal', 'fixed'].includes(patch.expense_allocation)) {
     throw badRequest('INVALID_SETTING', 'Cách phân bổ chi phí chung phải là revenue, equal hoặc fixed');
   }

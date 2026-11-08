@@ -46,7 +46,7 @@ script:[['s',0],['w',900],['s',1],['type','#f_p1','20.000.000'],['click','#b_p1'
 
 add({ch:'A',title:'Nhập hàng, trả nhà cung cấp nhiều đợt',lead:'Nhận hàng trước, trả dần theo từng đợt. Hệ thống cộng dồn số đã trả và không cho trả vượt tổng phiếu.',
 steps:['Nhận hàng bình thường. Phiếu 20.000.000 ₫, chưa trả đồng nào nên nợ nhà cung cấp 20.000.000 ₫.','Đợt 1: ghi thanh toán 8.000.000 ₫ bằng chuyển khoản. Còn nợ 12.000.000 ₫.','Đợt 2: ghi thanh toán 7.000.000 ₫ bằng tiền mặt. Mỗi đợt có ngày và phương thức riêng. Còn nợ 5.000.000 ₫.','Đợt cuối: trả nốt 5.000.000 ₫. Phiếu chuyển sang “Đã trả đủ”.'],
-tip:'Đặt “Hạn trả nhà cung cấp” khi lập phiếu nhập. Khoản sắp đến hạn được nhắc ở Loyalty → Hôm nay.',warn:'Số tiền trả vượt số còn nợ sẽ bị từ chối. Huỷ một phiếu đã trả tiền thì phải ghi nhận nhà cung cấp hoàn lại số đã trả.',
+tip:'Đặt “Hạn trả nhà cung cấp” khi lập phiếu nhập. Mọi khoản còn nợ xem ở Chi phí & quỹ → Công nợ phải trả.',warn:'Số tiền trả vượt số còn nợ sẽ bị từ chối. Huỷ một phiếu đã trả tiền thì phải ghi nhận nhà cung cấp hoàn lại số đã trả.',
 nav:'Nhập hàng',screen:app('Nhập hàng','PN-261108-001',`<div class="box2">${kv('Tổng phiếu','20.000.000 ₫')}${kv('Đã trả','<span id="pd">0 ₫</span>')}${kv('Còn nợ nhà cung cấp','<span id="db">20.000.000 ₫</span>')}<p style="margin:6px 0 0">${pill('Còn nợ','o','st')}</p></div>${tbl(['Đợt','Phương thức','Số tiền'],[{id:'r1',hid:1,c:['1','Chuyển khoản','8.000.000']},{id:'r2',hid:1,c:['2','Tiền mặt','7.000.000']},{id:'r3',hid:1,c:['3','Chuyển khoản','5.000.000']}])}<div class="two">${fld('f_a','Số tiền trả')}<div><label class="lb">Phương thức</label>${opts([['mb','Chuyển khoản',1],['mc','Tiền mặt']])}</div></div>${btn('b_pay','Ghi thanh toán','pri')}`),
 script:[['s',0],['w',900],['s',1],['type','#f_a','8.000.000'],['click','#b_pay'],['show','#r1'],['set','#pd','8.000.000 ₫'],['set','#db','12.000.000 ₫'],['s',2],['click','#mc'],['type','#f_a','7.000.000'],['click','#b_pay'],['show','#r2'],['set','#pd','15.000.000 ₫'],['set','#db','5.000.000 ₫'],['s',3],['click','#mb'],['type','#f_a','5.000.000'],['click','#b_pay'],['show','#r3'],['set','#pd','20.000.000 ₫'],['set','#db','0 ₫'],['set','#st','Đã trả đủ'],['cls','#st','add','g']]});
 
@@ -166,8 +166,7 @@ nav:'Khách hàng',screen:app('Khách hàng','Hôm nay nên liên hệ',`<div cl
 script:[['s',0],['w',800],['s',1],['click','#c1'],['cls','#c1','add','sel'],['show','#ms'],['type','#msg','Chào chị Lan, chai Cam Gỗ chị mua chắc sắp hết. Shop còn hàng, chị cần em giữ giúp nhé.'],['s',2],['click','#b_cp'],['show','#t1']]});
 
 add({ch:'E',title:'Cài đặt nên biết',lead:'Vài chỗ trong Cài đặt giúp hệ thống hợp với shop của bạn.',
-steps:['Cài đặt → Shop & kho → nhấn shop → Màu giao diện. Chọn màu chủ đạo cho shop này.','Nút “Về màu mặc định” trả lại màu của chủ đề.','Nền tảng bán hàng: bật TikTok Shop khi bạn bán trên đó. Tắt chỉ ẩn kênh, đơn cũ vẫn còn.','Sao lưu: hệ thống tự lưu hằng ngày. Bạn nên tải bản sao lưu về máy khác hoặc Drive.'],
-warn:'Dữ liệu nằm trên máy chạy hệ thống. Mất máy là mất dữ liệu nếu bạn không chép bản sao lưu ra nơi khác.',
+steps:['Cài đặt → Shop & kho → nhấn shop → Màu giao diện. Chọn màu chủ đạo cho shop này.','Nút “Về màu mặc định” trả lại màu của chủ đề.','Nền tảng bán hàng: bật TikTok Shop khi bạn bán trên đó. Tắt chỉ ẩn kênh, đơn cũ vẫn còn.','Cài đặt → Sao lưu: chọn giờ, tần suất và dữ liệu cần sao lưu. Nhấn “Sao lưu ngay” trước khi làm việc lớn.'],
 nav:'Cài đặt',screen:app('Cài đặt','Hương Xe · Màu giao diện',`<label class="lb">Màu chủ đạo</label><div id="swl"><span class="sw sel" id="w0" style="background:#633d37"></span><span class="sw" id="w1" style="background:#1f5a73"></span><span class="sw" id="w2" style="background:#3d6b3a"></span></div><div class="ln">${btn('b_pr','Nút chính','pri')} ${btn('b_rs','Về màu mặc định')}</div><div class="box2" style="margin-top:10px">${kv('Nền tảng: Shopee','Đã kết nối')}${kv('Nền tảng: TikTok Shop','<span id="tk">Tắt</span>')}${kv('Sao lưu gần nhất','08/11/2026 03:00')}</div>`),
 script:[['s',0],['click','#w1'],['cls','#w0','rm','sel'],['cls','#w1','add','sel'],['var','--m-red','#1f5a73'],['s',1],['w',700],['click','#b_rs'],['cls','#w1','rm','sel'],['cls','#w0','add','sel'],['var','--m-red','#633d37'],['s',2],['set','#tk','Đã kết nối'],['s',3],['w',900]]});
 
@@ -183,7 +182,7 @@ function coverHTML(){
     <button data-go="${first('A')}"><b>Bắt đầu</b><span>Tạo shop, sản phẩm, nhập hàng đầu tiên, trả tiền nhà cung cấp</span></button>
     <button data-go="${first('B')}"><b>Bán hàng</b><span>Bán trực tiếp, đơn giao hàng, Shopee, khách, huỷ, trả hàng</span></button>
     <button data-go="${first('C')}"><b>Kho</b><span>Chuyển kho, kiểm kê, hàng hỏng, chốt kho, gỡ sản phẩm</span></button>
-    <button data-go="${first('D')}"><b>Tiền</b><span>Chi phí, quỹ tiền, chi phí định kỳ</span></button>
+    <button data-go="${first('D')}"><b>Tiền</b><span>Chi phí, công nợ phải trả, quỹ tiền</span></button>
     <button data-go="${first('E')}"><b>Cuối tháng</b><span>Báo cáo, chốt tháng, chăm sóc khách, cài đặt, tình huống hay gặp</span></button>
   </div>
   <p class="sample">Màn hình trong cẩm nang là mô phỏng để học thao tác. Số liệu và tên là ví dụ.</p></div>`;

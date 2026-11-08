@@ -8,12 +8,12 @@ import { MetricFilters, MetricLabel } from '../components/MetricInfo.jsx';
 import Icon from '../components/Icon.jsx';
 import { vnd, fmtDate, monthStart, today } from '../lib.js';
 import { accountingTables, explainTable, sheetName } from '../reportTables.js';
-import { Vouchers, Recurring, Assets, LockTab, CategoryMapping } from './accounting/Extras.jsx';
+import { Vouchers, Assets, LockTab, CategoryMapping } from './accounting/Extras.jsx';
 
-const TABS = [['overview', 'Tổng quan'], ['vouchers', 'Chứng từ'], ['recurring', 'Chi phí định kỳ'], ['assets', 'Tài sản & phân bổ'], ['journal', 'Sổ nhật ký'], ['ledger', 'Sổ cái'], ['trial', 'Cân đối phát sinh'], ['income', 'Kết quả kinh doanh'], ['balance', 'Cân đối kế toán'], ['cashflow', 'Lưu chuyển tiền'], ['accounts', 'Hệ thống tài khoản'], ['lock', 'Khoá sổ']];
+const TABS = [['overview', 'Tổng quan'], ['vouchers', 'Chứng từ'], ['assets', 'Tài sản & phân bổ'], ['journal', 'Sổ nhật ký'], ['ledger', 'Sổ cái'], ['trial', 'Cân đối phát sinh'], ['income', 'Kết quả kinh doanh'], ['balance', 'Cân đối kế toán'], ['cashflow', 'Lưu chuyển tiền'], ['accounts', 'Hệ thống tài khoản'], ['lock', 'Khoá sổ']];
 /** Ba nhóm tab: mỗi nhóm ngắn đủ hiện hết trên điện thoại, không bị cắt ngang */
 export const GROUPS = [
-  ['ops', 'Nghiệp vụ', ['overview', 'vouchers', 'recurring', 'assets', 'lock']],
+  ['ops', 'Nghiệp vụ', ['overview', 'vouchers', 'assets', 'lock']],
   ['books', 'Sổ', ['journal', 'ledger', 'accounts']],
   ['reports', 'Báo cáo', ['trial', 'income', 'balance', 'cashflow']],
 ];
@@ -21,7 +21,6 @@ const groupOf = (tab) => (GROUPS.find(([, , tabs]) => tabs.includes(tab)) || GRO
 
 const INTRO = {
   vouchers: 'Chứng từ lập tay cho những việc không đi qua đơn, nhập hàng hay chi phí: góp vốn, rút vốn, tiền phạt, thu nhập khác. Bút toán tổng hợp để ghi tự do nhiều dòng. Huỷ không xoá hẳn.',
-  recurring: 'Khoản chi lặp lại (thuê kho, internet, lương). Hệ thống tự tạo chi phí mỗi kỳ, tạo bù cả kỳ bỏ lỡ khi máy tắt.',
   assets: 'Tài sản cố định và chi phí trả trước: ghi vào tài sản khi mua, rồi chia đều theo tháng thành chi phí (khấu hao hoặc phân bổ).',
   lock: 'Khoá sổ để chốt số kỳ cũ: không ai sửa nhầm chi phí, thanh toán, chứng từ tay của kỳ đã chốt.',
   overview: 'Tiền, công nợ, hàng tồn và lãi của tháng này theo sổ kế toán. Có thể xem số gắn với shop; các khoản chung xem ở Tất cả shop.',
@@ -49,7 +48,7 @@ export default function Accounting() {
   const changeGroup = (g) => changeTab(GROUPS.find(([k]) => k === g)[2][0]);
   const ctx = { range, shopParam, isAll, report: setExportData, go: changeTab };
   const scopeName = isAll ? 'Tất cả shop' : shop?.name;
-  const hasRange = !['overview', 'accounts', 'balance', 'recurring', 'assets', 'lock'].includes(tab);
+  const hasRange = !['overview', 'accounts', 'balance', 'assets', 'lock'].includes(tab);
   const scopeText = ['journal', 'ledger', 'trial', 'income', 'cashflow', 'vouchers'].includes(tab) ? `Shop: ${scopeName || 'một shop'}` : null;
   return (
     <div className="page stack">
@@ -65,7 +64,6 @@ export default function Accounting() {
       <MetricFilters.Provider value={{ from: range.from, to: range.to, today: today() }}>
         {tab === 'overview' && <Overview {...ctx} />}
         {tab === 'vouchers' && <Vouchers {...ctx} />}
-        {tab === 'recurring' && <Recurring {...ctx} />}
         {tab === 'assets' && <Assets {...ctx} />}
         {tab === 'journal' && <Journal {...ctx} />}
         {tab === 'ledger' && <Ledger {...ctx} />}

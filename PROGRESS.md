@@ -445,3 +445,14 @@
 - Nền theme chung và phong thuỷ nhạt hơn.
 - Sửa gạch chân và nút Trước/Tiếp ở Hướng dẫn; màu giao diện riêng của shop (migration 033); gỡ kho có cảnh báo/chuyển hàng (`tests/warehouse_remove.test.js`).
 - Gỡ sản phẩm (xoá hẳn / ngừng kinh doanh / khôi phục, xuất huỷ tồn): `server/modules/catalog/removal.js`, `tests/product_remove.test.js`, giao diện `RemoveProduct`, tab "Đã ngừng kinh doanh".
+
+
+## Đợt chỉnh: công nợ phải trả, lịch sao lưu, cẩm nang gọn, Hỏi đáp
+- Chi phí định kỳ chuyển từ Sổ kế toán sang Chi phí & quỹ. Loyalty chỉ còn nhắc nợ khách; thêm tab Công nợ phải trả (`GET /payables`).
+- Cài đặt → Sao lưu: lịch (giờ, ngày/tuần, số bản giữ, ảnh sản phẩm), trạng thái lần tới/gần nhất; bộ lập lịch kiểm mỗi 5 phút.
+- Bỏ các ghi chú về chạy trên máy cá nhân khỏi Hướng dẫn và cẩm nang.
+- Cẩm nang đổi tên "Cẩm nang từng bước", bỏ phần lặp (tiêu đề, điều hướng kép, chú thích), mở toàn khổ.
+- Trang Hỏi đáp tình huống (40 câu). Đơn huỷ đã nhận cọc có nút Hoàn tiền.
+- Chưa có: nút huỷ/xoá một khoản thanh toán đã ghi nhầm (API chưa mở `voidPayment`); sửa phiếu nhập nháp trên giao diện (chỉ nhận hàng hoặc huỷ).
+- Huỷ khoản thanh toán ghi nhầm (`POST /payments/:id/void`, đơn và phiếu nhập, có nút trên giao diện), sửa phiếu nhập nháp ở `/purchases/:id/edit`. Hỏi đáp thêm 2 câu, sửa câu nhập sai số lượng. Test API 5 mới, test giao diện 3 mới.
+- Huỷ cả phiếu đối soát hãng vận chuyển (migration 045: bản ghi tác động `carrier_statement_effects`, cột `voided_*`, `effects_tracked`). `previewVoidStatement` / `voidStatement` ở `shipping/service.js`; `removeAwaitingReturn`, `revertOrderCompletion` ở `orders/service.js`. Giao diện: nút "Huỷ phiếu" + hộp thoại xem trước ở tab Vận chuyển. Hỏi đáp thêm 1 câu, nhật ký thêm 3 hành động. Test: 3 test API (huỷ sạch + đối soát lại + sổ cân, bị chặn khi đơn có phiếu trả, kỳ khoá + phiếu cũ), 2 test giao diện.

@@ -7,7 +7,7 @@ import Guide from '../pages/Guide.jsx';
 vi.mock('../api.js', () => ({ api: { get: vi.fn(() => new Promise(() => {})) } }));
 vi.mock('../session.jsx', () => ({ useSession: () => ({ shopId: 's1', isAll: false, shop: { name: 'Shop' }, theme: 'general' }) }));
 
-const ROUTES = ['/', '/orders', '/orders/new', '/orders?import=1', '/products', '/products/new', '/products/combo/new', '/stock', '/purchases', '/purchases/new', '/customers', '/loyalty', '/expenses', '/reports', '/accounting', '/settings'];
+const ROUTES = ['/', '/orders', '/orders/new', '/orders?import=1', '/products', '/products/new', '/products/combo/new', '/stock', '/purchases', '/purchases/new', '/customers', '/loyalty', '/expenses', '/expenses?tab=payables', '/reports', '/accounting', '/settings'];
 
 describe('nội dung hướng dẫn', () => {
   it('id duy nhất, nhóm hợp lệ, có nội dung', () => {

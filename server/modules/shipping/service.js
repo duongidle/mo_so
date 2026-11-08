@@ -4,8 +4,9 @@ import { nowIso, businessDate } from '../../lib/time.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { audit } from '../../lib/events.js';
 import { dailyCode } from '../../lib/codes.js';
-import { getOrder, transitionOrder, addOrderPayment, addSellerShippingPayment, createReturn } from '../orders/service.js';
-import { createExpense } from '../expenses/service.js';
+import { assertUnlocked } from '../../lib/period.js';
+import { getOrder, transitionOrder, addOrderPayment, addSellerShippingPayment, createReturn, voidOrderPayment, removeAwaitingReturn, revertOrderCompletion } from '../orders/service.js';
+import { createExpense, voidExpense, getExpense } from '../expenses/service.js';
 
 const db = () => getDb();
 const norm = (c) => String(c ?? '').trim().toUpperCase();
@@ -94,8 +95,9 @@ export function shipOrder(orderId, { carrierId, trackingCode, codAmount }, actor
 /** Hãng báo hoàn: lập phiếu trả toàn bộ, hàng chờ về. Phí ship khách trả được hoàn (khách chưa nhận hàng). */
 function autoReturnAll(o, actor, reason) {
   const lines = o.lines.filter((l) => l.qty - l.returned_qty > 0).map((l) => ({ order_line_id: l.id, qty: l.qty - l.returned_qty, restock: true }));
-  if (!lines.length) return;
+  if (!lines.length) return null;
   createReturn(o.id, { lines, reason, reasonCode: 'customer_refused', awaitingGoods: true, shippingRefund: Math.max(0, o.shipping_fee - o.returned_shipping_amount) }, actor);
+  return db().prepare('SELECT id FROM order_returns WHERE order_id = ? ORDER BY rowid DESC LIMIT 1').get(o.id)?.id ?? null;
 }
 
 /** Cập nhật tay trạng thái vận đơn (khi không có file đối soát). Giao xong thì đơn hoàn thành; hoàn thì lập phiếu trả chờ hàng về. */
@@ -183,6 +185,9 @@ export function createStatement({ carrierId, date, rows, note }, actor) {
   const sid = newId('stm');
   const code = dailyCode('DS', null, `${day}T00:00:00.000Z`);
   db().prepare('INSERT INTO carrier_statements (id, code, carrier_id, statement_date, note, actor_id, created_at) VALUES (?,?,?,?,?,?,?)').run(sid, code, carrierId, day, note ?? null, actor?.id ?? null, nowIso());
+  db().prepare('UPDATE carrier_statements SET effects_tracked = 1 WHERE id = ?').run(sid);
+  const fx = (kind, refId, orderId, before) => db().prepare('INSERT INTO carrier_statement_effects (id, statement_id, kind, ref_id, order_id, before) VALUES (?,?,?,?,?,?)').run(newId('stf'), sid, kind, refId, orderId ?? null, before ? JSON.stringify(before) : null);
+  const lastPayment = (refType, refId, direction, note) => db().prepare('SELECT id FROM payments WHERE ref_type = ? AND ref_id = ? AND method = ? AND direction = ? AND note = ? AND voided_at IS NULL ORDER BY rowid DESC LIMIT 1').get(refType, refId, PAYOUT, direction, note)?.id;
   const insLine = db().prepare('INSERT INTO carrier_statement_lines (id, statement_id, tracking_code, shipment_id, order_id, outcome, cod_stated, cod_recorded, ship_fee, cod_fee, return_fee, other_fee, result, warning) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
   let totalCod = 0;
   let totalFees = 0;
@@ -192,17 +197,30 @@ export function createStatement({ carrierId, date, rows, note }, actor) {
     if (l.result === 'applied') {
       const s = db().prepare('SELECT * FROM shipments WHERE id = ?').get(l.shipment_id);
       let o = getOrder(s.order_id);
+      fx('shipment', s.id, o.id, { status: s.status, delivered_at: s.delivered_at, returned_at: s.returned_at });
       if (l.outcome === 'delivered') {
-        if (o.status === 'shipping') transitionOrder(o.id, 'completed', { actor, note: `Hãng ${carrier.name} giao thành công` });
+        if (o.status === 'shipping') {
+          transitionOrder(o.id, 'completed', { actor, note: `Hãng ${carrier.name} giao thành công` });
+          fx('order_completed', o.id, o.id);
+        }
         o = getOrder(o.id);
         recorded = Math.min(l.cod_stated, o.amount_due);
-        if (recorded > 0) addOrderPayment(o.id, { amount: recorded, method: PAYOUT, paidAt, note: `Đối soát ${code}` }, actor);
+        if (recorded > 0) {
+          const note = `Đối soát ${code}`;
+          addOrderPayment(o.id, { amount: recorded, method: PAYOUT, paidAt, note }, actor);
+          fx('payment', lastPayment('order', o.id, 'in', note), o.id);
+        }
       } else if (o.status === 'shipping') {
-        autoReturnAll(o, actor, `Hãng ${carrier.name} hoàn hàng (${code})`);
+        const retId = autoReturnAll(o, actor, `Hãng ${carrier.name} hoàn hàng (${code})`);
+        if (retId) fx('return', retId, o.id, { order_status: 'shipping' });
       }
       o = getOrder(o.id);
       const offset = Math.min(l.ship_fee, o.seller_shipping_due);
-      if (offset > 0) addSellerShippingPayment(o.id, { amount: offset, method: PAYOUT, paidAt, note: `Hãng trừ phí giao khi đối soát ${code}` }, actor);
+      if (offset > 0) {
+        const note = `Hãng trừ phí giao khi đối soát ${code}`;
+        addSellerShippingPayment(o.id, { amount: offset, method: PAYOUT, paidAt, note }, actor);
+        fx('payment', lastPayment('order_seller_shipping', o.id, 'out', note), o.id);
+      }
       const rest = l.ship_fee - offset + l.cod_fee + l.return_fee + l.other_fee;
       if (rest > 0) feeByShop.set(o.shop_id, (feeByShop.get(o.shop_id) ?? 0) + rest);
       totalCod += recorded;
@@ -213,7 +231,8 @@ export function createStatement({ carrierId, date, rows, note }, actor) {
     insLine.run(newId('stl'), sid, l.tracking_code, l.shipment_id, l.order_id, l.outcome, l.cod_stated, recorded, l.ship_fee, l.cod_fee, l.return_fee, l.other_fee, l.result, l.warning);
   }
   for (const [shopId, amount] of feeByShop) {
-    createExpense({ category_id: 'ecat_shipping', shop_id: shopId, amount, expense_date: day, method: PAYOUT, payee: carrier.name, note: `Phí hãng ${carrier.name} trừ khi đối soát ${code}` }, actor);
+    const e = createExpense({ category_id: 'ecat_shipping', shop_id: shopId, amount, expense_date: day, method: PAYOUT, payee: carrier.name, note: `Phí hãng ${carrier.name} trừ khi đối soát ${code}` }, actor);
+    fx('expense', e.id, null);
   }
   db().prepare('UPDATE carrier_statements SET total_cod = ?, total_fees = ?, net_amount = ?, line_count = ? WHERE id = ?').run(totalCod, totalFees, totalCod - totalFees, pv.lines.length, sid);
   audit(actor, 'carrier_statement.created', 'carrier_statement', sid, null, { code, carrier: carrier.name, applied: pv.summary.applied, total_cod: totalCod, total_fees: totalFees });
@@ -229,3 +248,99 @@ export function getStatement(id) {
 
 export const listStatements = ({ carrierId, limit = 50 } = {}) =>
   db().prepare(`SELECT st.*, c.name AS carrier_name FROM carrier_statements st JOIN carriers c ON c.id = st.carrier_id ${carrierId ? 'WHERE st.carrier_id = ?' : ''} ORDER BY st.created_at DESC LIMIT ?`).all(...(carrierId ? [carrierId] : []), limit);
+
+// ---------- Huỷ cả phiếu đối soát ----------
+const orderCode = (id) => db().prepare('SELECT code FROM orders WHERE id = ?').get(id)?.code ?? id;
+const lockProblem = (date, what) => {
+  try { assertUnlocked(date, what); return null; } catch (e) { return e.message; }
+};
+
+/**
+ * Xem trước việc huỷ phiếu: những gì sẽ được hoàn tác và những gì đang cản. Không ghi gì.
+ * Mọi tác động đã ghi lúc lập phiếu (`carrier_statement_effects`) được đảo ngược đúng từng thứ; tác động nào người dùng đã tự xử lý
+ * (khoản thanh toán đã huỷ tay, chi phí đã huỷ) thì bỏ qua. Chỉ cản khi đảo ngược sẽ làm sai số liệu: đơn đã đổi sau đối soát,
+ * hàng trả đã nhập kho, đã có khoản hoàn dựa trên tiền COD, kỳ đã khoá sổ.
+ */
+export function previewVoidStatement(id) {
+  const st = db().prepare('SELECT * FROM carrier_statements WHERE id = ?').get(id);
+  if (!st) throw notFound('Phiếu đối soát');
+  const blockers = [];
+  const block = (code, message, orderId) => blockers.push({ code, message, order_code: orderId ? orderCode(orderId) : null });
+  const undo = { payments: 0, payments_amount: 0, expenses: 0, expenses_amount: 0, returns: 0, orders_reopened: 0, shipments: 0 };
+  if (st.voided_at) return { statement: st, voided: true, blockers, undo, can_void: false };
+  if (!st.effects_tracked) {
+    block('STATEMENT_LEGACY', 'Phiếu này lập trước khi hệ thống ghi lại chi tiết từng thay đổi nên không huỷ tự động được. Xử lý tay từng khoản (huỷ thanh toán, huỷ chi phí) hoặc liên hệ hỗ trợ.');
+    return { statement: st, voided: false, blockers, undo, can_void: false };
+  }
+  const fxs = db().prepare('SELECT * FROM carrier_statement_effects WHERE statement_id = ? ORDER BY rowid').all(id);
+  const inByOrder = new Map(); // tiền COD sẽ huỷ theo đơn, để kiểm tra không làm đã thu âm
+  for (const f of fxs) {
+    if (f.kind === 'payment') {
+      const p = db().prepare('SELECT * FROM payments WHERE id = ?').get(f.ref_id);
+      if (!p || p.voided_at) continue;
+      const lp = lockProblem(p.business_date, 'Thanh toán');
+      if (lp) block('PERIOD_LOCKED', lp, f.order_id);
+      if (p.direction === 'in') inByOrder.set(f.order_id, (inByOrder.get(f.order_id) ?? 0) + p.amount);
+      undo.payments += 1;
+      undo.payments_amount += p.amount;
+    } else if (f.kind === 'expense') {
+      const e = getExpense(f.ref_id);
+      if (e.voided_at) continue;
+      const lp = lockProblem(e.expense_date, 'Chi phí');
+      if (lp) block('PERIOD_LOCKED', lp);
+      undo.expenses += 1;
+      undo.expenses_amount += e.amount;
+    } else if (f.kind === 'return') {
+      const r = db().prepare('SELECT * FROM order_returns WHERE id = ?').get(f.ref_id);
+      if (!r) continue;
+      if (r.goods_received_at) block('RETURN_RECEIVED', 'Hàng hoàn của đơn này đã nhập kho, không hoàn tác được. Giữ phiếu đối soát và xử lý tay nếu có sai.', f.order_id);
+      else if (r.refund_amount > 0) block('RETURN_HAS_REFUND', 'Phiếu trả của đơn này đã hoàn tiền cho khách.', f.order_id);
+      else undo.returns += 1;
+    } else if (f.kind === 'order_completed') {
+      const o = db().prepare('SELECT status FROM orders WHERE id = ?').get(f.ref_id);
+      if (o && o.status !== 'completed') block('ORDER_CHANGED', `Đơn đã đổi trạng thái sang “${o.status}” sau đối soát.`, f.ref_id);
+      else if (db().prepare('SELECT 1 FROM order_returns WHERE order_id = ? LIMIT 1').get(f.ref_id)) block('HAS_RETURNS', 'Đơn đã có phiếu trả hàng sau đối soát.', f.ref_id);
+      else undo.orders_reopened += 1;
+    } else if (f.kind === 'shipment') undo.shipments += 1;
+  }
+  for (const [orderId, amount] of inByOrder) {
+    const paid = db().prepare('SELECT paid_amount FROM orders WHERE id = ?').get(orderId)?.paid_amount ?? 0;
+    if (paid - amount < 0) block('PAYMENT_HAS_REFUND', 'Đã có khoản hoàn tiền dựa trên tiền COD của phiếu này. Huỷ khoản hoàn trước.', orderId);
+  }
+  return { statement: st, voided: false, blockers, undo, can_void: blockers.length === 0 };
+}
+
+/**
+ * Huỷ cả phiếu đối soát: hoàn tác thu COD, trả phí giao, chi phí hãng trừ, phiếu trả chờ hàng về, đơn hoàn thành, và trả vận đơn về
+ * trạng thái trước khi đối soát (đối soát lại được). Phiếu giữ lại để tra cứu, đánh dấu đã huỷ. Một giao dịch: lỗi ở đâu cũng không đổi gì.
+ */
+export function voidStatement(id, { reason }, actor) {
+  const pv = previewVoidStatement(id);
+  if (pv.voided) throw conflict('ALREADY_VOIDED', 'Phiếu đối soát này đã huỷ');
+  if (pv.blockers.length) {
+    throw conflict(pv.blockers[0].code === 'STATEMENT_LEGACY' ? 'STATEMENT_LEGACY' : 'STATEMENT_VOID_BLOCKED', `Không huỷ được phiếu ${pv.statement.code}: ${pv.blockers[0].order_code ? pv.blockers[0].order_code + ': ' : ''}${pv.blockers[0].message}`, { blockers: pv.blockers });
+  }
+  const code = pv.statement.code;
+  const note = `Huỷ phiếu đối soát ${code}`;
+  const fxs = db().prepare('SELECT * FROM carrier_statement_effects WHERE statement_id = ? ORDER BY rowid').all(id);
+  const of = (kind) => fxs.filter((f) => f.kind === kind);
+  for (const f of of('payment')) {
+    const p = db().prepare('SELECT * FROM payments WHERE id = ?').get(f.ref_id);
+    if (p && !p.voided_at) voidOrderPayment(p, note, actor);
+  }
+  for (const f of of('return')) {
+    if (db().prepare('SELECT 1 FROM order_returns WHERE id = ?').get(f.ref_id)) removeAwaitingReturn(f.order_id, f.ref_id, { actor, restoreStatus: JSON.parse(f.before || '{}').order_status ?? null });
+  }
+  for (const f of of('order_completed')) revertOrderCompletion(f.ref_id, { actor, note });
+  for (const f of of('expense')) {
+    if (!getExpense(f.ref_id).voided_at) voidExpense(f.ref_id, actor);
+  }
+  const at = nowIso();
+  for (const f of of('shipment')) {
+    const b = JSON.parse(f.before || '{}');
+    db().prepare('UPDATE shipments SET status = ?, delivered_at = ?, returned_at = ?, statement_id = NULL, updated_at = ? WHERE id = ?').run(b.status ?? 'in_transit', b.delivered_at ?? null, b.returned_at ?? null, at, f.ref_id);
+  }
+  db().prepare('UPDATE carrier_statements SET voided_at = ?, void_reason = ?, voided_by = ? WHERE id = ?').run(at, reason, actor?.id ?? null, id);
+  audit(actor, 'carrier_statement.voided', 'carrier_statement', id, { code, total_cod: pv.statement.total_cod, total_fees: pv.statement.total_fees }, { reason, undone: pv.undo });
+  return getStatement(id);
+}

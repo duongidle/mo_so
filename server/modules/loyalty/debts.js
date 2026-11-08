@@ -44,19 +44,6 @@ export function customerDebts({ shopId, lookahead = 3, today = businessDate(nowI
   return { data: out, total: out.reduce((a, r) => a + r.debt, 0), overdue_count: out.filter((r) => r.bucket === 'overdue').length };
 }
 
-/** Phiếu nhập đã nhận mà còn nợ nhà cung cấp, có hạn trả trong `lookahead` ngày tới hoặc đã quá hạn. */
-export function supplierPayables({ lookahead = 3, today = businessDate(nowIso()) } = {}) {
-  const rows = db()
-    .prepare(
-      `SELECT p.id, p.code, p.shop_id, p.supplier_id, su.name AS supplier_name, p.due_date, p.total_amount, p.paid_amount, (p.total_amount - p.paid_amount) AS debt
-       FROM purchases p LEFT JOIN suppliers su ON su.id = p.supplier_id
-       WHERE p.status = 'received' AND p.due_date IS NOT NULL AND (p.total_amount - p.paid_amount) > 0 AND p.due_date <= ? ORDER BY p.due_date`,
-    )
-    .all(addDays(today, lookahead));
-  const data = rows.map((r) => ({ ...r, days_overdue: daysBetween(today, r.due_date), bucket: daysBetween(today, r.due_date) > 0 ? 'overdue' : 'due_soon' }));
-  return { data, total: data.reduce((a, r) => a + r.debt, 0), overdue_count: data.filter((r) => r.bucket === 'overdue').length };
-}
-
 /** Đã nhắc hoặc hoãn một khoản nợ: ẩn khỏi danh sách tới ngày hẹn nhắc lại. */
 export function actOnDebt(orderId, { days = 3 }, actor) {
   const o = db().prepare('SELECT id FROM orders WHERE id = ?').get(orderId);

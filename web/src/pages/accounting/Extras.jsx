@@ -166,7 +166,7 @@ export function Recurring({ report }) {
   if (form) return <RecurringForm initial={form} shops={shops} onClose={() => setForm(null)} onSaved={() => { setForm(null); state.reload(); }} />;
   return (
     <>
-      <div className="row between wrap"><span className="muted small">Job chạy mỗi giờ: tạo chi phí đến hạn, kể cả các kỳ bỏ lỡ khi máy tắt. Không bao giờ tạo trùng một kỳ.</span><button className="btn primary" onClick={() => setForm({})}>+ Chi phí định kỳ</button></div>
+      <div className="row between wrap"><span className="muted small">Hệ thống tự tạo chi phí khi đến hạn, kể cả các kỳ bị bỏ lỡ. Không bao giờ tạo trùng một kỳ.</span><button className="btn primary" onClick={() => setForm({})}>+ Chi phí định kỳ</button></div>
       <ErrorBox error={error} />
       <Async state={state}>
         {({ data }) => (!data.length ? <Empty>Chưa có chi phí định kỳ. Thêm tiền thuê, internet, lương… để hệ thống tự ghi mỗi kỳ.</Empty> : (

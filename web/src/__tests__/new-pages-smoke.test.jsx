@@ -36,6 +36,42 @@ describe('trang mới không sập khi dựng', () => {
     fireEvent.click(screen.getByText('Nhập bảng đối soát của hãng'));
     await waitFor(() => expect(screen.getByLabelText('Hãng đối soát')).toBeTruthy());
   });
+  it('Huỷ phiếu đối soát: xem trước tác động, bắt ghi lý do rồi mới gửi; phiếu bị cản thì khoá nút', async () => {
+    const stmt = { id: 'stm_1', code: 'DS-1', carrier_name: 'GHN', statement_date: '2026-11-08', line_count: 2, total_cod: 630000, total_fees: 51000, net_amount: 579000, voided_at: null };
+    const preview = { can_void: true, voided: false, blockers: [], undo: { payments: 2, payments_amount: 655000, expenses: 1, expenses_amount: 41000, returns: 1, orders_reopened: 1, shipments: 2 } };
+    api.get.mockImplementation(async (path) => {
+      if (path === '/shipments/summary') return { data: { in_transit: { n: 0, cod: 0 }, unreconciled: { n: 0, cod: 0 }, returned: { n: 0, cod: 0 } } };
+      if (path === '/carrier-statements') return { data: [stmt, { ...stmt, id: 'stm_0', code: 'DS-0', voided_at: '2026-11-08T05:00:00Z', void_reason: 'nhầm' }] };
+      if (path === '/carrier-statements/stm_1/void-preview') return { data: preview };
+      return { data: [] };
+    });
+    api.post.mockResolvedValue({ data: {} });
+    render(<MemoryRouter><Shipping /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText('DS-1')).toBeTruthy());
+    expect(screen.getByText('Đã huỷ')).toBeTruthy();
+    fireEvent.click(screen.getByText('Huỷ phiếu'));
+    await waitFor(() => expect(screen.getByLabelText('Lý do huỷ phiếu đối soát')).toBeTruthy());
+    const submit = screen.getByRole('button', { name: 'Huỷ phiếu đối soát' });
+    expect(submit.disabled).toBe(true); // chưa có lý do
+    fireEvent.change(screen.getByLabelText('Lý do huỷ phiếu đối soát'), { target: { value: 'Chọn nhầm cột' } });
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/carrier-statements/stm_1/void', { reason: 'Chọn nhầm cột' }));
+  });
+  it('Huỷ phiếu đối soát: có điều đang cản thì hiện lý do và không cho gửi', async () => {
+    const stmt = { id: 'stm_2', code: 'DS-2', carrier_name: 'GHN', statement_date: '2026-11-08', line_count: 1, total_cod: 1, total_fees: 0, net_amount: 1, voided_at: null };
+    api.get.mockImplementation(async (path) => {
+      if (path === '/shipments/summary') return { data: { in_transit: { n: 0, cod: 0 }, unreconciled: { n: 0, cod: 0 }, returned: { n: 0, cod: 0 } } };
+      if (path === '/carrier-statements') return { data: [stmt] };
+      if (path === '/carrier-statements/stm_2/void-preview') return { data: { can_void: false, voided: false, undo: {}, blockers: [{ code: 'HAS_RETURNS', order_code: 'DH-9', message: 'Đơn đã có phiếu trả hàng sau đối soát.' }] } };
+      return { data: [] };
+    });
+    render(<MemoryRouter><Shipping /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText('DS-2')).toBeTruthy());
+    fireEvent.click(screen.getByText('Huỷ phiếu'));
+    await waitFor(() => expect(screen.getByText(/Đơn đã có phiếu trả hàng sau đối soát/)).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Huỷ phiếu đối soát' }).disabled).toBe(true);
+  });
   it('Lô & hạn dùng: hiện lô quá hạn', async () => {
     render(<MemoryRouter><StockLots /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText('L1')).toBeTruthy());

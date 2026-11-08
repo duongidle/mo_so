@@ -60,15 +60,16 @@ function Suppliers({ list, reload }) {
 }
 
 /** Trang phiếu nhập mới: cột chính là các dòng hàng, cột phụ là nhà cung cấp, phí, thanh toán */
-export function PurchaseForm({ onClose, onSaved, onDirty }) {
+export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
   const { warehouses } = useSession();
-  const [wh, setWh] = useState(warehouses[0]?.id);
-  const [supplier, setSupplier] = useState('');
-  const [lines, setLines] = useState([]);
-  const [fees, setFees] = useState({ shipping_fee: 0, other_fee: 0, discount_amount: 0 });
+  const editing = !!initial; // sửa phiếu nháp: lưu bằng PATCH, nhận hàng là bước riêng
+  const [wh, setWh] = useState(initial?.warehouse_id ?? warehouses[0]?.id);
+  const [supplier, setSupplier] = useState(initial?.supplier_id ?? '');
+  const [lines, setLines] = useState(() => initial?.lines.map((l) => ({ id: l.variant_id, sku: l.sku, name: l.product_name, qty: l.qty, unit_cost: l.unit_cost, lot_no: l.lot_no || '', expiry_date: l.expiry_date || '' })) ?? []);
+  const [fees, setFees] = useState({ shipping_fee: initial?.shipping_fee ?? 0, other_fee: initial?.other_fee ?? 0, discount_amount: initial?.discount_amount ?? 0 });
   const [paid, setPaid] = useState(0);
-  const [shipTo, setShipTo] = useState('supplier'); // ai nhận tiền ship: nhà cung cấp hay bên vận chuyển
-  const [dueDate, setDueDate] = useState('');
+  const [shipTo, setShipTo] = useState(initial?.shipping_payee ?? 'supplier'); // ai nhận tiền ship: nhà cung cấp hay bên vận chuyển
+  const [dueDate, setDueDate] = useState(initial?.due_date ?? '');
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const sup = useAsync(() => api.get('/suppliers'), []);
@@ -77,46 +78,56 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
   const sub = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
   const carrier = shipTo === 'carrier' ? Number(fees.shipping_fee) || 0 : 0;
   const total = sub - (Number(fees.discount_amount) || 0) + (Number(fees.shipping_fee) || 0) - carrier + (Number(fees.other_fee) || 0);
-  const upd = (id, p) => setLines((l) => l.map((x) => (x.id === id ? { ...x, ...p } : x)));
-  const dirty = lines.length > 0 || !!supplier || Number(paid) > 0 || Object.values(fees).some((v) => Number(v) > 0);
+  const upd = (id, p) => { setTouched(true); setLines((l) => l.map((x) => (x.id === id ? { ...x, ...p } : x))); };
+  const [touched, setTouched] = useState(false);
+  const dirty = editing ? touched : lines.length > 0 || !!supplier || Number(paid) > 0 || Object.values(fees).some((v) => Number(v) > 0);
   useEffect(() => { onDirty?.(dirty); }, [dirty, onDirty]);
   const save = (receive) => run(async () => {
-    await api.post('/purchases', {
-      supplier_id: supplier || null, warehouse_id: wh, receive, shipping_payee: shipTo, due_date: dueDate || null, paid_amount: receive ? Number(paid) || 0 : 0, ...Object.fromEntries(Object.entries(fees).map(([k, v]) => [k, Number(v) || 0])),
+    const payload = {
+      supplier_id: supplier || null, warehouse_id: wh, shipping_payee: shipTo, due_date: dueDate || null, ...Object.fromEntries(Object.entries(fees).map(([k, v]) => [k, Number(v) || 0])),
       lines: lines.map((l) => ({ variant_id: l.id, qty: Number(l.qty), unit_cost: Number(l.unit_cost), lot_no: l.lot_no?.trim() || null, expiry_date: l.expiry_date || null })),
-    }, { 'Idempotency-Key': crypto.randomUUID?.() });
+    };
+    if (editing) {
+      await api.patch(`/purchases/${initial.id}`, payload);
+      if (receive) {
+        await api.post(`/purchases/${initial.id}/receive`);
+        if (Number(paid) > 0) await api.post(`/purchases/${initial.id}/payments`, { amount: Number(paid) });
+      }
+    } else {
+      await api.post('/purchases', { ...payload, receive, paid_amount: receive ? Number(paid) || 0 : 0 }, { 'Idempotency-Key': crypto.randomUUID?.() });
+    }
     onDirty?.(false);
     onSaved();
   });
   return (
     <FormPage
-      title="Phiếu nhập hàng"
+      title={editing ? `Sửa phiếu nhập ${initial.code}` : 'Phiếu nhập hàng'}
       sub="Tìm SKU để thêm hàng. Phí và chiết khấu được chia vào giá vốn từng dòng theo giá trị."
       onBack={onClose}
       error={<ErrorBox error={error} />}
       footer={<>
         <button type="button" className="btn" onClick={onClose}>Huỷ</button>
-        <button type="button" className="btn" disabled={busy || !lines.length} onClick={() => save(false)}>Lưu nháp</button>
+        <button type="button" className="btn" disabled={busy || !lines.length} onClick={() => save(false)}>{editing ? 'Lưu thay đổi' : 'Lưu nháp'}</button>
         <button type="button" className="btn primary" disabled={busy || !lines.length} onClick={() => save(true)}>Nhận hàng &amp; lưu</button>
       </>}
       side={<>
         <Section title="Nhà cung cấp & kho">
           <div className="stack">
-            <Field label="Nhà cung cấp"><select value={supplier} onChange={(e) => setSupplier(e.target.value)}><option value="">— Không có —</option>{sup.data?.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-            <Field label="Nhập vào kho"><select value={wh} onChange={(e) => setWh(e.target.value)}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+            <Field label="Nhà cung cấp"><select value={supplier} onChange={(e) => { setTouched(true); setSupplier(e.target.value); }}><option value="">— Không có —</option>{sup.data?.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+            <Field label="Nhập vào kho"><select value={wh} onChange={(e) => { setTouched(true); setWh(e.target.value); }}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
           </div>
         </Section>
         <Section title="Phí & thanh toán">
           <div className="stack">
-            <Field label="Phí ship nhập"><MoneyInput value={fees.shipping_fee} onChange={(e) => setFees({ ...fees, shipping_fee: e.target.value })} /></Field>
+            <Field label="Phí ship nhập"><MoneyInput value={fees.shipping_fee} onChange={(e) => { setTouched(true); setFees({ ...fees, shipping_fee: e.target.value }); }} /></Field>
             {Number(fees.shipping_fee) > 0 && (
               <Field label="Ship trả cho" hint={shipTo === 'carrier' ? 'Vẫn tính vào giá vốn, nhưng không cộng vào số nợ nhà cung cấp. Trả bên vận chuyển ở trang chi tiết phiếu.' : 'Nhà cung cấp thu hộ: cộng vào số nợ nhà cung cấp.'}>
-                <select value={shipTo} onChange={(e) => setShipTo(e.target.value)}><option value="supplier">Nhà cung cấp</option><option value="carrier">Bên vận chuyển</option></select>
+                <select value={shipTo} onChange={(e) => { setTouched(true); setShipTo(e.target.value); }}><option value="supplier">Nhà cung cấp</option><option value="carrier">Bên vận chuyển</option></select>
               </Field>
             )}
-            <Field label="Phí khác"><MoneyInput value={fees.other_fee} onChange={(e) => setFees({ ...fees, other_fee: e.target.value })} /></Field>
-            <Field label="Chiết khấu"><MoneyInput value={fees.discount_amount} onChange={(e) => setFees({ ...fees, discount_amount: e.target.value })} /></Field>
-            <Field label="Hạn trả nhà cung cấp (tuỳ chọn)" hint="Hệ thống nhắc ở Loyalty → Hôm nay khi sắp đến hạn"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Hạn trả nhà cung cấp" /></Field>
+            <Field label="Phí khác"><MoneyInput value={fees.other_fee} onChange={(e) => { setTouched(true); setFees({ ...fees, other_fee: e.target.value }); }} /></Field>
+            <Field label="Chiết khấu"><MoneyInput value={fees.discount_amount} onChange={(e) => { setTouched(true); setFees({ ...fees, discount_amount: e.target.value }); }} /></Field>
+            <Field label="Hạn trả nhà cung cấp (tuỳ chọn)" hint="Khoản còn nợ hiện ở Chi phí & quỹ → Công nợ phải trả"><input type="date" value={dueDate} onChange={(e) => { setTouched(true); setDueDate(e.target.value); }} aria-label="Hạn trả nhà cung cấp" /></Field>
             <Field label="Đã trả nhà cung cấp" hint="Chỉ ghi nhận khi nhấn Nhận hàng & lưu"><MoneyInput value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
             <div>
               <div className="ledger-line"><span>Tiền hàng</span><span className="num">{vnd(sub)}</span></div>
@@ -130,7 +141,7 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
       <Section title={`Hàng nhập${lines.length ? ` (${lines.length})` : ''}`}>
         <div className="stack">
           <input placeholder="Tìm SKU hoặc tên để thêm…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Tìm SKU" autoFocus />
-          {found.data?.data?.length > 0 && <div className="pick-list">{found.data.data.map((v) => <div key={v.id} className="pick" onClick={() => { setLines((l) => (l.some((x) => x.id === v.id) ? l : [...l, { id: v.id, sku: v.sku, name: v.product_name, qty: 1, unit_cost: v.avg_cost || 0 }])); setQ(''); }}><span>{v.product_name} <span className="muted small">{v.sku}</span></span></div>)}</div>}
+          {found.data?.data?.length > 0 && <div className="pick-list">{found.data.data.map((v) => <div key={v.id} className="pick" onClick={() => { setTouched(true); setLines((l) => (l.some((x) => x.id === v.id) ? l : [...l, { id: v.id, sku: v.sku, name: v.product_name, qty: 1, unit_cost: v.avg_cost || 0 }])); setQ(''); }}><span>{v.product_name} <span className="muted small">{v.sku}</span></span></div>)}</div>}
           {!lines.length ? <div className="of-empty muted">Chưa có dòng hàng nào. Gõ SKU ở ô trên rồi chọn.</div> : (
             <div className="pl-lines">
               <div className="pl-head small muted"><span>Hàng</span><span>Số lượng</span><span>Giá nhập</span><span className="num">Thành tiền</span><span /></div>
@@ -141,7 +152,7 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
                   <input type="number" min="1" value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} aria-label="Số lượng" />
                   <MoneyInput value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} aria-label="Giá nhập" />
                   <b className="num">{vnd((Number(l.qty) || 0) * (Number(l.unit_cost) || 0))}</b>
-                  <button type="button" className="btn sm" aria-label={`Bỏ ${l.sku}`} onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))}>✕</button>
+                  <button type="button" className="btn sm" aria-label={`Bỏ ${l.sku}`} onClick={() => { setTouched(true); setLines((ls) => ls.filter((x) => x.id !== l.id)); }}>✕</button>
                 </div>
                 <div className="pl-lot small muted">
                   <label>Lô <input value={l.lot_no || ''} onChange={(e) => upd(l.id, { lot_no: e.target.value })} aria-label={`Số lô ${l.sku}`} placeholder="tuỳ chọn" /></label>
@@ -164,6 +175,31 @@ export function NewPurchasePage() {
   return <PurchaseForm onClose={back} onSaved={back} onDirty={setDirty} />;
 }
 
+/** Một dòng thanh toán; khoản đã huỷ gạch ngang, khoản còn hiệu lực có nút huỷ */
+function PayLine({ x, ship, can, busy, onVoid }) {
+  const voided = !!x.voided_at;
+  return (
+    <div className="row between small muted" style={voided ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+      <span>{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)}{ship ? ' (ship)' : ''}{voided ? ' · đã huỷ' : ''}</span>
+      {can && !voided && <button type="button" className="btn sm" disabled={busy} onClick={() => onVoid(x)}>Huỷ khoản này</button>}
+    </div>
+  );
+}
+
+/** Sửa phiếu nhập nháp: nạp phiếu rồi dùng lại form tạo phiếu */
+export function EditPurchasePage() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const { setDirty } = useLeaveGuard();
+  const s = useAsync(() => api.get(`/purchases/${id}`), [id]);
+  const back = () => nav(`/purchases/${id}`);
+  return (
+    <Async state={s}>{({ data: p }) => p.status !== 'draft'
+      ? <div className="page"><Empty action={<button type="button" className="btn" onClick={back}>Quay lại phiếu</button>}>Chỉ sửa được phiếu nháp. Phiếu đã nhận hoặc đã huỷ thì huỷ phiếu rồi tạo phiếu mới nếu cần đổi hàng.</Empty></div>
+      : <PurchaseForm initial={p} onClose={back} onSaved={back} onDirty={setDirty} />}</Async>
+  );
+}
+
 /** Trang chi tiết phiếu nhập: hàng, thanh toán, nhận hàng, huỷ, trả nợ */
 export function PurchasePage() {
   const { id } = useParams();
@@ -173,6 +209,7 @@ export function PurchasePage() {
   const [pay, setPay] = useState('');
   const [shipPay, setShipPay] = useState('');
   const [refund, setRefund] = useState(null); // phương thức NCC hoàn tiền khi huỷ phiếu đã trả tiền
+  const voidPay = (x) => confirm(`Huỷ khoản ${vnd(x.amount)} đã ghi ngày ${fmtDate(x.paid_at)}? Khoản này sẽ tính lại vào số còn nợ.`) && run(async () => { await api.post(`/payments/${x.id}/void`, {}); s.reload(); });
   return (
     <div className="page stack">
       <Async state={s}>{({ data: p }) => (
@@ -192,14 +229,14 @@ export function PurchasePage() {
                     <div className="ledger-line"><span>Tổng</span><b className="num">{vnd(p.total_amount)}</b></div>
                     <div className="ledger-line"><span>Đã trả</span><b className="num">{vnd(p.paid_amount)}</b></div>
                   </div>
-                  {p.payments?.map((x) => <div key={x.id} className="small muted">{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)}</div>)}
+                  {p.payments?.map((x) => <PayLine key={x.id} x={x} can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                   {p.carrier_amount > 0 && (
                     <div className="stack" style={{ gap: 8 }}>
                       <div>
                         <div className="ledger-line"><span>Ship trả bên vận chuyển</span><b className="num">{vnd(p.carrier_amount)}</b></div>
                         <div className="ledger-line"><span>Đã trả ship</span><b className="num">{vnd(p.carrier_paid_amount)}</b></div>
                       </div>
-                      {p.carrier_payments?.map((x) => <div key={x.id} className="small muted">{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)} (ship)</div>)}
+                      {p.carrier_payments?.map((x) => <PayLine key={x.id} x={x} ship can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                       {p.status === 'received' && p.carrier_debt > 0 && (
                         <div className="row"><MoneyInput placeholder={`Trả ship (còn ${p.carrier_debt})`} value={shipPay} onChange={(e) => setShipPay(e.target.value)} /><button className="btn" disabled={busy || !shipPay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/carrier-payments`, { amount: Number(shipPay) }); setShipPay(''); s.reload(); })}>Ghi trả ship</button></div>
                       )}
@@ -215,6 +252,7 @@ export function PurchasePage() {
                   <ErrorBox error={error} />
                   <div className="row wrap">
                     {p.status === 'draft' && <button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/receive`); s.reload(); })}>Nhận hàng</button>}
+                    {p.status === 'draft' && <Link className="btn" to={`/purchases/${p.id}/edit`}>Sửa phiếu</Link>}
                     {p.status !== 'cancelled' && p.paid_amount === 0 && !(p.carrier_paid_amount > 0) && <button className="btn danger" disabled={busy} onClick={() => confirm('Huỷ phiếu? Nếu đã nhận, kho sẽ bị trừ lại.') && run(async () => { await api.post(`/purchases/${p.id}/cancel`, {}); s.reload(); })}>Huỷ phiếu</button>}
                     {p.status !== 'cancelled' && (p.paid_amount > 0 || p.carrier_paid_amount > 0) && <button className="btn danger" disabled={busy} onClick={() => setRefund('bank')}>Huỷ phiếu</button>}
                   </div>

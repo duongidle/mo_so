@@ -17,7 +17,7 @@ vi.mock('../pages/Orders.jsx', () => ({ OrderList: () => <div>Orders</div>, Orde
 vi.mock('../pages/Products.jsx', () => stub('Products'));
 vi.mock('../pages/products/ProductPage.jsx', () => stub('ProductPage'));
 vi.mock('../pages/Stock.jsx', () => stub('Stock'));
-vi.mock('../pages/Purchases.jsx', () => ({ default: () => <div>Purchases</div>, NewPurchasePage: () => <div>NewPurchase</div>, PurchasePage: () => <div>PurchasePage</div> }));
+vi.mock('../pages/Purchases.jsx', () => ({ default: () => <div>Purchases</div>, NewPurchasePage: () => <div>NewPurchase</div>, PurchasePage: () => <div>PurchasePage</div>, EditPurchasePage: () => <div>EditPurchase</div> }));
 vi.mock('../pages/Customers.jsx', () => ({ CustomerList: () => <div>CL</div>, CustomerDetail: () => <div>CD</div> }));
 vi.mock('../pages/Loyalty.jsx', () => stub('Loyalty'));
 vi.mock('../pages/Expenses.jsx', () => stub('Expenses'));

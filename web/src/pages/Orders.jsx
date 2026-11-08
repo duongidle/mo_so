@@ -104,12 +104,17 @@ export function OrderDetail() {
   const act = useAction();
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  // Khoản do đối soát, tiền khách gửi hoặc phiếu trả hàng tạo ra thì xử lý ở nơi tạo ra chúng (khớp luật ở máy chủ)
+  const voidable = (p) => p.method !== 'customer_credit' && p.method !== 'carrier_payout' && !(p.direction === 'out' && /^(Hoàn tiền trả hàng|Chuyển tiền trả hàng)/.test(p.note || ''));
+  const voidPay = (p) => confirm(`Huỷ khoản ${vnd(p.amount)} ghi ngày ${fmtDate(p.paid_at)}? Số đã thu/còn nợ của đơn sẽ tính lại.`) && act.run(async () => { await api.post(`/payments/${p.id}/void`, {}); state.reload(); });
 
   return (
     <div className="page stack">
       <Async state={state}>
         {({ data: o }) => {
           const ch = channels.find((c) => c.id === o.channel_id);
+          // Đơn huỷ đã nhận tiền (cọc): hoàn lại được tới số đã thu. Đơn khác: tới số còn nợ khách
+          const refundMax = o.status === 'cancelled' && !o.is_marketplace ? o.paid_amount : o.refund_owed_amount;
           const doStatus = (status, note) => act.run(async () => { await api.post(`/orders/${o.id}/status`, { status, note }); setModal(null); state.reload(); });
           const doStatusForce = (status) => act.run(async () => {
             try { await api.post(`/orders/${o.id}/status`, { status }); } catch (e) {
@@ -137,7 +142,7 @@ export function OrderDetail() {
                 {o.status === 'shipping' && <button className="btn danger" onClick={() => { setForm(codRefusedForm(o, emptyReturnForm(o.is_marketplace))); setModal('return'); }}>Giao không thành</button>}
                 {['draft', 'confirmed'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
                 {o.amount_due > 0 && !['cancelled', 'draft'].includes(o.status) && <button className="btn" onClick={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}>Thu tiền ({vnd(o.amount_due)})</button>}
-                {o.refund_owed_amount > 0 && <button className="btn primary" onClick={() => { setForm({ amount: o.refund_owed_amount, method: 'cash' }); setModal('refund'); }}>Hoàn tiền ({vnd(o.refund_owed_amount)})</button>}
+                {refundMax > 0 && <button className="btn primary" onClick={() => { setForm({ amount: refundMax, method: 'cash' }); setModal('refund'); }}>Hoàn tiền ({vnd(refundMax)})</button>}
                 {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm(emptyReturnForm(o.is_marketplace)); setModal('return'); }}>Trả hàng</button>}
                 {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('packaging')}>Xác nhận đóng gói</button>}
                 {!o.is_marketplace && o.customer_id && ['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('exchange')}>Đổi hàng</button>}
@@ -187,8 +192,11 @@ export function OrderDetail() {
               {o.reserve_stock ? <div className="alert warn small">Đang giữ hàng cho đơn này{o.reserved_until ? ` đến ${o.reserved_until}` : ''}.</div> : null}
               <div className="grid cols-2 collapse">
                 <Section title="Thanh toán">
-                  {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
-                    <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {p.method === 'customer_credit' ? 'Tiền khách gửi' : methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn / cộng tiền gửi)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
+                  {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.map((p) => (
+                    <div key={p.id} className="row between small" style={p.voided_at ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                      <span>{fmtDate(p.paid_at)} · {p.method === 'customer_credit' ? 'Tiền khách gửi' : methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn / cộng tiền gửi)'}{p.voided_at && ' · đã huỷ'}</span>
+                      <span className="row"><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b>{!p.voided_at && voidable(p) && <button type="button" className="btn sm" disabled={act.busy} onClick={() => voidPay(p)}>Huỷ</button>}</span>
+                    </div>
                   ))}
                   {!o.is_marketplace && o.seller_shipping_amount > 0 && (
                     <div className="row between small" style={{ marginTop: 8 }}>
@@ -196,6 +204,13 @@ export function OrderDetail() {
                       {o.seller_shipping_due > 0 ? <button className="btn sm" onClick={() => { setForm({ amount: o.seller_shipping_due, method: 'cash' }); setModal('sellership'); }}>Ghi đã trả ({vnd(o.seller_shipping_due)})</button> : o.seller_shipping_paid_amount > 0 ? <b className="h-green">Đã trả đủ</b> : null}
                     </div>
                   )}
+                  {o.seller_shipping_payments?.map((p) => (
+                    <div key={p.id} className="row between small muted" style={p.voided_at ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                      <span>Trả ship {fmtDate(p.paid_at)} · {vnd(p.amount)}{p.voided_at && ' · đã huỷ'}</span>
+                      {!p.voided_at && p.method !== 'carrier_payout' && <button type="button" className="btn sm" disabled={act.busy} onClick={() => voidPay(p)}>Huỷ</button>}
+                    </div>
+                  ))}
+                  <ErrorBox error={act.error} />
                 </Section>
                 <Section title="Lịch sử">
                   {o.history.map((h) => <div key={h.id} className="small"><span className="muted">{fmtDate(h.created_at)}</span> · {h.from_status ? `${STATUS[h.from_status]} → ` : ''}{STATUS[h.to_status]}{h.note && ` (${h.note})`}</div>)}
@@ -239,7 +254,7 @@ export function OrderDetail() {
               )}
               {modal === 'refund' && (
                 <Modal title="Hoàn tiền cho khách" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method, direction: 'out' }); setModal(null); state.reload(); })}>Ghi nhận hoàn tiền</button>}>
-                  <Field label={`Số tiền (tối đa ${vnd(o.refund_owed_amount)})`}><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label={`Số tiền (tối đa ${vnd(refundMax)})`}><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
                   <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{o.customer_id && !o.is_marketplace && <option value="customer_credit">Chuyển thành tiền khách gửi</option>}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>

@@ -92,7 +92,9 @@ POST /shipments/:id/status | Cập nhật tay trạng thái vận đơn (giao xo
 POST /carrier-statements/preview | Xem trước một bảng đối soát: dòng khớp, dòng lỗi, tổng COD và phí
 POST /carrier-statements | Chốt phiếu đối soát: ghi thu COD, trừ phí, xử lý đơn hoàn
 GET /carrier-statements | Danh sách phiếu đối soát | carrier_id
-GET /carrier-statements/:id | Chi tiết một phiếu đối soát` },
+GET /carrier-statements/:id | Chi tiết một phiếu đối soát
+GET /carrier-statements/:id/void-preview | Xem trước việc huỷ phiếu: sẽ hoàn tác gì, cái gì đang cản
+POST /carrier-statements/:id/void | Huỷ cả phiếu đối soát: hoàn tác thu COD, phí, phiếu trả chờ hàng, trạng thái đơn và vận đơn (bắt buộc lý do)` },
   { id: 'notifications', title: 'Thông báo cho chủ shop', intro: 'Hộp thông báo trong hệ thống, gửi qua Telegram và sự kiện notification.created cho webhook. Các loại: hàng sắp hết, hàng sắp hết hạn, đơn chờ giao lâu, khách nợ đến hạn, sắp đến hạn trả nhà cung cấp, đơn sàn chưa nhận tiền, tóm tắt ngày. Mỗi loại tối đa một lần mỗi ngày. Chỉ chủ shop đăng nhập dùng được.', routes: `
 GET /notifications | Danh sách thông báo và số chưa đọc | unread, limit
 POST /notifications/read | Đánh dấu đã đọc (ids hoặc all)
@@ -173,6 +175,7 @@ GET /expenses/:id | Chi tiết chi phí
 POST /expenses | Ghi chi phí
 PATCH /expenses/:id | Sửa chi phí
 DELETE /expenses/:id | Huỷ chi phí (không xoá cứng)
+GET /payables | Công nợ phải trả: nợ nhà cung cấp, ship còn nợ hãng vận chuyển, tiền còn nợ khách, kỳ sắp tới của chi phí định kỳ; xếp theo quá hạn, sắp đến hạn | shop_id, lookahead_days
 GET /recurring-expenses | Chi phí định kỳ | include_archived
 POST /recurring-expenses | Tạo chi phí định kỳ (tuần, tháng, năm)
 GET /recurring-expenses/:id | Chi tiết chi phí định kỳ
@@ -182,6 +185,7 @@ POST /recurring-expenses/:id/pause | Tạm dừng
 POST /recurring-expenses/:id/resume | Tiếp tục (không tạo bù thời gian tạm dừng)
 POST /recurring-expenses/:id/run | Tạo ngay kỳ đến hạn
 GET /recurring-expenses/:id/preview | Xem các kỳ sắp tới | count
+POST /payments/:id/void | Huỷ khoản thanh toán ghi nhầm của đơn hoặc phiếu nhập (đánh dấu huỷ, giữ trong sổ và nhật ký) | reason
 GET /payments | Sổ thanh toán thu/chi | direction, ref_type, method, shop_id, from, to, limit, cursor
 GET /reconciliation/pending | Tiền sàn đang treo (đơn hoàn thành chưa ghi nhận tiền về) | channel_id, shop_id, from, to
 GET /reconciliation/adjustments | Các lần sàn trả lệch số kỳ vọng và phần phí sàn tăng/giảm theo đơn | shop_id, from, to
@@ -242,7 +246,7 @@ POST /loyalty/promotions | Tạo khuyến mãi (giảm % đơn, giảm tiền, g
 PUT /loyalty/promotions/:id | Sửa khuyến mãi
 DELETE /loyalty/promotions/:id | Lưu trữ khuyến mãi (không xoá lịch sử dùng)
 POST /loyalty/promotions/evaluate | Xem khuyến mãi nào áp dụng cho giỏ hàng và giảm bao nhiêu (không ghi)
-GET /loyalty/debts | Nhắc nợ: khách còn nợ đơn (quá hạn, sắp đến hạn, chưa có hạn) và phiếu nhập sắp đến hạn trả nhà cung cấp | shop_id, lookahead_days
+GET /loyalty/debts | Nhắc nợ: khách còn nợ đơn (quá hạn, sắp đến hạn, chưa có hạn) | shop_id, lookahead_days
 POST /loyalty/debts/action | Đã nhắc hoặc hoãn một khoản nợ khách: ẩn tới ngày hẹn nhắc lại
 GET /loyalty/tiers | Các hạng khách và ngưỡng chi tiêu
 PUT /loyalty/tiers | Đặt lại các hạng
@@ -286,6 +290,7 @@ POST /system/webhook-deliveries/:id/retry | Gửi lại một lần đã thất 
 POST /system/webhooks/process | Chạy ngay hàng đợi gửi
 GET /system/events | Nhật ký sự kiện | type, shop_id, after, limit
 GET /system/backups | Danh sách bản sao lưu
+GET /system/backup/status | Lịch sao lưu: cài đặt hiện tại, lần sao lưu gần nhất, lần tới, dung lượng
 POST /system/backups | Tạo bản sao lưu ngay
 GET /system/backups/:name | Tải một bản sao lưu
 GET /system/backup/download | Tạo và tải bản sao lưu mới
@@ -304,6 +309,7 @@ export const EXAMPLES = {
   'POST /purchases': { note: 'Nhận hàng luôn, ship trả bên vận chuyển (không cộng vào nợ nhà cung cấp)', body: { supplier_id: 'sup_…', warehouse_id: 'whs_…', receive: true, shipping_fee: 1000000, shipping_payee: 'carrier', lines: [{ variant_id: 'var_…', qty: 100, unit_cost: 200000 }] } },
   'POST /purchases/:id/payments': { body: { amount: 20000000, method: 'bank' } },
   'POST /purchases/:id/carrier-payments': { body: { amount: 1000000, method: 'cash' } },
+  'POST /payments/:id/void': { note: 'Huỷ khoản trả hoặc thu ghi nhầm', body: { reason: 'Nhập nhầm số tiền' } },
   'POST /products': { body: { name: 'Nước hoa ô tô Gỗ Đàn', variants: [{ sku: 'NH-001', default_price: 150000, opening_qty: 20, opening_cost: 60000 }], shop_ids: ['shp_…'] } },
   'POST /stock-adjustments': { body: { warehouse_id: 'whs_…', kind: 'adjust', reason: 'Đếm lại cuối tháng', lines: [{ variant_id: 'var_…', change: -2 }] } },
   'POST /transfers': { body: { from_warehouse_id: 'whs_…', to_warehouse_id: 'whs_…', lines: [{ variant_id: 'var_…', qty: 10 }] } },

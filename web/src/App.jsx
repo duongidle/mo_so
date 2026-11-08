@@ -14,7 +14,7 @@ import ProductPage from './pages/products/ProductPage.jsx';
 import Stock from './pages/Stock.jsx';
 import NotificationBell from './components/NotificationBell.jsx';
 import Documents from './pages/Documents.jsx';
-import Purchases, { NewPurchasePage, PurchasePage } from './pages/Purchases.jsx';
+import Purchases, { NewPurchasePage, PurchasePage, EditPurchasePage } from './pages/Purchases.jsx';
 import { CustomerList, CustomerDetail } from './pages/Customers.jsx';
 import Loyalty from './pages/Loyalty.jsx';
 import Expenses from './pages/Expenses.jsx';
@@ -33,7 +33,7 @@ const NAV = [
   { group: 'Sổ sách', items: [['/reports', 'Báo cáo', 'chart'], ['/guide', 'Hướng dẫn', 'book'], ['/settings', 'Cài đặt', 'cog']] },
 ];
 /** Trang form đầy đủ có thanh lưu dính đáy: không hiện nút nổi "+ Đơn" */
-const FORM_PAGE = /^\/(products\/(new|combo|[^/]+)|purchases\/(new|[^/]+))$/;
+const FORM_PAGE = /^\/(products\/(new|combo|[^/]+)|purchases\/(new|[^/]+(\/edit)?))$/;
 const PRIMARY = ['/', '/orders/new', '/orders', '/stock'];
 
 /** Bộ chọn shop: nút hiện shop đang làm việc, bấm ra danh sách (thay cho thẻ select mặc định) */
@@ -128,6 +128,7 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<NewPurchasePage />} />
           <Route path="/purchases/:id" element={<PurchasePage />} />
+          <Route path="/purchases/:id/edit" element={<EditPurchasePage />} />
           <Route path="/customers" element={<CustomerList />} />
           <Route path="/customers/:id" element={<CustomerDetail />} />
           <Route path="/loyalty" element={<Loyalty />} />

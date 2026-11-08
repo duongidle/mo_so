@@ -4,6 +4,7 @@ import { getDb, tenantStore } from '../db/index.js';
 import { forEachAccount, getMaster } from '../db/tenancy.js';
 import { config } from '../lib/config.js';
 import { businessDate, addDays } from '../lib/time.js';
+import { getSetting } from '../modules/settings/service.js';
 import { cleanupUnusedImages } from './uploads.js';
 
 const NAME_RE = /^moso-(\d{8})-(\d{4})\.db$/;
@@ -64,8 +65,9 @@ export async function runBackup(date = new Date(), { conn = getDb(), dir = backu
   const tmp = `${file}.tmp`;
   await conn.backup(tmp);
   fs.renameSync(tmp, file); // chỉ lộ ra khi đã ghi xong
-  const pruned = pruneBackups(date, { dir });
-  const uploads = mirrorUploads(dir);
+  const own = dir !== masterBackupDir(); // sổ tài khoản chung luôn theo mặc định; cài đặt sao lưu thuộc từng tài khoản
+  const pruned = pruneBackups(date, own ? { dir, days: getSetting('backup_keep_days'), weeks: getSetting('backup_keep_weeks') } : { dir });
+  const uploads = !own || getSetting('backup_include_images') !== false ? mirrorUploads(dir) : 0;
   return { name, file, size: fs.statSync(file).size, pruned, uploads };
 }
 
@@ -107,20 +109,65 @@ export function pruneBackups(now = new Date(), { days = 14, weeks = 8, dir = bac
   return removed;
 }
 
+// ---------- Lịch sao lưu (giờ Việt Nam, UTC+7 không đổi mùa) ----------
+const slotAt = (date, time) => new Date(`${date}T${time}:00+07:00`);
+const weekdayOf = (date) => ((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7) + 1; // 1 = thứ Hai … 7 = Chủ nhật
+export const scheduleConfig = () => ({
+  enabled: getSetting('backup_enabled') !== false,
+  time: getSetting('backup_time') || '02:00',
+  frequency: getSetting('backup_frequency') === 'weekly' ? 'weekly' : 'daily',
+  weekday: getSetting('backup_weekday') || 1,
+  keep_days: getSetting('backup_keep_days') || 14,
+  keep_weeks: getSetting('backup_keep_weeks') ?? 8,
+  include_images: getSetting('backup_include_images') !== false,
+});
+
+/** Mốc theo lịch gần nhất đã qua (hoặc sắp tới nếu `dir` = 1) tính từ `now`. */
+function slot(now, cfg, dir) {
+  const today = businessDate(now.toISOString());
+  for (let i = 0; i < 9; i++) {
+    const date = addDays(today, dir * i);
+    if (cfg.frequency === 'weekly' && weekdayOf(date) !== cfg.weekday) continue;
+    const s = slotAt(date, cfg.time);
+    if (dir < 0 ? s <= now : s > now) return s;
+  }
+  return null;
+}
+export const lastSlot = (now, cfg) => slot(now, cfg, -1);
+export const nextSlot = (now, cfg) => slot(now, cfg, 1);
+
+/** Đến lúc sao lưu khi đã qua một mốc theo lịch mà chưa có bản nào được tạo sau mốc đó (máy tắt lúc đến giờ thì chạy bù khi bật lại). */
+export function backupDue(now = new Date(), cfg = scheduleConfig(), backups = listBackups()) {
+  if (!cfg.enabled) return false;
+  const s = lastSlot(now, cfg);
+  if (!s) return false;
+  return !backups.some((b) => new Date(b.created_at) >= s);
+}
+
+export function backupStatus(now = new Date()) {
+  const cfg = scheduleConfig();
+  const list = listBackups();
+  return { config: cfg, last_backup_at: list[0]?.created_at ?? null, next_at: cfg.enabled ? nextSlot(now, cfg)?.toISOString() ?? null : null, count: list.length, total_size: list.reduce((a, b) => a + b.size, 0) };
+}
+
 /**
- * Chạy khi server khởi động rồi kiểm tra lại mỗi giờ: tài khoản nào hôm nay chưa có bản sao lưu thì tạo.
+ * Chạy khi server khởi động rồi kiểm tra lại mỗi 5 phút: tài khoản nào đã tới mốc sao lưu theo cài đặt mà chưa có bản mới thì tạo.
  * Mỗi tài khoản một thư mục riêng; sổ tài khoản (master) sao lưu riêng ở backups/_master.
  */
-export function startBackupScheduler({ intervalMs = 3600_000 } = {}) {
+export function startBackupScheduler({ intervalMs = 300_000 } = {}) {
   const today = () => businessDate().replaceAll('-', '');
+  const lastClean = new Map();
   const tick = async () => {
     try {
       await forEachAccount(async (a) => {
-        try {
-          const c = cleanupUnusedImages();
-          if (c.archived) console.log(`Đã dọn ${c.archived} ảnh tải lên không dùng (${a.username})`);
-        } catch (e) { console.error('Dọn ảnh lỗi:', e); }
-        if (listBackups().some((b) => b.name.startsWith(`moso-${today()}`))) return;
+        if (Date.now() - (lastClean.get(a.username) ?? 0) > 3600_000) {
+          lastClean.set(a.username, Date.now());
+          try {
+            const c = cleanupUnusedImages();
+            if (c.archived) console.log(`Đã dọn ${c.archived} ảnh tải lên không dùng (${a.username})`);
+          } catch (e) { console.error('Dọn ảnh lỗi:', e); }
+        }
+        if (!backupDue()) return;
         const r = await runBackup();
         console.log(`Đã sao lưu tự động (${a.username}): ${r.name}`);
       });

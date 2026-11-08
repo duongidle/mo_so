@@ -15,10 +15,10 @@ const serve = (cash) => api.get.mockImplementation(async (path) => (path === '/a
 beforeEach(() => { api.get.mockReset(); serve(1000); });
 
 describe('Sổ kế toán: tab chia nhóm', () => {
-  it('đủ 12 tab trong 3 nhóm, mỗi tab đúng một nhóm', () => {
+  it('đủ 11 tab trong 3 nhóm, mỗi tab đúng một nhóm', () => {
     const all = GROUPS.flatMap(([, , t]) => t);
-    expect(all).toHaveLength(12);
-    expect(new Set(all).size).toBe(12);
+    expect(all).toHaveLength(11);
+    expect(new Set(all).size).toBe(11);
   });
   it('?tab= mở đúng nhóm và tab; đổi nhóm nhảy tới tab đầu của nhóm', async () => {
     renderAt('/accounting?tab=journal');
@@ -34,17 +34,6 @@ describe('Sổ kế toán: tab chia nhóm', () => {
     expect(await screen.findByText(/Số dư quỹ âm: kiểm tra thu chi chưa ghi hoặc số dư đầu kỳ/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Mở Quỹ tiền' }).getAttribute('href')).toBe('/expenses?tab=cash');
     expect(screen.getByText('− 500.000 ₫').className).toMatch(/h-red/);
-  });
-  it('form chi phí định kỳ mở thành trang nhập liệu, không nằm trong popup', async () => {
-    api.get.mockImplementation(async (path) => path === '/accounting/recurring-expenses' || path === '/recurring-expenses'
-      ? { data: [] }
-      : path === '/expense-categories' ? { data: [{ id: 'ecat_rent', name: 'Thuê' }] }
-        : { data: [] });
-    renderAt('/accounting?tab=recurring');
-    fireEvent.click(await screen.findByRole('button', { name: '+ Chi phí định kỳ' }));
-    expect(await screen.findByText('Thiết lập khoản chi và lịch tạo tự động.')).toBeTruthy();
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Huỷ' })).toBeTruthy();
   });
   it('form tài sản mở thành trang nhập liệu, không nằm trong popup', async () => {
     api.get.mockImplementation(async (path) => path === '/accounting/assets'
