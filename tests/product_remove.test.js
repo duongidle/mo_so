@@ -41,7 +41,7 @@ test('sản phẩm đã có lịch sử: chỉ ngừng kinh doanh, ẩn khỏi d
   assert.equal(getDb().prepare('SELECT active FROM shop_listings WHERE variant_id = ?').get(p.variants[0].id).active, 1);
 });
 
-test('còn hàng: phải xác nhận xuất huỷ; app lập phiếu hàng hỏng, tồn về 0, sổ kế toán khớp', async () => {
+test('còn hàng: phải xác nhận xuất huỷ; hệ thống lập phiếu hàng hỏng, tồn về 0, sổ kế toán khớp', async () => {
   const { api, nh, wh } = await setup();
   const p = await mk(api, nh, 'Còn hàng', 'H1');
   ok(await api.post('/purchases', { warehouse_id: wh.id, receive: true, lines: [{ variant_id: p.variants[0].id, qty: 10, unit_cost: 40000 }] }));

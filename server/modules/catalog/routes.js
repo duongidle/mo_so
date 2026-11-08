@@ -4,6 +4,7 @@ import { body, money, optionalText, query, patchOf, stockQty } from '../../lib/h
 import { tx } from '../../db/index.js';
 import { badRequest } from '../../lib/errors.js';
 import * as svc from './service.js';
+import * as bulk from './bulk.js';
 import { productRemovalImpact, removeProduct, restoreProduct } from './removal.js';
 
 const r = new Hono();
@@ -55,6 +56,7 @@ const productInput = z.object({
   image_url: optionalText,
   brand: optionalText,
   consumption_days: z.coerce.number().int().positive().nullish(),
+  warranty_days: z.coerce.number().int().positive().max(3650).nullish(), // bảo hành tính từ ngày hoàn thành đơn
   options: optionsInput.nullish(),
   // Đổi nhãn thuộc tính/giá trị (giữ id biến thể): [{ from, to, values: { cũ: mới } }]
   option_renames: z.array(z.object({ from: z.string().min(1), to: z.string().trim().min(1).max(40), values: z.record(z.string(), z.string().trim().min(1)).optional() })).max(3).optional(),
@@ -63,7 +65,7 @@ const productInput = z.object({
   shop_ids: z.array(z.string()).default([]),
   images: imagesInput.optional(),
   opening_warehouse_id: z.string().optional(),
-  // Giá trị trường tuỳ chỉnh của sản phẩm (vd ngu_hanh) theo shop `custom_shop_id`
+  // Giá trị trường tuỳ chỉnh của sản phẩm (ví dụ ngu_hanh) theo shop `custom_shop_id`
   custom: z.record(z.string(), z.any()).optional(),
   custom_shop_id: z.string().optional(),
 });
@@ -112,6 +114,23 @@ r.post('/products/:id/remove', async (c) => {
   return c.json({ data: tx(() => removeProduct(c.req.param('id'), { confirm: input.confirm, writeOff: input.write_off }, c.get('actor'))) });
 });
 r.post('/products/:id/restore', (c) => c.json({ data: tx(() => restoreProduct(c.req.param('id'), c.get('actor'))) }));
+const importRow = z.object({
+  name: z.string().max(200).nullish(), sku: z.string().max(64).nullish(), variant_name: z.string().max(200).nullish(),
+  price: z.union([z.number(), z.string()]).nullish(), cost: z.union([z.number(), z.string()]).nullish(), qty: z.union([z.number(), z.string()]).nullish(),
+  warehouse: z.string().max(100).nullish(), category: z.string().max(100).nullish(), brand: z.string().max(100).nullish(), unit: z.string().max(20).nullish(),
+  barcode: z.string().max(64).nullish(), min_stock: z.union([z.number(), z.string()]).nullish(), warranty_days: z.union([z.number(), z.string()]).nullish(),
+  description: z.string().max(2000).nullish(), item_type: z.string().max(30).nullish(),
+});
+const importBody = z.object({ rows: z.array(importRow).min(1).max(2000), warehouse_id: z.string().nullish(), shop_ids: z.array(z.string()).max(50).default([]) });
+r.post('/products/import/preview', async (c) => {
+  const input = await body(c, importBody);
+  return c.json({ data: bulk.planImport(input.rows, { warehouseId: input.warehouse_id, shopIds: input.shop_ids }) });
+});
+r.post('/products/import', async (c) => {
+  const input = await body(c, importBody);
+  return c.json({ data: tx(() => bulk.runImport(input.rows, { warehouseId: input.warehouse_id, shopIds: input.shop_ids }, c.get('actor'))) }, 201);
+});
+
 r.post('/products', async (c) => {
   const input = await body(c, productInput);
   return c.json({ data: tx(() => svc.createProduct(input, c.get('actor'))) }, 201);
@@ -121,8 +140,8 @@ r.patch('/products/:id', async (c) => {
     c,
     patchOf(productInput.omit({ variants: true, shop_ids: true })).extend({ variants: z.array(patchOf(variantInput).extend({ archived_at: z.string().nullish(), remove: z.boolean().optional() })).optional(), archived: z.boolean().optional() }),
   );
-  if (input.archived === true) throw badRequest('USE_REMOVE', 'Gỡ sản phẩm qua POST /products/:id/remove (có kiểm tra tồn kho, combo, đơn nháp); khôi phục qua POST /products/:id/restore');
-  if (input.archived === false) throw badRequest('USE_RESTORE', 'Khôi phục sản phẩm qua POST /products/:id/restore');
+  if (input.archived === true) throw badRequest('USE_REMOVE', 'Không đổi trạng thái ngừng kinh doanh trực tiếp. Dùng chức năng Xoá sản phẩm để hệ thống kiểm tra tồn kho, combo và đơn nháp trước khi gỡ.');
+  if (input.archived === false) throw badRequest('USE_RESTORE', 'Không đổi trạng thái trực tiếp. Dùng nút Khôi phục ở tab Đã ngừng kinh doanh.');
   delete input.archived;
   return c.json({ data: tx(() => svc.updateProduct(c.req.param('id'), input, c.get('actor'))) });
 });
@@ -143,10 +162,21 @@ r.get('/variants', (c) => {
       q: z.string().optional(),
       all: z.string().optional(),
       category_id: z.string().optional(),
+      channel_id: z.string().optional(), // giá riêng của kênh này (nếu đã đặt) thay giá niêm yết
       limit: z.coerce.number().int().min(1).max(200).default(30),
     }),
   );
-  return c.json({ data: svc.searchVariants({ shopId: q.shop_id, warehouseId: q.warehouse_id, q: q.q, categoryId: q.category_id, limit: q.limit, onlyListed: q.all !== '1' }) });
+  return c.json({ data: svc.searchVariants({ shopId: q.shop_id, warehouseId: q.warehouse_id, q: q.q, categoryId: q.category_id, limit: q.limit, onlyListed: q.all !== '1', channelId: q.channel_id }) });
+});
+
+// Giá theo kênh
+r.get('/channel-prices', (c) => {
+  const q = query(c, z.object({ product_id: z.string().optional(), variant_id: z.string().optional(), shop_id: z.string().optional() }));
+  return c.json({ data: svc.listChannelPrices({ productId: q.product_id, variantId: q.variant_id, shopId: q.shop_id }) });
+});
+r.put('/channel-prices', async (c) => {
+  const items = await body(c, z.array(z.object({ shop_id: z.string(), channel_id: z.string(), variant_id: z.string(), price: money.nullable() })).min(1).max(500));
+  return c.json({ data: { updated: tx(() => svc.setChannelPrices(items, c.get('actor'))) } });
 });
 
 // Niêm yết theo shop

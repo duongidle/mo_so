@@ -81,7 +81,7 @@ export default function ExportOrders({ filters, onClose }) {
         </div>
         <p className="small muted" style={{ margin: 0 }}>Tiền là số nguyên đồng (cộng trực tiếp được). Ngày giờ theo giờ Việt Nam. CSV mở được bằng Excel, có đủ tiếng Việt.</p>
       </div>
-      {tooMany && <div className="alert err small">Quá {num(n.max_rows)} dòng. Hãy thu hẹp khoảng ngày hoặc bộ lọc.</div>}
+      {tooMany && <div className="alert err small">Quá {num(n.max_rows)} dòng. Vui lòng thu hẹp khoảng ngày hoặc bộ lọc.</div>}
       {n && rows === 0 && <div className="alert warn small">Không có đơn nào khớp bộ lọc.</div>}
       <ErrorBox error={error} />
     </Modal>

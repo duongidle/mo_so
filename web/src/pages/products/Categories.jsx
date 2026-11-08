@@ -30,7 +30,7 @@ export default function Categories({ onChanged }) {
       <Async state={state}>
         {({ data }) => {
           const list = flattenTree(data);
-          return !list.length ? <Empty>Chưa có danh mục nào. Bấm “+ Danh mục” để thêm.</Empty> : (
+          return !list.length ? <Empty>Chưa có danh mục nào. Nhấn “+ Danh mục” để thêm.</Empty> : (
             <Card flat>
               {list.map((c) => (
                 <div key={c.id} className="cat-row" style={{ paddingLeft: 12 + c.depth * 22 }}>

@@ -38,7 +38,7 @@ export const lineTotal = (l) => Math.max(0, grossOf(l) - l.discount);
  * Tính tiền theo đúng công thức của server (computeHeader).
  * - subtotal = Σ đơn giá × SL; goods = subtotal − giảm giá dòng − giảm giá đơn
  * - total (khách phải trả) = goods + phí ship khách trả
- * - net (shop thực nhận) = total − phí sàn − ship shop chịu. Phí sàn và ship shop chịu chỉ tính khi kênh là sàn.
+ * - net (shop thực nhận) = total − phí sàn − ship shop chịu. Phí sàn chỉ tính khi kênh là sàn; ship shop chịu tính ở mọi kênh.
  * - amountDue: kênh sàn thu `net` (sàn trừ phí rồi mới trả shop), kênh khác thu `total`
  * - profit: net − giá vốn ước tính (giá vốn bình quân hiện tại, chưa phải giá vốn chụp lúc xác nhận); null nếu thiếu giá vốn
  */
@@ -50,7 +50,7 @@ export function computeTotals({ lines, discount = 0, shipping = 0, platformFee =
   const goods = afterLines - orderDiscount;
   const total = goods + toMoney(shipping);
   const fee = marketplace ? toMoney(platformFee) : 0;
-  const ship = marketplace ? toMoney(sellerShipping) : 0;
+  const ship = toMoney(sellerShipping); // ship shop chịu: mọi kênh (sàn trừ vào tiền sàn trả, kênh khác shop trả hãng vận chuyển)
   const net = total - fee - ship;
   const known = lines.length > 0 && lines.every((l) => l.avg_cost !== null && l.avg_cost !== undefined);
   const cogs = known ? lines.reduce((a, l) => a + l.qty * l.avg_cost, 0) : null;
@@ -122,6 +122,7 @@ export function serverLines(lines, edits, { withPrice = true } = {}) {
   return lines.map((l) => {
     const e = activeEdit(l, edits[l.uid]);
     const out = { variant_id: l.variant_id, qty: l.qty };
+    if (l.is_gift) out.is_gift = true; // dòng quà tặng kèm giữ cờ khi sửa đơn nháp
     if (withPrice) { out.unit_price = l.price; out.discount_amount = Math.min(l.discount, grossOf(l)); }
     if (e && !editMismatches(e).length) out.allocations = editToAllocations(e);
     return out;
@@ -155,7 +156,7 @@ export function validateForm({ lines, discount, edits, totals }) {
 }
 
 /** Payload tạo/sửa đơn */
-export function buildPayload({ shopId, channelId, externalId, customerId, address, lines, edits, discount, shipping, platformFee, sellerShipping, marketplace, note, status, payments }) {
+export function buildPayload({ shopId, channelId, externalId, customerId, address, lines, edits, discount, shipping, platformFee, sellerShipping, marketplace, note, dueDate, status, payments }) {
   const body = {
     customer_id: customerId || null,
     shipping_address: address?.trim() || null,
@@ -163,8 +164,9 @@ export function buildPayload({ shopId, channelId, externalId, customerId, addres
     discount_amount: toMoney(discount),
     shipping_fee: toMoney(shipping),
     platform_fee_amount: marketplace ? toMoney(platformFee) : 0,
-    seller_shipping_amount: marketplace ? toMoney(sellerShipping) : 0,
+    seller_shipping_amount: toMoney(sellerShipping),
     note: note?.trim() || null,
+    due_date: dueDate || null,
   };
   if (status === undefined) return body; // sửa đơn nháp: không đổi shop/kênh/trạng thái
   return { shop_id: shopId, channel_id: channelId, external_id: externalId?.trim() || null, ...body, status, payments: payments || [] };

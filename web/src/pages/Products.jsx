@@ -6,6 +6,7 @@ import { Async, Card, Chips, Empty, ErrorBox, Field, Modal, PageHeader, SearchBo
 import { vnd, num } from '../lib.js';
 import { Element } from '../components/Motif.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
+import ProductImport from '../components/ProductImport.jsx';
 import Categories from './products/Categories.jsx';
 import { flattenTree, indent } from '../lib/categories.js';
 
@@ -21,6 +22,7 @@ export default function Products() {
   const [itemType, setItemType] = useState('');
   const [cat, setCat] = useState('');
   const [sync, setSync] = useState(false);
+  const [importing, setImporting] = useState(false);
   const cats = useAsync(() => api.get('/categories'), []);
   const catList = useMemo(() => flattenTree(cats.data?.data || []), [cats.data]);
   const catName = useMemo(() => Object.fromEntries(catList.map((c) => [c.id, c.name])), [catList]);
@@ -35,6 +37,7 @@ export default function Products() {
         title="Sản phẩm"
         actions={<>
           {!isAll && shops.length > 1 && <button className="btn" onClick={() => setSync(true)}>Đồng bộ từ shop khác</button>}
+          <button className="btn" onClick={() => setImporting(true)}>Nhập từ Excel</button>
           <Link to="/products/combo/new" className="btn">+ Combo</Link>
           <Link to="/products/new" className="btn primary">+ Thêm mặt hàng</Link>
         </>}
@@ -52,7 +55,7 @@ export default function Products() {
       {notice && <div className="alert ok small" role="status">{notice}</div>}
       {tab === 'categories' ? <Categories onChanged={cats.reload} /> : (
         <Async state={state}>
-          {({ data }) => !data.length ? <Empty>{archivedTab ? 'Chưa có sản phẩm nào ngừng kinh doanh.' : q || type || cat ? 'Không có sản phẩm khớp bộ lọc.' : 'Chưa có sản phẩm. Bấm “+ Sản phẩm” để thêm.'}</Empty> : (
+          {({ data }) => !data.length ? <Empty>{archivedTab ? 'Chưa có sản phẩm nào ngừng kinh doanh.' : q || type || cat ? 'Không có sản phẩm khớp bộ lọc.' : 'Chưa có sản phẩm. Nhấn “+ Sản phẩm” để thêm.'}</Empty> : (
             <Card flat className="list-card sticky-head"><div className="table-wrap"><table className="stackable product-table">
               <thead><tr><th>Sản phẩm</th><th className="hide-sm num">Biến thể</th><th className="num">Giá bán</th><th className="num">Tồn</th>{fengShui && <th className="hide-sm">Ngũ hành</th>}<th className="hide-sm">Trạng thái</th></tr></thead>
               <tbody>{data.map((p) => {
@@ -76,6 +79,7 @@ export default function Products() {
           )}
         </Async>
       )}
+      {importing && <ProductImport onClose={() => setImporting(false)} onDone={() => { setImporting(false); state.reload(); cats.reload(); }} />}
       {sync && <SyncForm onClose={() => setSync(false)} onSaved={() => { setSync(false); state.reload(); }} />}
     </div>
   );

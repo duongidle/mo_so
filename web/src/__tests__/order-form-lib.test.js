@@ -9,13 +9,19 @@ const line = (o = {}) => ({ uid: 'u1', variant_id: 'var_1', sku: 'TD-1', qty: 3,
 
 describe('computeTotals', () => {
   it('đơn thường: khách trả = hàng − giảm + ship; cần thu = total; lãi = net − giá vốn', () => {
-    const t = computeTotals({ lines: [line({ discount: 10000 })], discount: 20000, shipping: 15000, platformFee: 99999, sellerShipping: 99999, marketplace: false });
+    const t = computeTotals({ lines: [line({ discount: 10000 })], discount: 20000, shipping: 15000, platformFee: 99999, sellerShipping: 0, marketplace: false });
     expect(t.subtotal).toBe(300000);
     expect(t.goods).toBe(300000 - 10000 - 20000);
     expect(t.total).toBe(270000 + 15000);
     expect(t.net).toBe(t.total); // phí sàn không tính khi kênh không phải sàn
     expect(t.amountDue).toBe(t.total);
     expect(t.profit).toBe(t.total - 3 * 40000);
+  });
+  it('đơn thường có ship shop chịu: trừ vào lãi, không đổi số cần thu', () => {
+    const t = computeTotals({ lines: [line()], shipping: 20000, sellerShipping: 25000, platformFee: 9999, marketplace: false });
+    expect(t.net).toBe(t.total - 25000);
+    expect(t.amountDue).toBe(t.total);
+    expect(t.profit).toBe(t.total - 25000 - 120000);
   });
   it('kênh sàn: shop thực nhận trừ phí sàn và ship shop chịu, cần thu = net', () => {
     const t = computeTotals({ lines: [line()], shipping: 20000, platformFee: 30000, sellerShipping: 10000, marketplace: true });
@@ -92,7 +98,7 @@ describe('thanh toán và payload', () => {
   });
   it('payload tạo đơn luôn có customer_id (không gửi customer inline) và bỏ phí sàn khi không phải kênh sàn', () => {
     const body = buildPayload({ shopId: 's1', channelId: 'direct', externalId: ' ', customerId: 'cus_1', address: ' 12 Lê Lợi ', lines: [line()], edits: {}, discount: 1000, shipping: 2000, platformFee: 500, sellerShipping: 700, marketplace: false, note: '', status: 'completed', payments: [{ amount: 1, method: 'cash' }] });
-    expect(body).toMatchObject({ shop_id: 's1', channel_id: 'direct', external_id: null, customer_id: 'cus_1', shipping_address: '12 Lê Lợi', discount_amount: 1000, shipping_fee: 2000, platform_fee_amount: 0, seller_shipping_amount: 0, status: 'completed' });
+    expect(body).toMatchObject({ shop_id: 's1', channel_id: 'direct', external_id: null, customer_id: 'cus_1', shipping_address: '12 Lê Lợi', discount_amount: 1000, shipping_fee: 2000, platform_fee_amount: 0, seller_shipping_amount: 700, status: 'completed' });
     expect(body.customer).toBeUndefined();
     expect(body.lines[0]).toEqual({ variant_id: 'var_1', qty: 3, unit_price: 100000, discount_amount: 0 });
   });

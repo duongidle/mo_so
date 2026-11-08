@@ -694,3 +694,19 @@ export function dashboard(filter) {
     cashflow: cashflow(f),
   };
 }
+
+/** Trả hàng theo lý do trong kỳ: số phiếu, giá trị hàng trả, giá vốn hàng hỏng không nhập lại. Phiếu cũ chưa chọn lý do vào nhóm riêng. */
+export function returnReasons(f) {
+  const shopSql = f.shopIds ? ` AND r.shop_id IN (${f.shopIds.map(() => '?').join(',')})` : '';
+  const shopParams = f.shopIds || [];
+  const rows = db()
+    .prepare(
+      `SELECT COALESCE(r.reason_code, 'none') AS reason_code, COUNT(*) AS returns_count, COALESCE(SUM(r.goods_amount),0) AS goods_amount
+       FROM order_returns r WHERE r.business_date >= ? AND r.business_date <= ?${shopSql} GROUP BY 1 ORDER BY goods_amount DESC`,
+    )
+    .all(f.from, f.to, ...shopParams);
+  const wo = db()
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(total_cost),0) AS cost FROM return_write_offs r WHERE r.business_date >= ? AND r.business_date <= ?${shopSql}`)
+    .get(f.from, f.to, ...shopParams);
+  return { rows, write_offs: { count: wo.n, cost: wo.cost } };
+}

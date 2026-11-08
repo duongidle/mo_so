@@ -68,3 +68,13 @@ describe('returnSummary', () => {
     expect(returnSummary(r, fmt, false)).toContain('giữ lại');
   });
 });
+
+describe('giao không thành', () => {
+  it('nút nhanh chọn lý do "Khách không nhận hàng" và đặt hàng chờ về', () => {
+    const o = { is_marketplace: false, shipping_fee: 30000, returned_shipping_amount: 0, paid_amount: 0, lines: [{ id: 'l1', qty: 2, returned_qty: 0, line_total: 400000, allocated_order_discount: 0 }] };
+    const f = codRefusedForm(o, {});
+    expect(f.reasonCode).toBe('customer_refused');
+    expect(f.awaitingGoods).toBe(true);
+    expect(f.lines.l1).toEqual({ qty: 2, restock: true });
+  });
+});

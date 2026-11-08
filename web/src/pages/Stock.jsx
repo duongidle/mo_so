@@ -1,3 +1,4 @@
+import StockLots from './StockLots.jsx';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../api.js';
@@ -33,8 +34,8 @@ export default function Stock() {
   return (
     <div className="page stack">
       <PageHeader title="Kho" actions={<><button className="btn" onClick={() => setIssue(true)}>Xuất vật tư</button>{warehouses.length > 1 && <button className="btn" onClick={() => setTransfer(true)}>Chuyển kho</button>}<button className="btn" onClick={() => setAdj({ kind: 'adjust', lines: [] })}>Điều chỉnh nhanh</button></>} />
-      <Toolbar><Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê'], ['close', 'Chốt kho'], ['reports', 'Báo cáo'], ['consumption', 'Tiêu hao vật tư']]} value={tab} onChange={setTab} /></Toolbar>
-      {tab === 'counts' ? <StockCounts /> : tab === 'close' ? <StockClose /> : <>
+      <Toolbar><Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê'], ['lots', 'Lô & hạn dùng'], ['close', 'Chốt kho'], ['reports', 'Báo cáo'], ['consumption', 'Tiêu hao vật tư']]} value={tab} onChange={setTab} /></Toolbar>
+      {tab === 'counts' ? <StockCounts /> : tab === 'lots' ? <StockLots /> : tab === 'close' ? <StockClose /> : <>
       <Toolbar>
         <select value={wh} onChange={(e) => setWh(e.target.value)} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
         {['reports', 'consumption'].includes(tab) && <><input aria-label="Từ ngày" type="date" value={period.from} onChange={(e) => setPeriod((p) => ({ ...p, from: e.target.value }))} /><input aria-label="Đến ngày" type="date" value={period.to} onChange={(e) => setPeriod((p) => ({ ...p, to: e.target.value }))} /></>}
@@ -56,7 +57,7 @@ export default function Stock() {
                     <tbody>{r.data.map((i) => (
                       <tr key={i.variant_id} className="click" onClick={() => setHist(i)}>
                         <td><div className="row" style={{ gap: 8 }}><ProductThumb src={i.image_url} name={i.product_name} size={36} /><div>{i.product_name}{i.variant_name ? ` — ${i.variant_name}` : ''}{i.is_bundle && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<div className="small muted">{i.sku}{i.is_bundle && ' · bán được theo thành phần'}</div></div></div></td>
-                        <td className="num"><b className={i.is_negative ? 'h-red' : i.is_low ? 'h-yellow' : ''}>{num(i.on_hand)}</b>{i.is_low && <div className="small h-yellow">sắp hết</div>}{i.is_slow && <div className="small muted">bán chậm</div>}</td>
+                        <td className="num"><b className={i.is_negative ? 'h-red' : i.is_low ? 'h-yellow' : ''}>{num(i.on_hand)}</b>{i.reserved_qty > 0 && <div className="small muted">giữ {num(i.reserved_qty)} cho đơn nháp</div>}{i.is_low && <div className="small h-yellow">sắp hết</div>}{i.is_slow && <div className="small muted">bán chậm</div>}</td>
                         <td className="num">{i.is_bundle ? '—' : vnd(i.avg_cost)}</td><td className="num">{i.is_bundle ? '—' : vnd(i.stock_value)}</td>
                         <td className="num small">{i.days_left === null ? '—' : `${i.days_left} ngày`}</td>
                       </tr>))}</tbody>

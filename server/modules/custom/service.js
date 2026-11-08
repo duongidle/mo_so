@@ -509,7 +509,7 @@ export function previewFormula({ entityType, shopId = null, formula, entityId = 
         : ' WHERE id IN (SELECT v.product_id FROM shop_listings l JOIN variants v ON v.id = l.variant_id WHERE l.shop_id = ?)';
       row = db().prepare(`SELECT * FROM ${T}${where} ORDER BY id DESC LIMIT 1`).get(...(where ? [shopId] : []));
     }
-    if (!row) return { value: null, reason: null, sample: null, note: 'Chưa có bản ghi nào để xem thử' };
+    if (!row) return { value: null, reason: null, sample: null, note: 'Chưa có bản ghi nào để xem trước' };
     const fields = listFields(entityType, { shopId });
     const lookup = makeLookup(entityType, row, shopId, fields, rawValues(entityType, row.id, shopId));
     const r = evaluateExplain(tree, lookup, { subject: SUBJECT[entityType], labelOf: labelResolver(entityType, fields) });

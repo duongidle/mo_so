@@ -68,6 +68,7 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
   const [fees, setFees] = useState({ shipping_fee: 0, other_fee: 0, discount_amount: 0 });
   const [paid, setPaid] = useState(0);
   const [shipTo, setShipTo] = useState('supplier'); // ai nhận tiền ship: nhà cung cấp hay bên vận chuyển
+  const [dueDate, setDueDate] = useState('');
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const sup = useAsync(() => api.get('/suppliers'), []);
@@ -81,8 +82,8 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
   useEffect(() => { onDirty?.(dirty); }, [dirty, onDirty]);
   const save = (receive) => run(async () => {
     await api.post('/purchases', {
-      supplier_id: supplier || null, warehouse_id: wh, receive, shipping_payee: shipTo, paid_amount: receive ? Number(paid) || 0 : 0, ...Object.fromEntries(Object.entries(fees).map(([k, v]) => [k, Number(v) || 0])),
-      lines: lines.map((l) => ({ variant_id: l.id, qty: Number(l.qty), unit_cost: Number(l.unit_cost) })),
+      supplier_id: supplier || null, warehouse_id: wh, receive, shipping_payee: shipTo, due_date: dueDate || null, paid_amount: receive ? Number(paid) || 0 : 0, ...Object.fromEntries(Object.entries(fees).map(([k, v]) => [k, Number(v) || 0])),
+      lines: lines.map((l) => ({ variant_id: l.id, qty: Number(l.qty), unit_cost: Number(l.unit_cost), lot_no: l.lot_no?.trim() || null, expiry_date: l.expiry_date || null })),
     }, { 'Idempotency-Key': crypto.randomUUID?.() });
     onDirty?.(false);
     onSaved();
@@ -115,7 +116,8 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
             )}
             <Field label="Phí khác"><MoneyInput value={fees.other_fee} onChange={(e) => setFees({ ...fees, other_fee: e.target.value })} /></Field>
             <Field label="Chiết khấu"><MoneyInput value={fees.discount_amount} onChange={(e) => setFees({ ...fees, discount_amount: e.target.value })} /></Field>
-            <Field label="Đã trả nhà cung cấp" hint="Chỉ ghi nhận khi bấm Nhận hàng & lưu"><MoneyInput value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
+            <Field label="Hạn trả nhà cung cấp (tuỳ chọn)" hint="Hệ thống nhắc ở Loyalty → Hôm nay khi sắp đến hạn"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Hạn trả nhà cung cấp" /></Field>
+            <Field label="Đã trả nhà cung cấp" hint="Chỉ ghi nhận khi nhấn Nhận hàng & lưu"><MoneyInput value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
             <div>
               <div className="ledger-line"><span>Tiền hàng</span><span className="num">{vnd(sub)}</span></div>
               {carrier > 0 && <div className="ledger-line"><span>Ship trả bên vận chuyển</span><span className="num">{vnd(carrier)}</span></div>}
@@ -133,12 +135,18 @@ export function PurchaseForm({ onClose, onSaved, onDirty }) {
             <div className="pl-lines">
               <div className="pl-head small muted"><span>Hàng</span><span>Số lượng</span><span>Giá nhập</span><span className="num">Thành tiền</span><span /></div>
               {lines.map((l) => (
-                <div key={l.id} className="pl-row">
+                <div key={l.id} className="pl-wrap">
+                <div className="pl-row">
                   <div className="pl-name"><div>{l.name}</div><div className="small muted">{l.sku}</div></div>
                   <input type="number" min="1" value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} aria-label="Số lượng" />
                   <MoneyInput value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} aria-label="Giá nhập" />
                   <b className="num">{vnd((Number(l.qty) || 0) * (Number(l.unit_cost) || 0))}</b>
                   <button type="button" className="btn sm" aria-label={`Bỏ ${l.sku}`} onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))}>✕</button>
+                </div>
+                <div className="pl-lot small muted">
+                  <label>Lô <input value={l.lot_no || ''} onChange={(e) => upd(l.id, { lot_no: e.target.value })} aria-label={`Số lô ${l.sku}`} placeholder="tuỳ chọn" /></label>
+                  <label>Hạn dùng <input type="date" value={l.expiry_date || ''} onChange={(e) => upd(l.id, { expiry_date: e.target.value })} aria-label={`Hạn dùng ${l.sku}`} /></label>
+                </div>
                 </div>
               ))}
             </div>

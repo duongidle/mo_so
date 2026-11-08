@@ -77,7 +77,7 @@ describe('FieldsManager: xoá trường', () => {
     render(<FieldsManager entities={['customer']} shop={SHOP} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Xoá Dịp mua' }));
     expect(await screen.findByText(/7/)).toBeTruthy();
-    expect(screen.getByText(/bấm “Ẩn”/)).toBeTruthy();
+    expect(screen.getByText(/nhấn “Ẩn”/)).toBeTruthy();
     expect(api.del).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Xoá hẳn' }));
     await waitFor(() => expect(api.del).toHaveBeenCalledWith('/custom/fields/f1', { confirm: true }));

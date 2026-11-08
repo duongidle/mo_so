@@ -39,7 +39,7 @@ export default function RemoveProduct({ product, onClose, onDone }) {
             {!blocked && d.needs_write_off && (
               <label className="check small">
                 <input type="checkbox" checked={writeOff} onChange={(e) => setWriteOff(e.target.checked)} />
-                Xuất huỷ {num(d.stock.qty)} sản phẩm còn trong kho: app lập phiếu hàng hỏng, giá vốn {vnd(d.stock.value)} tính vào chi phí hàng hỏng
+                Xuất huỷ {num(d.stock.qty)} sản phẩm còn trong kho: hệ thống lập phiếu hàng hỏng, giá vốn {vnd(d.stock.value)} tính vào chi phí hàng hỏng
               </label>
             )}
             {!blocked && (

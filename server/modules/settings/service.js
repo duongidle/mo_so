@@ -12,11 +12,16 @@ export const DEFAULT_SETTINGS = {
   business_name: 'Mở Sổ',
   enabled_platforms: DEFAULT_ENABLED_PLATFORMS, // nền tảng bán hàng đang kết nối; chỉ đổi qua /platforms/:id/enable|disable
   expense_allocation: 'revenue', // revenue | equal | fixed
-  tax_enabled: false, // ước tính thuế: mặc định tắt. App không tự đặt mức thuế nào, người dùng tự nhập theo quy định hiện hành
+  tax_enabled: false, // ước tính thuế: mặc định tắt. Hệ thống không tự đặt mức thuế nào, người dùng tự nhập theo quy định hiện hành
   tax_rules: [], // [{ name, rate_pct, base: net_revenue | revenue_with_shipping | net_profit, exempt_threshold_year }]
+  payment_terms_days: 0, // số ngày khách được nợ kể từ ngày đơn khi đơn không đặt hạn; 0 = không đặt hạn mặc định
+  expiry_warn_days: 30, // cảnh báo lô hàng còn dưới số ngày này tới hạn dùng
+  payout_overdue_days: 10, // đơn sàn giao xong quá số ngày này mà chưa nhận tiền thì báo nên khiếu nại với sàn (0 = tắt)
+  return_window_days: 0, // thời hạn nhận trả hàng kể từ ngày hoàn thành đơn (ngày); 0 = không giới hạn
+  costing_method: 'average', // average | fifo; chỉ đổi qua PUT /costing-method để lớp giá được dựng lại cùng lúc
   stock_lock_date: null, // chốt kho: chỉ đặt qua POST /stock-close (có chụp tồn), không qua PATCH /settings
   accounting_lock_date: null, // khoá sổ: chứng từ tay, chi phí, thanh toán, chuyển quỹ, tài sản có ngày ≤ ngày này không tạo/sửa/huỷ được (PERIOD_LOCKED). Đặt qua POST /accounting/lock để có ảnh chụp số liệu
-  expense_allocation_fixed: {}, // khi expense_allocation = fixed: { shop_id: tỷ lệ % } (không cần cộng đúng 100, app chia theo tỷ lệ)
+  expense_allocation_fixed: {}, // khi expense_allocation = fixed: { shop_id: tỷ lệ % } (không cần cộng đúng 100, hệ thống chia theo tỷ lệ)
   health_thresholds: {
     gross_margin_pct: { warn: 35, bad: 25, direction: 'higher_better' },
     cancel_rate_pct: { warn: 5, bad: 10, direction: 'lower_better' },
@@ -40,18 +45,23 @@ export function getSetting(key) {
 export const TAX_BASES = ['net_revenue', 'revenue_with_shipping', 'net_profit'];
 
 function validate(patch) {
-  if ('enabled_platforms' in patch) throw badRequest('INVALID_SETTING', 'Bật/tắt nền tảng bán hàng qua POST /platforms/:id/enable hoặc /disable để kênh, mẫu import và quỹ được cập nhật cùng lúc');
-  if ('tax_enabled' in patch && typeof patch.tax_enabled !== 'boolean') throw badRequest('INVALID_SETTING', 'tax_enabled phải là true/false');
+  if ('enabled_platforms' in patch) throw badRequest('INVALID_SETTING', 'Nền tảng bán hàng không đổi ở đây. Bật hoặc tắt ở Cài đặt → Nền tảng để kênh, mẫu nhập đơn và quỹ được cập nhật cùng lúc.');
+  if ('tax_enabled' in patch && typeof patch.tax_enabled !== 'boolean') throw badRequest('INVALID_SETTING', 'Bật hoặc tắt ước tính thuế chỉ nhận giá trị bật hoặc tắt.');
   if ('tax_rules' in patch) {
     const t = patch.tax_rules;
     const ok = Array.isArray(t) && t.length <= 10 && t.every((r) => r && typeof r.name === 'string' && r.name.trim() && r.name.length <= 60 && typeof r.rate_pct === 'number' && r.rate_pct >= 0 && r.rate_pct <= 100 && TAX_BASES.includes(r.base) && Number.isInteger(r.exempt_threshold_year ?? 0) && (r.exempt_threshold_year ?? 0) >= 0);
     if (!ok) throw badRequest('INVALID_SETTING', 'Quy tắc thuế: tối đa 10 dòng; mỗi dòng có tên, tỷ lệ 0–100 %, cơ sở tính (net_revenue | revenue_with_shipping | net_profit) và ngưỡng miễn thuế cả năm (số nguyên ≥ 0)');
   }
-  if ('stock_lock_date' in patch) throw badRequest('INVALID_SETTING', 'Chốt kho đặt qua POST /stock-close (và mở lại qua POST /stock-close/reopen) để có chụp tồn và nhật ký');
+  if ('costing_method' in patch) throw badRequest('INVALID_SETTING', 'Phương pháp giá vốn đổi ở Cài đặt → Ngưỡng & kho để hệ thống dựng lại lớp giá và ghi nhật ký.');
+  if ('stock_lock_date' in patch) throw badRequest('INVALID_SETTING', 'Chốt kho và mở lại kỳ kho thực hiện ở Kho → Chốt kho để có ảnh chụp tồn và nhật ký.');
   if ('accounting_lock_date' in patch) {
     const v = patch.accounting_lock_date;
-    if (v !== null && !(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()))) throw badRequest('INVALID_SETTING', 'Ngày khoá sổ phải là YYYY-MM-DD hoặc null (không khoá)');
+    if (v !== null && !(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()))) throw badRequest('INVALID_SETTING', 'Ngày khoá sổ phải có dạng năm-tháng-ngày (ví dụ 2026-10-31), hoặc để trống nếu không khoá.');
   }
+  if ('payment_terms_days' in patch && !(Number.isInteger(patch.payment_terms_days) && patch.payment_terms_days >= 0 && patch.payment_terms_days <= 365)) throw badRequest('INVALID_SETTING', 'Số ngày công nợ mặc định là số từ 0 tới 365 (0 = không đặt hạn)');
+  if ('expiry_warn_days' in patch && !(Number.isInteger(patch.expiry_warn_days) && patch.expiry_warn_days >= 1 && patch.expiry_warn_days <= 730)) throw badRequest('INVALID_SETTING', 'Số ngày cảnh báo hết hạn là số từ 1 tới 730');
+  if ('payout_overdue_days' in patch && !(Number.isInteger(patch.payout_overdue_days) && patch.payout_overdue_days >= 0 && patch.payout_overdue_days <= 365)) throw badRequest('INVALID_SETTING', 'Số ngày báo đơn sàn chưa trả tiền là số từ 0 tới 365 (0 = tắt)');
+  if ('return_window_days' in patch && !(Number.isInteger(patch.return_window_days) && patch.return_window_days >= 0 && patch.return_window_days <= 3650)) throw badRequest('INVALID_SETTING', 'Thời hạn trả hàng là số ngày từ 0 tới 3650 (0 = không giới hạn)');
   if ('expense_allocation' in patch && !['revenue', 'equal', 'fixed'].includes(patch.expense_allocation)) {
     throw badRequest('INVALID_SETTING', 'Cách phân bổ chi phí chung phải là revenue, equal hoặc fixed');
   }

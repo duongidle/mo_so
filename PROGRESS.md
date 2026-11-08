@@ -1,5 +1,41 @@
 # Nhật ký thực hiện
 
+### 2026-11-08 — Cẩm nang từng bước trong trang Hướng dẫn
+
+- Đưa cẩm nang (trước đó là trang web riêng) vào Hướng dẫn, đứng đầu danh sách (`/guide/cam-nang`): 28 trang, màn hình mô phỏng chạy trong Shadow DOM, phát lại liên tục, có Tạm dừng. Thêm hai tình huống: nhập hàng trả nhà cung cấp nhiều đợt, khách trả tiền nhiều lần. Chỉnh văn phong theo quy tắc chung ("hệ thống", "nhấn", "Vui lòng", xưng "bạn").
+- Sửa lỗi khi dựng: nội dung bìa còn sót dưới các trang khác vì React dùng lại cùng một thẻ; đã đặt khoá theo trang và có test.
+- Kiểm chứng: `handbook.test.jsx` (6 test, gồm chạy kịch bản tới trạng thái cuối trong Shadow DOM), toàn bộ 255 test giao diện, 226 test API, build. Đã mở thử trong trình duyệt thật: bìa, chuyển trang, vòng phát lại sau khoảng 22 giây. Chưa xem trên khổ điện thoại.
+
+### 2026-11-08 — Nhập hàng loạt, nhắc nợ, nhật ký, thông báo, nhãn giao hàng, quà tặng kèm, chỉnh văn phong
+
+- Văn phong: "app" → "hệ thống", "bấm" → "nhấn", "Xem thử" → "Xem trước", "Hãy" → "Vui lòng", bỏ xưng hô thân mật, "Ví dụ:" thống nhất; viết lại các thông báo lỗi nói thẳng đường dẫn API.
+- Migrations 042 (hạn nợ, mẫu tin `debt`), 043 (thông báo), 044 (khuyến mãi `gift`, `order_lines.is_gift`; dựng lại bảng khuyến mãi và lượt dùng).
+- Server: nhập sản phẩm hàng loạt, `/loyalty/debts`, `/system/audit`, `/notifications/*` + job 30 phút, `/orders/:id/label` và `/orders/labels` (Code 128 tự dựng), quà tặng trong khuyến mãi và đơn.
+- Giao diện: Nhập từ Excel (Sản phẩm), thẻ Nhắc nợ (Loyalty → Hôm nay), hạn thanh toán ở form đơn/chi tiết đơn/phiếu nhập, Cài đặt → Nhật ký và → Thông báo, chuông thông báo ở thanh trên, nút In nhãn giao hàng, loại khuyến mãi "Tặng quà kèm".
+- Kiểm chứng: `tests/returns_docs.test.js` (nay 24 test), 249 test giao diện, build qua. CHƯA thử Telegram thật (chỉ thử bằng hàm gửi giả), CHƯA thử bằng trình duyệt thật các màn mới của đợt này, CHƯA in nhãn thật ra giấy 100×150 để kiểm cỡ và độ quét mã vạch.
+- Chưa làm: email và Zalo OA trực tiếp, bảng giá sỉ (chủ shop không cần).
+
+### 2026-11-08 — Chín việc về sự cố bán hàng (COD, giá kênh, khuyến mãi, sửa đơn, giao từng phần, lô, đối soát sàn, đổi trả, vận đơn)
+
+- Migrations 036–041: `orders.parent_order_id/reserve_stock/reserved_until`, `products.warranty_days`; `carriers`, `shipments`, `carrier_statements(+lines)`; `payout_adjustments`; `channel_prices`; `promotions`, `promotion_uses`; `stock_lots`, `purchase_lines.lot_no/expiry_date`.
+- Server: sửa đơn đã xác nhận (hoàn kho rồi trừ lại), tách đơn, giữ hàng, thời hạn trả hàng, tra cứu bảo hành, vận chuyển + phiếu đối soát COD, đối soát sàn lệch, giá theo kênh, khuyến mãi (module Loyalty), lô FEFO.
+- Giao diện: sửa đơn đã xác nhận, giao cho hãng, tách đơn, giữ hàng, tab Chi phí & đối soát → Vận chuyển (nhập file đối soát đoán cột), Đối soát sàn có số thực trả và cảnh báo quá hạn, Loyalty → Khuyến mãi, mã giảm giá và giá kênh ở form đơn, giá theo kênh và bảo hành ở form sản phẩm, lô/hạn ở phiếu nhập, Kho → Lô & hạn dùng, Chứng từ → Tra cứu bảo hành, cài đặt thời hạn trả/quá hạn sàn/cảnh báo hết hạn.
+- Kiểm chứng: `tests/returns_docs.test.js` (nay 17 test, mỗi tính năng có test API), 243 test giao diện, build qua. CHƯA thử bằng trình duyệt thật và CHƯA thử với file đối soát thật của GHN/GHTK (cột đoán theo từ khoá, có bảng chọn cột để chỉnh).
+- Còn thiếu: nối API hãng vận chuyển, phí hoàn tự cấn, lô cho hàng trả về, khuyến mãi khi sửa đơn nháp.
+
+### 2026-11-08 — Trả hàng, ship shop trả, chứng từ
+
+- Migration 035: `order_returns.reason_code`, bảng `return_write_offs`. Đơn đang giao không huỷ được (`CANCEL_SHIPPING`); nút “Giao không thành” = phiếu trả toàn bộ, hàng chờ về (mở `awaiting_goods` cho mọi kênh), nhận hàng nhập kho hoặc báo hỏng. Lý do trả hàng chọn từ danh sách, thống kê ở Báo cáo → Doanh thu. Hàng không nhập lại tự lập phiếu hàng huỷ HH-… (chỉ chứng từ, giá vốn vẫn ở giá vốn đơn).
+- Ô “Ship shop tự trả” ở form đơn mọi kênh; `POST /orders/:id/seller-shipping-payments` ghi việc trả hãng vận chuyển (Nợ 3388 / Có quỹ), chặn trả quá và chặn huỷ đơn đã trả ship.
+- `GET /documents` và trang Chứng từ gộp 7 loại phiếu.
+- Kiểm chứng: `tests/returns_docs.test.js` (8 test), toàn bộ test API và 236 test giao diện qua, build qua. Chưa thử bằng trình duyệt thật; nút “Hàng về bị hỏng” nhận mọi dòng của phiếu cùng lúc (API cho chọn từng dòng).
+
+### 2026-11-08 — Phương pháp tính giá vốn (bình quân / FIFO)
+
+- Thêm cài đặt `costing_method` (migration 034, bảng `stock_layers`), `GET/PUT /costing-method`, thẻ "Phương pháp tính giá vốn" ở Cài đặt → Ngưỡng & kho, bài hướng dẫn "Chọn cách tính giá vốn". Mặc định vẫn bình quân gia quyền di động theo kho. Không làm LIFO.
+- `applyMovement` ghi một biến động cho mỗi lớp giá khi xuất FIFO; đơn hàng ghi một phân bổ cho mỗi phần; chuyển kho giữ giá và tuổi lớp; huỷ phiếu nhập rút lớp của phiếu đó; hàng vào bù âm kho không tạo lớp. `check-stock` thêm kiểm Σ lớp = max(tồn, 0).
+- Kiểm chứng: `tests/costing.test.js` (7 test) và toàn bộ test API qua (trừ lỗi cũ "Tuổi nợ" ở finance.test.js), 232 test giao diện và build qua. Chưa thử trên trình duyệt thật, chưa chạy với dữ liệu mẫu nhiều đơn; tài khoản 156 và giá trị tồn ở báo cáo dùng tồn × giá bình quân làm tròn nên có thể lệch vài đồng khi dùng FIFO.
+
 ### 2026-11-08 — Thang khoảng cách, thang chữ, phân cấp sắc độ
 
 - Viết lại token: khoảng cách bội 4 (`--sp-*`), chữ 6 bậc (12/13/14/16/20/24), độ đậm 400/500/600, chiều cao điều khiển bội 4. Quy đổi hàng loạt giá trị lệch trong `styles.css` và style inline của JSX (22 tệp).

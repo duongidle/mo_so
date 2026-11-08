@@ -22,7 +22,7 @@ export const addDays = (s, n) => {
 
 export const STATUS = { draft: 'Nháp', confirmed: 'Đã xác nhận', shipping: 'Đang giao', completed: 'Hoàn thành', cancelled: 'Đã huỷ', returned: 'Đã trả hàng' };
 export const PAY_STATUS = { unpaid: 'Chưa thu', partial: 'Thu một phần', paid: 'Đã thu', refunded: 'Đã hoàn' };
-export const METHODS = { cash: 'Tiền mặt', bank: 'Chuyển khoản', shopee_payout: 'Shopee payout', tiktok_payout: 'TikTok payout', cod: 'COD', card: 'Thẻ', ewallet: 'Ví điện tử', other: 'Khác' };
+export const METHODS = { cash: 'Tiền mặt', bank: 'Chuyển khoản', shopee_payout: 'Shopee payout', tiktok_payout: 'TikTok payout', cod: 'COD (tiền mặt)', carrier_payout: 'Hãng vận chuyển chuyển về', card: 'Thẻ', ewallet: 'Ví điện tử', other: 'Khác' };
 /** Nhãn phương thức thanh toán, thêm nhãn payout của các nền tảng server báo (nền tảng mới tự có nhãn) */
 export const methodLabels = (platforms = []) => ({ ...METHODS, ...Object.fromEntries(platforms.filter((p) => p.payout_method && p.payout_label).map((p) => [p.payout_method, p.payout_label])) });
 /** Phương thức để chọn: ẩn payout của nền tảng đang tắt (trừ giá trị đang dùng) */

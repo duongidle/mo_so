@@ -80,7 +80,7 @@ function applyOne(shop, channelId, row, statusMap, actor) {
         carrier: row.carrier,
         ordered_at: row.ordered_at,
         status: createStatus,
-        allow_negative_stock: true, // đơn đã xảy ra trên sàn: ghi nhận dù kho app chưa khớp, gắn cờ cảnh báo
+        allow_negative_stock: true, // đơn đã xảy ra trên sàn: ghi nhận dù kho hệ thống chưa khớp, gắn cờ cảnh báo
         payments: row.paid_amount > 0 && status !== 'cancelled' ? [{ amount: row.paid_amount, method: paidMethod }] : [],
       },
       actor,
@@ -112,7 +112,7 @@ function applyOne(shop, channelId, row, statusMap, actor) {
       if (!['confirmed', 'shipping', 'completed'].includes(cur.status)) throw badRequest('STATUS_CONFLICT', `Đơn đang "${cur.status}", không thể chuyển sang trả hàng tự động`);
       createReturn(cur.id, { lines: left.map((l) => ({ order_line_id: l.id, qty: l.qty - l.returned_qty, restock: true })), reason: 'Import: trả hàng/hoàn tiền trên kênh' }, actor);
     } else if (cur.status === 'cancelled' || cur.status === 'returned') {
-      throw badRequest('STATUS_CONFLICT', `Đơn trong app đang "${cur.status}" nhưng file ghi "${row.status}". Cần xử lý tay.`);
+      throw badRequest('STATUS_CONFLICT', `Đơn trong hệ thống đang "${cur.status}" nhưng file ghi "${row.status}". Cần xử lý tay.`);
     } else if (status === 'draft') {
       // file ghi trạng thái sớm hơn: bỏ qua, không lùi trạng thái
     } else {

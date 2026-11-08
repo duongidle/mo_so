@@ -24,7 +24,7 @@ export function buildChecks(d) {
     const negative = d.accounts.data.filter((a) => a.balance < 0);
     if (negative.length) { flags.push('red'); todo.push(`Quỹ ${negative.map((a) => `“${a.name}”`).join(', ')} đang âm: có khoản chi chưa gắn đúng quỹ, hoặc thiếu số dư đầu. Vào Quỹ tiền để kiểm đếm và nhập số dư đầu.`); }
     const refundOwed = d.cash.customer_refund_owed ?? 0;
-    if (refundOwed > 0) { flags.push('yellow'); todo.push(`Shop còn nợ khách ${vnd(refundOwed)} do trả hàng mà chưa hoàn tiền (${d.cash.customer_refund_owed_orders ?? 0} đơn): mở đơn và bấm “Hoàn tiền”, hoặc ghi phí trả hàng nếu shop giữ lại tiền.`); }
+    if (refundOwed > 0) { flags.push('yellow'); todo.push(`Shop còn nợ khách ${vnd(refundOwed)} do trả hàng mà chưa hoàn tiền (${d.cash.customer_refund_owed_orders ?? 0} đơn): mở đơn và nhấn “Hoàn tiền”, hoặc ghi phí trả hàng nếu shop giữ lại tiền.`); }
     const oldCustomer = stale(d.aging.customer, 31);
     if (oldCustomer.count) { flags.push('yellow'); todo.push(`${oldCustomer.count} khoản khách nợ quá 30 ngày (${vnd(oldCustomer.amount)}): liên hệ đòi hoặc xác nhận đã thu mà chưa ghi.`); }
     const oldMarket = stale(d.aging.marketplace, 31);
@@ -65,7 +65,7 @@ export function buildChecks(d) {
     const inv = d.inventory;
     const flags = [doi?.status];
     const todo = [];
-    if (inv.negative.length) { flags.push('yellow'); todo.push(`${inv.negative.length} sản phẩm đang tồn âm: số trong app lệch với hàng thật. Kiểm kê lại những sản phẩm này.`); }
+    if (inv.negative.length) { flags.push('yellow'); todo.push(`${inv.negative.length} sản phẩm đang tồn âm: số trong hệ thống lệch với hàng thật. Kiểm kê lại những sản phẩm này.`); }
     if (inv.low_stock.length) { flags.push('yellow'); todo.push(`${inv.low_stock.length} sản phẩm sắp hết: nhập thêm trước khi hết hàng bán.`); }
     if (doi?.status === 'red' || doi?.status === 'yellow') todo.push('Số ngày tồn cao: tiền đang nằm trong hàng. Giảm nhập thêm, đẩy hàng bán chậm (giảm giá, combo).');
     if (inv.slow_moving.length) todo.push(`${inv.slow_moving.length} sản phẩm bán chậm (tồn ${vnd(inv.slow_moving.reduce((a, x) => a + x.stock_value, 0))}): cân nhắc xả hàng hoặc ngừng nhập.`);

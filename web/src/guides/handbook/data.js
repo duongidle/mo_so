@@ -1,0 +1,217 @@
+// Cẩm nang từng bước có màn hình mô phỏng: dữ liệu các trang (lời hướng dẫn, màn hình dựng bằng HTML, kịch bản thao tác).
+// Màn hình là mô phỏng để học thao tác, không phải ảnh chụp; số liệu và tên trong đó là ví dụ.
+// Kịch bản: ['s', i] chọn bước i bên trái; ['type', '#id', 'chữ'] gõ; ['click', '#id']; ['show'|'hide', '#id']; ['set', '#id', 'chữ']; ['cls', '#id', 'add'|'rm', 'lớp']; ['var', '--m-red', '#mã màu']; ['ckx', n] đánh dấu dòng checklist; ['w', ms] chờ.
+/* ---------- khối dựng màn hình mô phỏng ---------- */
+const NAVS=['Tổng quan','Đơn hàng','Sản phẩm','Kho','Nhập hàng','Khách hàng','Chi phí','Báo cáo','Kế toán','Cài đặt'];
+const app=(nav,title,body,act='')=>`<div class="app"><aside><b class="lg">Mở Sổ</b>${NAVS.map(n=>`<span class="${n===nav?'on':''}">${n}</span>`).join('')}</aside><section><header><h4>${title}</h4><div class="act">${act}</div></header>${body}</section></div>`;
+const fld=(id,l,v='',c='')=>`<div class="fld ${c}"><label>${l}</label><div class="inp" id="${id}"><span class="v">${v}</span><i class="caret"></i></div></div>`;
+const btn=(id,t,c='')=>`<button class="mb ${c}" id="${id}" tabindex="-1">${t}</button>`;
+const pill=(t,c='',id='')=>`<em class="pl ${c}" ${id?`id="${id}"`:''}>${t}</em>`;
+const toast=(id,t,c='')=>`<div class="toast hid ${c}" id="${id}">${t}</div>`;
+const modal=(id,t,b,f)=>`<div class="mod hid" id="${id}"><div class="box"><h5>${t}</h5>${b}<div class="ft">${f}</div></div></div>`;
+const tbl=(h,rows,id='')=>`<table ${id?`id="${id}"`:''}><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr ${r.id?`id="${r.id}"`:''} class="${r.hid?'hid ':''}${r.cls||''}">${r.c.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+const opts=a=>a.map(([id,t,on])=>`<span class="opt${on?' sel':''}" id="${id}">${t}</span>`).join('');
+const kv=(a,b,id='')=>`<div class="kv"><span>${a}</span><b ${id?`id="${id}"`:''}>${b}</b></div>`;
+
+/* ---------- các slide ---------- */
+const CH=[['A','Bắt đầu'],['B','Bán hàng'],['C','Kho'],['D','Tiền'],['E','Cuối tháng']];
+const SL=[];
+const add=s=>SL.push(s);
+
+add({ch:'A',type:'cover'});
+
+add({ch:'A',title:'Tạo shop và kho đầu tiên',lead:'Tài khoản mới chưa có shop. Hệ thống dẫn bạn đi ba bước, mỗi bước chỉ hỏi vài ô.',
+steps:['Đăng ký bằng tên đăng nhập và mật khẩu.','Nhập tên shop, mã shop và chọn ngành bán. Ngành quyết định giao diện và các ô thông tin khách.','Tạo kho đầu tiên. Kho là nơi hàng bị trừ khi bán.','Vào Tổng quan. Nếu còn thiếu sản phẩm, trang chủ sẽ nhắc tiếp.'],
+tip:'Đổi ngành sau vẫn được. Hệ thống chỉ thêm ô còn thiếu, không xoá gì của ngành cũ.',
+nav:'Cài đặt',screen:app('Cài đặt','Tạo shop',`<div class="two"><div>${fld('f_name','Tên shop')}${fld('f_code','Mã shop')}<label class="lb">Ngành bán</label><div class="cards4">${opts([['i_gen','Bán lẻ chung'],['i_pt','Phong thuỷ'],['i_oto','Nước hoa ô tô'],['i_nh','Nước hoa']])}</div></div><div>${fld('f_ph','Điện thoại','0912 345 678')}${btn('b_next','Tạo shop','pri')}</div></div>${modal('m_kho','Tạo kho đầu tiên',fld('f_kho','Tên kho')+fld('f_kc','Mã kho'),btn('b_kho','Lưu kho','pri'))}${toast('t1','Đã tạo shop và kho. Đang vào Tổng quan.')}`),
+script:[['s',0],['w',700],['s',1],['type','#f_name','Hương Xe'],['type','#f_code','HX'],['click','#i_oto'],['click','#b_next'],['s',2],['show','#m_kho'],['type','#f_kho','Kho nhà'],['type','#f_kc','K1'],['click','#b_kho'],['hide','#m_kho'],['s',3],['show','#t1']]});
+
+add({ch:'A',title:'Thêm sản phẩm và tồn đầu kỳ',lead:'Vào Sản phẩm, nhấn “+ Thêm mặt hàng”. Có biến thể (mùi, size) thì hệ thống sinh bảng tổ hợp.',
+steps:['Nhập tên, giá bán và giá vốn.','Tick “Có biến thể”, thêm thuộc tính Mùi với các giá trị. Mỗi tổ hợp thành một dòng có SKU riêng.','Điền tồn đầu kỳ cho từng dòng và chọn kho nhận hàng.','Nhấn Lưu. Số tồn đầu kỳ được ghi vào sổ kho.'],
+tip:'Hàng không bán mà vẫn cần trừ kho (hộp, băng keo, tem) thêm với loại “Đóng gói” hoặc “Vận hành”. Combo thì dùng nút “+ Combo”.',warn:'Tồn đầu kỳ chỉ nhập một lần lúc tạo. Về sau muốn sửa số tồn, dùng Kiểm kê hoặc Điều chỉnh.',
+nav:'Sản phẩm',screen:app('Sản phẩm','Thêm mặt hàng',`${fld('p_name','Tên sản phẩm')}<div class="two">${fld('p_price','Giá bán')}${fld('p_cost','Giá vốn')}</div><div class="ln" style="margin-bottom:8px"><span class="ck" id="ck_v"></span> Có biến thể &nbsp;<span class="opt hid" id="o_m">Mùi: Cam Gỗ, Trà Xanh, Biển</span></div>${tbl(['SKU','Biến thể','Tồn đầu'],[{id:'v1',hid:1,c:['NH-CAM','Cam Gỗ','<span id="q1">0</span>']},{id:'v2',hid:1,c:['NH-TRA','Trà Xanh','<span id="q2">0</span>']},{id:'v3',hid:1,c:['NH-BIE','Biển','<span id="q3">0</span>']}])}${btn('b_save','Lưu sản phẩm','pri')}${toast('t1','Đã tạo Nước hoa xe 10ml với 3 biến thể. Kho Nhà +150.')}`),
+script:[['s',0],['type','#p_name','Nước hoa xe 10ml'],['type','#p_price','129.000'],['type','#p_cost','85.000'],['s',1],['click','#ck_v'],['cls','#ck_v','add','ck2'],['show','#o_m'],['show','#v1'],['show','#v2'],['show','#v3'],['s',2],['set','#q1','60'],['set','#q2','50'],['set','#q3','40'],['click','#b_save'],['s',3],['show','#t1']]});
+
+add({ch:'A',title:'Nhập hàng từ nhà cung cấp',lead:'Phiếu nhập chỉ cộng kho khi bạn nhấn “Nhận hàng & lưu”. Lưu nháp thì chưa ảnh hưởng gì.',
+steps:['Chọn nhà cung cấp, thêm dòng hàng: số lượng và giá nhập.','Nhập phí ship nhập. Mặc định ship cộng vào số nợ nhà cung cấp.','Nếu ship trả cho hãng vận chuyển, chọn “Hãng vận chuyển”. Nợ nhà cung cấp chỉ còn tiền hàng.','Nhấn “Nhận hàng & lưu”. Kho tăng, giá vốn mỗi chai đã gồm ship.'],
+tip:'Giá vốn mỗi chai luôn gồm cả ship, dù ship trả cho ai. Ví dụ 20 triệu hàng + 1 triệu ship, 200 chai: mỗi chai 105.000 ₫.',
+nav:'Nhập hàng',screen:app('Nhập hàng','Phiếu nhập mới',`${fld('n_ncc','Nhà cung cấp')}${tbl(['Hàng','SL','Giá nhập','Thành tiền'],[{id:'ln',hid:1,c:['Nước hoa xe Cam Gỗ','200','100.000','20.000.000']}])}<div class="two"><div>${fld('n_ship','Phí ship nhập')}<label class="lb">Ship trả cho</label>${opts([['o_ncc','Nhà cung cấp',1],['o_vc','Hãng vận chuyển']])}</div><div class="box2">${kv('Nợ nhà cung cấp','21.000.000 ₫','sd')}${kv('Nợ hãng vận chuyển','0 ₫','sc')}${kv('Giá vốn mỗi chai','105.000 ₫')}</div></div>${btn('b_recv','Nhận hàng &amp; lưu','pri')}${toast('t1','Đã nhận hàng. Kho Nhà +200, giá vốn bình quân 105.000 ₫.')}`),
+script:[['s',0],['type','#n_ncc','Kim Long Perfume'],['show','#ln'],['s',1],['type','#n_ship','1.000.000'],['s',2],['click','#o_vc'],['set','#sd','20.000.000 ₫'],['set','#sc','1.000.000 ₫'],['s',3],['click','#b_recv'],['show','#t1']]});
+
+add({ch:'A',title:'Trả tiền nhà cung cấp và hãng vận chuyển',lead:'Mỗi khoản nợ trả riêng. Bạn luôn thấy ai còn nợ bao nhiêu.',
+steps:['Mở phiếu nhập đã nhận. Phần công nợ cho thấy nợ nhà cung cấp và nợ hãng vận chuyển.','Ghi thanh toán cho nhà cung cấp: số tiền và phương thức trả.','Ghi thanh toán tiền ship cho hãng vận chuyển.','Cả hai về 0. Tiền ra khỏi đúng quỹ bạn đã chọn.'],
+warn:'Huỷ phiếu nhập đã trả tiền thì phải ghi nhận nhà cung cấp hoàn tiền. Hệ thống không cho huỷ để tiền nằm lơ lửng.',
+nav:'Nhập hàng',screen:app('Nhập hàng','PN-261108-001',`<div class="box2">${kv('Nợ nhà cung cấp','20.000.000 ₫','d1')}${kv('Nợ hãng vận chuyển','1.000.000 ₫','d2')}</div><div class="two"><div>${fld('f_p1','Trả nhà cung cấp')}${opts([['m1','Chuyển khoản',1],['m2','Tiền mặt']])}<br>${btn('b_p1','Ghi thanh toán','pri')}</div><div>${fld('f_p2','Trả hãng vận chuyển')}${btn('b_p2','Ghi thanh toán','pri')}</div></div><p>Trạng thái: ${pill('Còn nợ','o','st')}</p>${toast('t1','Đã trả đủ. Quỹ Ngân hàng −20.000.000, Két −1.000.000.')}`),
+script:[['s',0],['w',900],['s',1],['type','#f_p1','20.000.000'],['click','#b_p1'],['set','#d1','0 ₫'],['s',2],['type','#f_p2','1.000.000'],['click','#b_p2'],['set','#d2','0 ₫'],['s',3],['set','#st','Đã trả đủ'],['cls','#st','add','g'],['show','#t1']]});
+
+add({ch:'A',title:'Nhập hàng, trả nhà cung cấp nhiều đợt',lead:'Nhận hàng trước, trả dần theo từng đợt. Hệ thống cộng dồn số đã trả và không cho trả vượt tổng phiếu.',
+steps:['Nhận hàng bình thường. Phiếu 20.000.000 ₫, chưa trả đồng nào nên nợ nhà cung cấp 20.000.000 ₫.','Đợt 1: ghi thanh toán 8.000.000 ₫ bằng chuyển khoản. Còn nợ 12.000.000 ₫.','Đợt 2: ghi thanh toán 7.000.000 ₫ bằng tiền mặt. Mỗi đợt có ngày và phương thức riêng. Còn nợ 5.000.000 ₫.','Đợt cuối: trả nốt 5.000.000 ₫. Phiếu chuyển sang “Đã trả đủ”.'],
+tip:'Đặt “Hạn trả nhà cung cấp” khi lập phiếu nhập. Khoản sắp đến hạn được nhắc ở Loyalty → Hôm nay.',warn:'Số tiền trả vượt số còn nợ sẽ bị từ chối. Huỷ một phiếu đã trả tiền thì phải ghi nhận nhà cung cấp hoàn lại số đã trả.',
+nav:'Nhập hàng',screen:app('Nhập hàng','PN-261108-001',`<div class="box2">${kv('Tổng phiếu','20.000.000 ₫')}${kv('Đã trả','<span id="pd">0 ₫</span>')}${kv('Còn nợ nhà cung cấp','<span id="db">20.000.000 ₫</span>')}<p style="margin:6px 0 0">${pill('Còn nợ','o','st')}</p></div>${tbl(['Đợt','Phương thức','Số tiền'],[{id:'r1',hid:1,c:['1','Chuyển khoản','8.000.000']},{id:'r2',hid:1,c:['2','Tiền mặt','7.000.000']},{id:'r3',hid:1,c:['3','Chuyển khoản','5.000.000']}])}<div class="two">${fld('f_a','Số tiền trả')}<div><label class="lb">Phương thức</label>${opts([['mb','Chuyển khoản',1],['mc','Tiền mặt']])}</div></div>${btn('b_pay','Ghi thanh toán','pri')}`),
+script:[['s',0],['w',900],['s',1],['type','#f_a','8.000.000'],['click','#b_pay'],['show','#r1'],['set','#pd','8.000.000 ₫'],['set','#db','12.000.000 ₫'],['s',2],['click','#mc'],['type','#f_a','7.000.000'],['click','#b_pay'],['show','#r2'],['set','#pd','15.000.000 ₫'],['set','#db','5.000.000 ₫'],['s',3],['click','#mb'],['type','#f_a','5.000.000'],['click','#b_pay'],['show','#r3'],['set','#pd','20.000.000 ₫'],['set','#db','0 ₫'],['set','#st','Đã trả đủ'],['cls','#st','add','g']]});
+
+add({ch:'B',title:'Bán trực tiếp trong 30 giây',lead:'Nhấn “Bán nhanh” ở thanh trên. Kênh mặc định là Bán trực tiếp, ô tìm sản phẩm có sẵn con trỏ.',
+steps:['Gõ tên hoặc quét mã vạch để tìm sản phẩm.','Nhấn sản phẩm để thêm vào đơn. Nhấn lại để tăng số lượng.','Chọn cách khách trả tiền.','Nhấn “Bán xong”. Đơn hoàn thành, kho trừ, tiền vào quỹ.'],
+tip:'Khách quen thì gõ số điện thoại để gắn hồ sơ. Khách vãng lai bỏ trống cũng được.',
+nav:'Đơn hàng',screen:app('Đơn hàng','Tạo đơn',`<div class="two"><div>${fld('q','Tìm sản phẩm')}<div class="box2" style="padding:4px"><div class="row" id="p1"><span>Cam Gỗ 10ml</span><b style="margin-left:auto">129.000</b></div><div class="row" id="p2"><span>Trà Xanh 10ml</span><b style="margin-left:auto">129.000</b></div></div></div><div>${tbl(['Hàng','SL','Tiền'],[{id:'r1',hid:1,c:['Cam Gỗ','<span id="a1">1</span>','129.000']},{id:'r2',hid:1,c:['Trà Xanh','1','129.000']}])}${kv('Khách phải trả','<span id="tot">0 ₫</span>')}<label class="lb" style="margin-top:6px">Thanh toán</label>${opts([['pm1','Tiền mặt',1],['pm2','Chuyển khoản']])}</div></div>${btn('b_done','Bán xong','pri')}${toast('t1','Đã bán DH-261108-001. Kho trừ 2, Ngân hàng +258.000 ₫.')}`),
+script:[['s',0],['type','#q','cam'],['s',1],['click','#p1'],['show','#r1'],['set','#tot','129.000 ₫'],['click','#p2'],['show','#r2'],['set','#tot','258.000 ₫'],['s',2],['click','#pm2'],['s',3],['click','#b_done'],['show','#t1']]});
+
+add({ch:'B',title:'Đơn có giao hàng: từ nháp đến hoàn thành',lead:'Mỗi bước đổi trạng thái là một việc thật xảy ra. Kho chỉ bị trừ ở bước Xác nhận.',
+steps:['Lưu nháp: chưa ảnh hưởng kho, tiền hay báo cáo.','Xác nhận đơn: kho bị trừ, giá vốn được chụp lại.','Đang giao: nhấn khi bàn giao cho đơn vị vận chuyển.','Khách đặt cọc thì ghi thanh toán một phần. Trạng thái thanh toán là “Trả một phần”.','Hoàn thành và thu đủ. Đơn được đóng dấu ĐÃ CHỐT.'],
+warn:'Sau khi hoàn thành không sửa số liệu được nữa. Sai thì dùng Trả hàng, không sửa đè.',
+nav:'Đơn hàng',screen:app('Đơn hàng','DH-261108-002',`<div class="flow"><span id="st1" class="cur2">Nháp</span><span id="st2">Xác nhận</span><span id="st3">Đang giao</span><span id="st4">Hoàn thành</span></div><div class="box2">${kv('Khách','Chị Lan · 0912 345 678')}${kv('Tổng phải trả','315.000 ₫')}${kv('Đã thu','<span id="paid">0 ₫</span>')}${kv('Kho Nhà (Cam Gỗ)','<span id="stk">200</span>')}</div><div class="ln">${btn('b1','Xác nhận đơn','pri')}${btn('b2','Giao hàng')}${btn('b3','Ghi thanh toán')}${btn('b4','Hoàn thành')}</div><div class="stamp hid" id="stp">ĐÃ CHỐT</div>`),
+script:[['s',0],['w',900],['s',1],['click','#b1'],['cls','#st1','rm','cur2'],['cls','#st1','add','done'],['cls','#st2','add','cur2'],['set','#stk','197 (trừ 3)'],['s',2],['click','#b2'],['cls','#st2','rm','cur2'],['cls','#st2','add','done'],['cls','#st3','add','cur2'],['s',3],['click','#b3'],['set','#paid','100.000 ₫ (trả một phần)'],['s',4],['click','#b4'],['set','#paid','315.000 ₫'],['cls','#st3','rm','cur2'],['cls','#st3','add','done'],['cls','#st4','add','cur2'],['show','#stp']]});
+
+add({ch:'B',title:'Khách trả tiền nhiều lần',lead:'Khách cọc trước, trả thêm khi nhận hàng, trả nốt sau. Mỗi lần thu là một khoản riêng, tiền vào đúng quỹ.',
+steps:['Đơn 630.000 ₫, chưa thu đồng nào. Trạng thái thanh toán “Chưa thu”.','Khách cọc 200.000 ₫ chuyển khoản. Nhấn “Thu tiền”, nhập số tiền, chọn phương thức. Trạng thái “Thu một phần”, còn nợ 430.000 ₫.','Khách nhận hàng, đưa thêm 230.000 ₫ tiền mặt. Còn nợ 200.000 ₫.','Khách trả nốt 200.000 ₫ qua ví điện tử. Trạng thái “Đã thu đủ”.'],
+tip:'Khách hẹn trả sau: đặt “Hạn thanh toán” ở form đơn. Đến hạn, hệ thống nhắc ở Loyalty → Hôm nay và có sẵn tin nhắn nhắc nợ.',warn:'Thu nhiều hơn số còn nợ thì đơn hiện cảnh báo “đã thu dư, cần hoàn lại khách”. Hệ thống không tự bỏ qua phần dư.',
+nav:'Đơn hàng',screen:app('Đơn hàng','DH-261108-005',`<div class="box2">${kv('Khách phải trả','630.000 ₫')}${kv('Đã thu','<span id="pd">0 ₫</span>')}${kv('Còn nợ','<span id="db">630.000 ₫</span>')}<p style="margin:6px 0 0">${pill('Chưa thu','','st')}</p></div>${tbl(['Lần','Phương thức','Số tiền'],[{id:'r1',hid:1,c:['1 (cọc)','Chuyển khoản','200.000']},{id:'r2',hid:1,c:['2','Tiền mặt','230.000']},{id:'r3',hid:1,c:['3','Ví điện tử','200.000']}])}<div class="two">${fld('f_a','Số tiền thu')}<div><label class="lb">Phương thức</label>${opts([['mb','Chuyển khoản',1],['mc','Tiền mặt'],['mw','Ví']])}</div></div>${btn('b_pay','Thu tiền','pri')}`),
+script:[['s',0],['w',900],['s',1],['type','#f_a','200.000'],['click','#b_pay'],['show','#r1'],['set','#pd','200.000 ₫'],['set','#db','430.000 ₫'],['set','#st','Thu một phần'],['cls','#st','add','o'],['s',2],['click','#mc'],['type','#f_a','230.000'],['click','#b_pay'],['show','#r2'],['set','#pd','430.000 ₫'],['set','#db','200.000 ₫'],['s',3],['click','#mw'],['type','#f_a','200.000'],['click','#b_pay'],['show','#r3'],['set','#pd','630.000 ₫'],['set','#db','0 ₫'],['set','#st','Đã thu đủ'],['cls','#st','rm','o'],['cls','#st','add','g']]});
+
+add({ch:'B',title:'Đơn Shopee: import từ file',lead:'Không cần gõ từng đơn. Tải file đơn từ Shopee, hệ thống đọc ngay trên trình duyệt và cho xem thử trước khi ghi.',
+steps:['Vào Đơn hàng → Nhập từ file, chọn file Excel tải từ Shopee.','Chọn mẫu Shopee. Hệ thống ghép cột cho bạn.','Nhấn Xem trước. Hệ thống báo sẽ tạo mới, cập nhật hay lỗi bao nhiêu đơn.','Sửa dòng lỗi (thường là SKU chưa có) rồi xem thử lại.','Nhấn Xác nhận. Đơn vào hệ thống, kho và công nợ sàn tự cập nhật.'],
+tip:'Import nhiều lần không sợ trùng. Đơn đã có thì hệ thống so sánh và cập nhật (ví dụ chuyển sang huỷ thì kho tự hoàn).',warn:'Đơn sàn có thể làm kho âm vì đơn đã xảy ra thật. Hệ thống vẫn nhận và gắn cờ cảnh báo để bạn kiểm lại.',
+nav:'Đơn hàng',screen:app('Đơn hàng','Nhập đơn từ file',`<div class="box2" id="drop" style="text-align:center;border-style:dashed">Kéo file vào đây<br><b class="hid" id="fn">don-shopee-thang-11.xlsx</b></div><label class="lb">Mẫu</label>${opts([['mp1','Shopee'],['mp2','Mẫu chuẩn Mở Sổ'],['mp3','TikTok Shop']])}<div class="ln" style="margin:6px 0">${btn('b_prev','Xem trước')}</div><div class="hid" id="pv"><div class="ln">${pill('Tạo mới 12','g')} ${pill('Cập nhật 3','b')} ${pill('Lỗi 1','r','er')}</div><div class="box2 red" style="margin-top:6px" id="err">Dòng 7: SKU “NH-GO15” chưa có trong Sản phẩm.</div>${btn('b_ok','Xác nhận import','pri')}</div>${toast('t1','Đã import 15 đơn. Bỏ qua 0 đơn.')}`),
+script:[['s',0],['click','#drop'],['show','#fn'],['s',1],['click','#mp1'],['s',2],['click','#b_prev'],['show','#pv'],['s',3],['w',900],['set','#er','Lỗi 0'],['cls','#er','add','g'],['set','#err','Đã thêm SKU NH-GO15. Xem trước lại: không còn lỗi.'],['cls','#err','rm','red'],['cls','#err','add','grn'],['s',4],['click','#b_ok'],['show','#t1']]});
+
+add({ch:'B',title:'Đối soát tiền sàn',lead:'Đơn sàn hoàn thành nhưng tiền chưa về là “tiền đang treo”. Khi sàn chuyển tiền, bạn ghi nhận để hết treo.',
+steps:['Vào Chi phí & đối soát → Đối soát sàn, chọn sàn.','Danh sách các đơn đã hoàn thành mà chưa ghi nhận tiền về.','Tick các đơn nằm trong đợt thanh toán của sàn.','Nhấn ghi nhận. Tiền vào quỹ ngân hàng, tiền treo giảm.'],
+tip:'Tiền về là số sau khi sàn trừ phí. Đơn nhập đủ phí sàn thì khớp từng đồng.',
+nav:'Chi phí',screen:app('Chi phí','Đối soát sàn',`<p>Tiền đang treo: <b id="hang">4.820.000 ₫</b></p>${tbl(['','Đơn','Về dự kiến'],[{id:'o1',c:['<span class="ck" id="c1"></span>','SP-2611-A91','1.920.000']},{id:'o2',c:['<span class="ck" id="c2"></span>','SP-2611-B07','1.450.000']},{id:'o3',c:['<span class="ck" id="c3"></span>','SP-2611-C33','1.450.000']}])}${btn('b_rec','Ghi nhận tiền về','pri')}${toast('t1','Đã ghi nhận 4.820.000 ₫ vào Ngân hàng. Tiền treo: 0.')}`),
+script:[['s',0],['w',700],['s',1],['w',700],['s',2],['click','#c1'],['cls','#c1','add','ck2'],['click','#c2'],['cls','#c2','add','ck2'],['click','#c3'],['cls','#c3','add','ck2'],['s',3],['click','#b_rec'],['set','#hang','0 ₫'],['show','#t1']]});
+
+add({ch:'B',title:'Khách hàng: hồ sơ, nhãn, sinh nhật',lead:'Gõ số điện thoại khi bán, hệ thống tự nhận ra khách cũ hoặc tạo hồ sơ mới.',
+steps:['Ở form đơn, gõ số điện thoại. Chưa có thì tạo khách mới ngay tại chỗ.','Hồ sơ khách là một cho cả tài khoản, nhưng danh sách khách của mỗi shop là riêng.','Gắn nhãn cho khách. Nhãn là của riêng từng shop.','Nhập ngày sinh. Hệ thống dùng nó cho nhắc sinh nhật, và tính mệnh nếu shop bán phong thuỷ.'],
+tip:'Có hai hồ sơ trùng thì dùng “Gộp trùng”. Đơn và ghi chú chuyển hết sang hồ sơ giữ lại.',warn:'Xoá khách chỉ là xoá khỏi một shop. Lịch sử đơn vẫn còn.',
+nav:'Khách hàng',screen:app('Khách hàng','Hồ sơ khách',`${fld('k_ph','Số điện thoại')}<div class="box2 hid" id="kc"><b class="big" id="kn">Khách mới</b><div>${pill('Khách mới','o')} <span id="tg"></span></div></div>${fld('k_nm','Tên khách')}<label class="lb">Nhãn</label>${opts([['t_a','VIP'],['t_b','Hay hỏi giá'],['t_c','Mua cho xe']])}${fld('k_bd','Ngày sinh')}<p class="hid" id="age">${pill('Tuổi 34','b')} ${pill('Sinh nhật 15/11 sẽ được nhắc','g')}</p>`),
+script:[['s',0],['type','#k_ph','0912345678'],['show','#kc'],['type','#k_nm','Chị Lan'],['set','#kn','Chị Lan'],['s',1],['w',900],['s',2],['click','#t_a'],['set','#tg','VIP'],['s',3],['type','#k_bd','15/11/1992'],['show','#age']]});
+
+add({ch:'B',title:'Huỷ đơn',lead:'Khách đổi ý khi hàng còn ở shop thì huỷ. Hàng quay về kho đúng giá vốn lúc xuất.',
+steps:['Mở đơn đang ở trạng thái Xác nhận (hàng còn ở shop), nhấn “Huỷ đơn”.','Nhập lý do huỷ và xác nhận.','Đơn thành “Đã huỷ”. Kho cộng lại, doanh thu và công nợ của đơn mất đi.'],
+warn:'Hàng đã giao đi, hoặc đơn đã Hoàn thành mà khách không nhận hay trả lại: dùng Trả hàng ở slide kế, đừng huỷ. Huỷ đơn cộng hết hàng về kho ngay, kể cả khi hàng đang nằm ở đơn vị vận chuyển.',
+nav:'Đơn hàng',screen:app('Đơn hàng','DH-261108-003',`<div class="box2">${kv('Trạng thái',pill('Đã xác nhận','b','ps'))}${kv('Cam Gỗ ×3','387.000 ₫')}${kv('Kho Nhà (Cam Gỗ)','<span id="stk">197</span>')}</div>${btn('b_c','Huỷ đơn')}${modal('m','Huỷ đơn này?',fld('rs','Lý do'),btn('b_y','Huỷ đơn','pri'))}${toast('t1','Đã huỷ. Kho Nhà +3 với giá vốn 105.000 ₫.')}`),
+script:[['s',0],['click','#b_c'],['show','#m'],['s',1],['type','#rs','Khách đổi ý'],['click','#b_y'],['hide','#m'],['s',2],['set','#ps','Đã huỷ'],['cls','#ps','add','r'],['set','#stk','200 (đã cộng lại)'],['show','#t1']]});
+
+add({ch:'B',title:'Khách trả hàng',lead:'Đơn đã hoàn thành mà khách trả lại: lập phiếu trả. Hệ thống tính ra số tiền cần trả khách.',
+steps:['Mở đơn đã hoàn thành, nhấn “Trả hàng”. Chọn lý do trong danh sách (khách đổi ý, giao sai, hàng lỗi…).','Chọn dòng và số lượng khách trả.','Hoàn phí ship cho khách nếu có, và nhập phí trả hàng nếu shop giữ lại một phần.','Chọn hàng nhập lại kho hay hàng hỏng.','Hệ thống tính “cần trả khách”. Nhập số tiền hoàn và phương thức.'],
+tip:'Bỏ tick “Nhập lại kho” khi hàng hỏng: hệ thống tự lập phiếu hàng huỷ (HH-…) để lại dấu vết.',warn:'Đơn sàn không có hoàn ship, phí trả hàng hay tiền trả khách. Sàn tự hoàn cho người mua. Hàng trả giảm khoản phải thu từ sàn.',
+nav:'Đơn hàng',screen:app('Đơn hàng','Phiếu trả hàng',`${tbl(['Hàng','Đã mua','Trả'],[{c:['Cam Gỗ','2','<span id="q">0</span>']}])}<div class="two">${fld('rf1','Hoàn phí ship')}${fld('rf2','Phí trả hàng giữ lại')}</div>${opts([['x1','Nhập lại kho',1],['x2','Hàng hỏng']])}<div class="box2" style="margin-top:6px">${kv('Hàng trả','<span id="gd">0 ₫</span>')}${kv('Cần trả khách','<span id="nd">0 ₫</span>')}</div>${btn('b_r','Lưu phiếu trả','pri')}${toast('t1','Đã trả 140.000 ₫ tiền mặt. Kho Nhà +1.')}`),
+script:[['s',0],['w',700],['s',1],['set','#q','1'],['set','#gd','120.000 ₫'],['s',2],['type','#rf1','30.000'],['type','#rf2','10.000'],['s',3],['click','#x1'],['set','#nd','140.000 ₫'],['s',4],['click','#b_r'],['show','#t1']]});
+
+add({ch:'B',title:'Giao không thành và hàng về hỏng',lead:'Đơn đang giao không huỷ được vì hàng chưa về kho. Dùng “Giao không thành”: kho chỉ tăng khi hàng thật về tới shop.',
+steps:['Mở đơn đang giao, nhấn “Giao không thành”.','Hệ thống điền sẵn: trả toàn bộ, hoàn ship, lý do “Khách không nhận hàng”, hàng chưa về shop.','Ghi nhận. Đơn thành “Đã trả hàng” nhưng kho chưa tăng.','Hàng về: nhấn “Đã nhận hàng, nhập kho”, hoặc “Hàng về bị hỏng” nếu hỏng. Hỏng thì hệ thống lập phiếu hàng huỷ.'],
+tip:'Phiếu hàng huỷ chỉ để tra cứu. Giá vốn hàng hỏng vẫn tính trong giá vốn của đơn, nên lãi gộp giảm đúng bằng số đó. Xem lại ở menu Chứng từ.',
+nav:'Đơn hàng',screen:app('Đơn hàng','DH-261108-004',`<div class="box2">${kv('Trạng thái',pill('Đang giao','p','ps'))}${kv('Cam Gỗ ×3','387.000 ₫')}${kv('Kho Nhà','<span id="stk">197</span>')}</div><div class="ln">${btn('b_f','Giao không thành','sm')}</div><div class="box2 hid" id="rt" style="margin-top:8px"><b>TH-HX-261108-001</b> · Khách không nhận hàng ${pill('Chờ hàng về','o')}<div class="ln" style="margin-top:6px">${btn('b_ok','Đã nhận hàng, nhập kho','sm')} ${btn('b_bad','Hàng về bị hỏng','sm')}</div></div><div class="box2 hid" id="wo"><b class="red">HH-HX-261110-001</b> · Phiếu hàng huỷ, giá vốn 315.000 ₫</div>${toast('t1','Đã ghi nhận. Kho chưa thay đổi cho tới khi hàng về.')}`),
+script:[['s',0],['click','#b_f'],['s',1],['w',900],['s',2],['set','#ps','Đã trả hàng'],['show','#rt'],['show','#t1'],['w',900],['hide','#t1'],['s',3],['click','#b_bad'],['show','#wo']]});
+
+add({ch:'C',title:'Nhiều kho và chuyển kho',lead:'Shop có danh sách kho theo thứ tự ưu tiên. Đơn lấy kho 1 trước, thiếu mới lấy kho kế tiếp.',
+steps:['Cài đặt → Shop & kho: sắp xếp kho cho từng shop. Kho đầu là kho chính.','Kho → Chuyển kho: chọn kho đi, kho đến, sản phẩm và số lượng.','Nhấn chuyển. Hai kho cập nhật ngay và giá vốn hàng giữ nguyên.'],
+tip:'Một đơn thiếu hàng ở kho 1 vẫn bán được nếu kho 2 còn. Hệ thống tự chia và ghi giá vốn đúng từng kho.',
+nav:'Kho',screen:app('Kho','Chuyển kho',`<div class="two"><div class="box2"><div class="lb">Kho Nhà</div><span class="big" id="ka">200</span></div><div class="box2"><div class="lb">Kho Shopee Mall</div><span class="big" id="kb">0</span></div></div><div class="two">${fld('t_sp','Sản phẩm')}${fld('t_q','Số lượng')}</div>${btn('b_t','Chuyển kho','pri')}${toast('t1','Đã chuyển 50 chai từ Kho Nhà sang Kho Shopee Mall.')}`),
+script:[['s',0],['w',900],['s',1],['type','#t_sp','Cam Gỗ 10ml'],['type','#t_q','50'],['s',2],['click','#b_t'],['set','#ka','150'],['set','#kb','50'],['show','#t1']]});
+
+add({ch:'C',title:'Kiểm kê định kỳ',lead:'Đếm hàng thật, đối chiếu với sổ. Cả kho có thể mất vài giờ để đếm, trong lúc đó vẫn bán bình thường.',
+steps:['Kho → Kiểm kê → tạo phiếu mới cho kho cần đếm.','Nhập số đếm dần, lưu giữa chừng được.','Dòng nào lệch, hệ thống tính chênh lệch so với tồn hệ thống ngay lúc bạn nhập.','Hoàn tất. Hệ thống sinh phiếu điều chỉnh tăng hoặc giảm đúng chênh lệch.'],
+tip:'Dòng chưa đếm bị bỏ qua, hoặc bạn chọn coi là 0.',warn:'Kiểm kê nháp còn mở sẽ chặn bạn chốt kho và đóng kho.',
+nav:'Kho',screen:app('Kho','Kiểm kê Kho Nhà',`${tbl(['Hàng','Sổ','Đếm','Lệch'],[{c:['Cam Gỗ','150','<span id="c1">–</span>','<span id="d1">–</span>']},{c:['Trà Xanh','50','<span id="c2">–</span>','<span id="d2">–</span>']},{c:['Biển','40','<span id="c3">–</span>','<span id="d3">–</span>']}])}${btn('b_f','Hoàn tất kiểm kê','pri')}${toast('t1','Đã điều chỉnh: Cam Gỗ −2. Giá trị hàng mất 210.000 ₫ ghi vào chi phí.')}`),
+script:[['s',0],['w',700],['s',1],['set','#c1','148'],['set','#c2','50'],['set','#c3','40'],['s',2],['set','#d1','−2'],['cls','#d1','add','red'],['set','#d2','0'],['set','#d3','0'],['s',3],['click','#b_f'],['show','#t1']]});
+
+add({ch:'C',title:'Hàng hỏng, mất, điều chỉnh',lead:'Phát hiện hàng vỡ hoặc mất thì ghi phiếu điều chỉnh ngay, đừng đợi kiểm kê.',
+steps:['Kho → Điều chỉnh. Chọn sản phẩm và kho.','Chọn loại: hỏng, mất hay tăng thêm, rồi nhập số lượng và ghi chú.','Lưu. Kho giảm, giá trị hàng hỏng được ghi thành chi phí.'],
+tip:'Giá trị hàng hỏng tính theo giá vốn bình quân hiện tại của kho đó.',
+nav:'Kho',screen:app('Kho','Điều chỉnh tồn',`${fld('a_sp','Sản phẩm / kho')}<label class="lb">Loại</label>${opts([['l1','Hỏng',1],['l2','Mất'],['l3','Tăng thêm']])}<div class="two">${fld('a_q','Số lượng')}${fld('a_n','Ghi chú')}</div><div class="box2">${kv('Giá vốn bình quân','105.000 ₫')}${kv('Giá trị ghi vào chi phí','<span id="av">0 ₫</span>')}</div>${btn('b_a','Lưu điều chỉnh','pri')}${toast('t1','Đã trừ 3 chai Trà Xanh. Chi phí hàng hỏng 315.000 ₫.')}`),
+script:[['s',0],['type','#a_sp','Trà Xanh · Kho Nhà'],['s',1],['click','#l1'],['type','#a_q','3'],['type','#a_n','Vỡ khi giao'],['set','#av','315.000 ₫'],['s',2],['click','#b_a'],['show','#t1']]});
+
+add({ch:'C',title:'Chốt kho cuối tháng',lead:'Chốt kho là đóng băng sổ kho đến một ngày. Sau đó không ai ghi lùi vào kỳ đã chốt được nữa.',
+steps:['Kho → Chốt kho. Chọn ngày cuối tháng, ví dụ 31/10.','Xem trước. Hệ thống báo việc chặn (kiểm kê nháp) và việc chỉ cảnh báo (phiếu nhập nháp).','Nhấn Chốt kho. Hệ thống chụp lại tồn và giá trị từng kho.','Thử ghi lùi vào tháng 10 sẽ bị từ chối.','Cần sửa gấp thì Mở lại, bắt buộc ghi lý do.'],
+tip:'Đơn sàn import muộn vẫn nhận được. Hệ thống ghi nó vào ngày đầu của kỳ đang mở và ghi chú ngày gốc.',warn:'Chốt kho (hàng) và khoá sổ kế toán (tiền) là hai khoá riêng. Cuối tháng nên làm cả hai.',
+nav:'Kho',screen:app('Kho','Chốt kho',`${fld('cd','Chốt đến ngày')}<div class="box2 hid" id="pv"><div class="grn">✓ Không còn phiếu kiểm kê nháp</div><div style="color:#85500f">! 1 phiếu nhập nháp. Chốt vẫn được.</div></div><p>${pill('Chưa chốt','o','ps')}</p>${btn('b_c','Chốt kho','pri')} ${btn('b_o','Mở lại')}${toast('t1','Không ghi được: kho đã chốt đến 31/10/2026.','bad')}${modal('m','Mở lại kỳ kho',fld('rs','Lý do (bắt buộc)'),btn('b_y','Mở lại','pri'))}`),
+script:[['s',0],['type','#cd','31/10/2026'],['s',1],['show','#pv'],['s',2],['click','#b_c'],['set','#ps','Đã chốt đến 31/10'],['cls','#ps','add','g'],['s',3],['show','#t1'],['w',900],['hide','#t1'],['s',4],['click','#b_o'],['show','#m'],['type','#rs','Nhập sót phiếu nhập tháng 10']]});
+
+add({ch:'C',title:'Ngừng bán sản phẩm và gỡ kho',lead:'Hệ thống không xoá cứng dữ liệu có lịch sử. Thứ chưa từng dùng thì xoá hẳn, thứ đã dùng thì ngừng kinh doanh.',
+steps:['Mở sản phẩm, nhấn “Xoá sản phẩm…”.','Hệ thống cho xem ảnh hưởng: còn hàng bao nhiêu, đã bán bao nhiêu đơn, có nằm trong combo hay đơn nháp không.','Còn hàng thì tick xuất huỷ. Gõ tên sản phẩm để xác nhận.','Sản phẩm sang tab “Đã ngừng kinh doanh”. Muốn bán lại thì nhấn Khôi phục.'],
+tip:'Gỡ kho tương tự: còn hàng thì bắt buộc chuyển sang kho khác trước. Kho chưa dùng thì xoá hẳn, đã dùng chỉ đóng.',warn:'Sản phẩm còn là thành phần của combo đang bán, hoặc nằm trong đơn nháp, thì bị chặn cho tới khi bạn gỡ khỏi đó.',
+nav:'Sản phẩm',screen:app('Sản phẩm','Nước hoa xe 10ml',`${btn('b_x','Xoá sản phẩm…')}<div id="ar" class="hid box2" style="margin-top:8px">${pill('Đã ngừng kinh doanh','o')} <b>Nước hoa xe 10ml</b> ${btn('b_rs','Khôi phục','sm')}</div>${modal('m','Xoá Nước hoa xe 10ml',`<div class="box2">${kv('Còn trong kho','12 chai → xuất huỷ')}${kv('Đã bán','40 đơn → chỉ ngừng kinh doanh')}${kv('Trong combo / đơn nháp','Không')}</div><span class="ck" id="wo"></span> Xuất huỷ 12 chai (1.260.000 ₫)${fld('cf','Gõ tên sản phẩm để xác nhận')}`,btn('b_y','Ngừng kinh doanh','pri'))}${toast('t1','Đã ngừng kinh doanh. Có thể khôi phục.')}`),
+script:[['s',0],['click','#b_x'],['show','#m'],['s',1],['w',1200],['s',2],['click','#wo'],['cls','#wo','add','ck2'],['type','#cf','Nước hoa xe 10ml'],['click','#b_y'],['hide','#m'],['s',3],['show','#ar'],['show','#t1']]});
+
+add({ch:'D',title:'Ghi chi phí, kể cả chi phí lặp lại',lead:'Quảng cáo, thuê mặt bằng, đóng gói đều là chi phí. Ghi đúng shop thì lợi nhuận từng shop mới đúng.',
+steps:['Chi phí & đối soát → “+ Chi phí”.','Chọn danh mục, nhập số tiền và ngày.','Chọn phương thức trả, để hệ thống trừ đúng quỹ. Chọn thuộc về shop này hay chung.','Khoản lặp lại mỗi tháng như tiền thuê: tick “Lặp lại hằng tháng”, chọn ngày. Hệ thống tự tạo mỗi kỳ.'],
+tip:'Chi phí chung được chia về các shop theo doanh thu, chia đều hoặc tỷ lệ cố định. Bạn chọn ở Cài đặt.',
+nav:'Chi phí',screen:app('Chi phí','Thêm chi phí',`<label class="lb">Danh mục</label>${opts([['c1','Quảng cáo FB',1],['c2','Thuê mặt bằng'],['c3','Bao bì']])}<div class="two">${fld('e_a','Số tiền')}${fld('e_d','Ngày')}</div><label class="lb">Trả bằng</label>${opts([['m1','Tiền mặt'],['m2','Chuyển khoản']])}<label class="lb">Thuộc về</label>${opts([['s1','Shop này',1],['s2','Chung']])}<div class="ln" style="margin:6px 0"><span class="ck" id="rp"></span> Lặp lại hằng tháng, ngày <b id="rd">–</b></div>${btn('b_e','Lưu chi phí','pri')}${toast('t1','Đã ghi 5.000.000 ₫. Từ nay mỗi tháng tự tạo vào ngày 5.')}`),
+script:[['s',0],['click','#c2'],['s',1],['type','#e_a','5.000.000'],['type','#e_d','05/11/2026'],['s',2],['click','#m2'],['click','#s2'],['s',3],['click','#rp'],['cls','#rp','add','ck2'],['set','#rd','5'],['click','#b_e'],['show','#t1']]});
+
+add({ch:'D',title:'Quỹ tiền: két, ngân hàng, ví',lead:'Số dư quỹ không do bạn gõ. Hệ thống tính từ mọi khoản thu chi đã ghi, nên luôn khớp sổ.',
+steps:['Mỗi phương thức thanh toán thuộc một quỹ. Tiền mặt vào két, chuyển khoản vào ngân hàng.','Rút tiền ngân hàng về két: dùng Chuyển quỹ, không ghi như thu chi.','Cuối ngày đếm két thật và nhập vào Kiểm đếm.','Chênh lệch được ghi thành một dòng điều chỉnh. Thu chi cũ không bị sửa.'],
+warn:'Quỹ âm thường nghĩa là thiếu số dư đầu kỳ hoặc quên ghi một khoản thu. Hệ thống báo đỏ để bạn kiểm.',
+nav:'Chi phí',screen:app('Chi phí','Quỹ tiền',`<div class="two"><div class="box2"><div class="lb">Két tiền mặt</div><span class="big" id="k1">3.200.000</span></div><div class="box2"><div class="lb">Ngân hàng</div><span class="big" id="k2">18.450.000</span></div></div><div class="ln">${btn('b_tr','Chuyển quỹ 2.000.000 NH → Két')}</div><div style="margin-top:10px">${fld('dm','Đếm thực tế trong két')}<p class="hid red" id="df">Lệch −20.000 ₫. Nhấn lưu để ghi điều chỉnh.</p></div>`),
+script:[['s',0],['w',900],['s',1],['click','#b_tr'],['set','#k1','5.200.000'],['set','#k2','16.450.000'],['s',2],['type','#dm','5.180.000'],['s',3],['show','#df']]});
+
+add({ch:'E',title:'Đọc báo cáo: năm câu hỏi',lead:'Đừng nhìn hàng chục chỉ số. Mở Tổng quan hoặc Báo cáo → Sức khoẻ và trả lời năm câu.',
+steps:['Tiền có đủ không? Quỹ có âm không, công nợ có phình không.','Bán có lời không? Biên lợi nhuận gộp và lãi ròng.','Hàng có kẹt hoặc sắp hết không?','Khách có quay lại không?','Chi phí có phình ra không? Nhấn vào dòng đỏ để xem việc nên làm.'],
+tip:'Mỗi con số có nút ⓘ giải thích nghĩa, cách tính, nguồn và link tới dữ liệu gốc. Đầu trang báo cáo luôn ghi rõ đang xem shop nào, khoảng ngày nào.',
+sample:'Số trong màn hình là ví dụ.',
+nav:'Báo cáo',screen:app('Báo cáo','Sức khoẻ kinh doanh',`<div class="box2" style="padding:4px"><div class="row"><i class="dot g"></i><span>Tiền có đủ không?</span><b style="margin-left:auto">Két + NH 21,6 triệu</b></div><div class="row"><i class="dot g"></i><span>Bán có lời không?</span><b style="margin-left:auto">Biên gộp 42%</b></div><div class="row"><i class="dot y"></i><span>Hàng có kẹt không?</span><b style="margin-left:auto">3 mặt hàng chậm</b></div><div class="row"><i class="dot g"></i><span>Khách quay lại?</span><b style="margin-left:auto">Mua lại 31%</b></div><div class="row" id="rr"><i class="dot r"></i><span>Chi phí có phình ra?</span><b style="margin-left:auto">QC 34% doanh thu</b></div></div><div class="box2 hid" id="adv"><b>Việc nên làm</b><br>Quảng cáo đang ăn 34% doanh thu thuần, cao hơn ngưỡng bạn đặt. Xem chiến dịch nào không ra đơn rồi tắt.</div>`),
+script:[['s',0],['w',800],['s',1],['w',800],['s',2],['w',800],['s',3],['w',800],['s',4],['click','#rr'],['cls','#rr','add','sel'],['show','#adv']]});
+
+add({ch:'E',title:'Quy trình chốt tháng',lead:'Cuối tháng làm đủ bảy việc theo thứ tự này, số của bạn sẽ khớp từ kho đến sổ kế toán.',
+steps:['Import hết đơn sàn của tháng.','Ghi nhận tiền sàn đã về.','Nhập đủ chi phí tháng.','Kiểm kê kho.','Chốt kho đến cuối tháng.','Xem Kết quả kinh doanh trong Kế toán.','Khoá sổ kế toán đến cuối tháng.'],
+tip:'Khoá sổ chặn sửa chi phí, thanh toán, quỹ và chứng từ tay trong kỳ đã khoá. Đơn sàn import muộn vẫn nhận, hệ thống so lại số dư và báo nếu kỳ khoá có thay đổi.',
+nav:'Kế toán',screen:app('Kế toán','Chốt tháng 10',`<div class="box2" style="padding:6px 10px" id="cl">${['Import đơn sàn','Ghi nhận tiền sàn về','Nhập đủ chi phí','Kiểm kê kho','Chốt kho 31/10','Xem Kết quả kinh doanh','Khoá sổ 31/10'].map((t,i)=>`<div class="row" id="x${i}"><span class="ck" id="ck${i}">✓</span> ${t}</div>`).join('')}</div>${toast('t1','Đã khoá sổ đến 31/10/2026. Hệ thống chụp lại số dư các tài khoản.')}`),
+script:[['s',0],['ckx',0],['s',1],['ckx',1],['s',2],['ckx',2],['s',3],['ckx',3],['s',4],['ckx',4],['s',5],['ckx',5],['s',6],['ckx',6],['show','#t1']]});
+
+add({ch:'E',title:'Chăm sóc khách cũ',lead:'Loyalty & Campaign gom việc nên liên hệ hôm nay: nhắc mua lại, sinh nhật, gợi ý theo mệnh.',
+steps:['Tab “Hôm nay” liệt kê khách sắp hết hàng đã mua và khách sắp sinh nhật.','Nhấn một khách, hệ thống soạn sẵn tin từ mẫu.','Sửa lời nếu muốn, nhấn Sao chép rồi dán vào Zalo hoặc Messenger.'],
+tip:'Ngày dự kiến hết hàng lấy từ chu kỳ dùng của sản phẩm và số lượng khách mua. Mua 3 chai thì không nhắc sau 1 chu kỳ.',warn:'Hệ thống chưa tự gửi tin. Bạn gửi tay qua kênh của mình.',
+nav:'Khách hàng',screen:app('Khách hàng','Hôm nay nên liên hệ',`<div class="box2" style="padding:4px"><div class="row" id="c1"><b>Chị Lan</b><span>sắp hết Cam Gỗ ~12/11</span>${pill('Mua lại','o')}</div><div class="row"><b>Anh Bình</b><span>sinh nhật 15/11</span>${pill('Sinh nhật','p')}</div></div><div class="hid" id="ms">${fld('msg','Tin nhắn','')}${btn('b_cp','Sao chép','pri')}</div>${toast('t1','Đã sao chép. Dán vào Zalo hoặc Messenger.')}`),
+script:[['s',0],['w',800],['s',1],['click','#c1'],['cls','#c1','add','sel'],['show','#ms'],['type','#msg','Chào chị Lan, chai Cam Gỗ chị mua chắc sắp hết. Shop còn hàng, chị cần em giữ giúp nhé.'],['s',2],['click','#b_cp'],['show','#t1']]});
+
+add({ch:'E',title:'Cài đặt nên biết',lead:'Vài chỗ trong Cài đặt giúp hệ thống hợp với shop của bạn.',
+steps:['Cài đặt → Shop & kho → nhấn shop → Màu giao diện. Chọn màu chủ đạo cho shop này.','Nút “Về màu mặc định” trả lại màu của chủ đề.','Nền tảng bán hàng: bật TikTok Shop khi bạn bán trên đó. Tắt chỉ ẩn kênh, đơn cũ vẫn còn.','Sao lưu: hệ thống tự lưu hằng ngày. Bạn nên tải bản sao lưu về máy khác hoặc Drive.'],
+warn:'Dữ liệu nằm trên máy chạy hệ thống. Mất máy là mất dữ liệu nếu bạn không chép bản sao lưu ra nơi khác.',
+nav:'Cài đặt',screen:app('Cài đặt','Hương Xe · Màu giao diện',`<label class="lb">Màu chủ đạo</label><div id="swl"><span class="sw sel" id="w0" style="background:#633d37"></span><span class="sw" id="w1" style="background:#1f5a73"></span><span class="sw" id="w2" style="background:#3d6b3a"></span></div><div class="ln">${btn('b_pr','Nút chính','pri')} ${btn('b_rs','Về màu mặc định')}</div><div class="box2" style="margin-top:10px">${kv('Nền tảng: Shopee','Đã kết nối')}${kv('Nền tảng: TikTok Shop','<span id="tk">Tắt</span>')}${kv('Sao lưu gần nhất','08/11/2026 03:00')}</div>`),
+script:[['s',0],['click','#w1'],['cls','#w0','rm','sel'],['cls','#w1','add','sel'],['var','--m-red','#1f5a73'],['s',1],['w',700],['click','#b_rs'],['cls','#w1','rm','sel'],['cls','#w0','add','sel'],['var','--m-red','#633d37'],['s',2],['set','#tk','Đã kết nối'],['s',3],['w',900]]});
+
+add({ch:'E',type:'cheat'});
+add({ch:'E',type:'faq'});
+
+/* ---------- slide đặc biệt ---------- */
+function coverHTML(){
+  const first=(c)=>SL.findIndex(x=>x.ch===c&&!x.type);
+  return `<div class="full"><p class="kick">Cẩm nang cho chủ shop</p><h1 style="font-size:clamp(30px,5vw,52px)">Dùng Mở Sổ từ ngày đầu đến chốt tháng</h1>
+  <p class="lead" style="font-size:18px">Nhấn → để sang bước sau. Mỗi trang có một màn hình mô phỏng tự thao tác và phát lại liên tục. Xem xong bạn biết cần nhấn gì, ở đâu và chuyện gì xảy ra với kho và tiền.</p>
+  <div class="map">
+    <button data-go="${first('A')}"><b>Bắt đầu</b><span>Tạo shop, sản phẩm, nhập hàng đầu tiên, trả tiền nhà cung cấp</span></button>
+    <button data-go="${first('B')}"><b>Bán hàng</b><span>Bán trực tiếp, đơn giao hàng, Shopee, khách, huỷ, trả hàng</span></button>
+    <button data-go="${first('C')}"><b>Kho</b><span>Chuyển kho, kiểm kê, hàng hỏng, chốt kho, gỡ sản phẩm</span></button>
+    <button data-go="${first('D')}"><b>Tiền</b><span>Chi phí, quỹ tiền, chi phí định kỳ</span></button>
+    <button data-go="${first('E')}"><b>Cuối tháng</b><span>Báo cáo, chốt tháng, chăm sóc khách, cài đặt, tình huống hay gặp</span></button>
+  </div>
+  <p class="sample">Màn hình trong cẩm nang là mô phỏng để học thao tác. Số liệu và tên là ví dụ.</p></div>`;
+}
+function cheatHTML(){
+  return `<div class="full"><p class="kick">Tóm lại</p><h2>Việc cần làm theo nhịp</h2><div class="cols">
+  <div><h3>Mỗi ngày</h3><ul><li>Ghi mọi đơn bán trực tiếp ngay khi bán.</li><li>Nhận hàng về thì lập phiếu nhập ngay.</li><li>Hàng vỡ hoặc mất thì ghi điều chỉnh.</li><li>Nhìn Tổng quan: đơn chờ, hàng sắp hết.</li></ul></div>
+  <div><h3>Mỗi tuần</h3><ul><li>Import đơn Shopee hoặc TikTok mới.</li><li>Ghi nhận tiền sàn đã về.</li><li>Nhập chi phí phát sinh (quảng cáo, ship).</li><li>Xem Hôm nay trong Loyalty: gửi tin nhắc mua lại.</li></ul></div>
+  <div><h3>Mỗi tháng</h3><ul><li>Kiểm kê kho.</li><li>Chốt kho và khoá sổ kế toán.</li><li>Xem Sức khoẻ kinh doanh và Kết quả kinh doanh.</li><li>Tải bản sao lưu ra nơi khác.</li></ul></div>
+  </div></div>`;
+}
+const FAQ=[
+['Nhập nhầm số lượng ở phiếu nhập','Phiếu chưa nhận thì sửa. Đã nhận thì huỷ phiếu (nếu đã trả tiền, ghi nhà cung cấp hoàn tiền) rồi lập lại, hoặc dùng Điều chỉnh để sửa tồn.'],
+['Khách đổi ý khi hàng còn ở shop','Mở đơn đang ở Xác nhận, nhấn Huỷ đơn. Kho tự cộng lại. Hàng đã giao đi thì dùng Trả hàng.'],
+['Khách không nhận hoặc trả hàng','Mở đơn → Trả hàng. Chọn hoàn ship, phí giữ lại, hàng nhập kho hay hỏng. Lý do ghi bằng chữ vào ô Lý do.'],
+['Kho trong hệ thống khác kho thật','Kiểm kê chỗ lệch. Đừng sửa tay số tồn; kiểm kê sẽ sinh phiếu điều chỉnh có dấu vết.'],
+['Đơn sàn làm kho âm','Hệ thống vẫn nhận vì đơn đã xảy ra thật, và gắn cờ cảnh báo. Kiểm tra lại phiếu nhập còn thiếu.'],
+['Tiền sàn về thiếu so với đơn','Kiểm phí sàn trên đơn. Nhập đúng phí thì số cần thu khớp tiền về.'],
+['Muốn sửa số liệu tháng đã chốt','Mở lại kỳ kho (ghi lý do). Sổ kế toán đã khoá thì mở khoá bằng cách khoá lại ngày cũ hơn.'],
+['Khách trùng hai hồ sơ','Khách hàng → Gộp trùng. Đơn và ghi chú chuyển sang hồ sơ giữ lại.'],
+['Không còn bán một sản phẩm','Xoá sản phẩm…: chưa từng dùng thì xoá hẳn, đã dùng thì ngừng kinh doanh và khôi phục được.'],
+['Đóng một kho','Gỡ kho… và chuyển hết hàng sang kho khác. Kho từng có lịch sử chỉ được đóng, không xoá.'],
+['Muốn xem lại mọi phiếu đã lập','Menu Chứng từ: đơn, phiếu nhập, trả hàng, hàng huỷ, chuyển kho, điều chỉnh, kiểm kê. Lọc theo loại, mã và ngày.'],
+['Ship tự trả hãng vận chuyển','Nhập ở ô “Ship shop tự trả” khi tạo đơn. Trả tiền cho hãng xong thì mở đơn nhấn “Ghi đã trả”.'],
+['Không nhớ nhấn đâu','Mở Hướng dẫn trong menu. Mỗi con số trong báo cáo có nút ⓘ giải thích.']];
+function faqHTML(){
+  return `<div class="full"><p class="kick">Gặp thì làm</p><h2>Tình huống hay gặp</h2><div class="tw"><table><thead><tr><th>Tình huống</th><th>Cách xử lý</th></tr></thead><tbody>${FAQ.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+
+export { CH, SL, coverHTML, cheatHTML, faqHTML };

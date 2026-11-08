@@ -216,7 +216,7 @@ function ShopProfile({ customerId, shop, profile, onSaved }) {
       {!editing && fields.length > 0 && <button className="btn sm primary" onClick={() => setDraft({ ...defaults, ...profile.values })}>Sửa</button>}
     </>}>
       <p className="small muted" style={{ marginTop: 0 }}>Chỉ shop này thấy. Cùng khách này ở shop khác có thông tin riêng của shop đó. Ngày sinh nằm ở Thông tin chung.</p>
-      {profile.fields.length === 0 ? <span className="muted">Shop này chưa có trường nào. Bấm “Chỉnh các trường” để thêm.</span> : editing ? (
+      {profile.fields.length === 0 ? <span className="muted">Shop này chưa có trường nào. Nhấn “Chỉnh các trường” để thêm.</span> : editing ? (
         <div className="stack">
           {fields.map((f) => (
             <Field key={f.id} label={f.type === 'boolean' ? '' : `${f.label}${f.required ? ' *' : ''}`} hint={f.role === 'element' && el && el.source !== 'override' ? `Để trống thì dùng mệnh tự tính: ${el.value}` : undefined}>

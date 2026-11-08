@@ -59,7 +59,7 @@ function snapshot(type, id, ctx) {
     case 'payment': {
       const p = db().prepare('SELECT * FROM payments WHERE id = ?').get(id);
       if (!p) return null;
-      const order = p.ref_type === 'order' ? db().prepare('SELECT id, code, channel_id, customer_id FROM orders WHERE id = ?').get(p.ref_id) : null;
+      const order = ['order', 'order_seller_shipping'].includes(p.ref_type) ? db().prepare('SELECT id, code, channel_id, customer_id FROM orders WHERE id = ?').get(p.ref_id) : null;
       const purchase = ['purchase', 'purchase_carrier'].includes(p.ref_type) ? db().prepare('SELECT id, code, supplier_id FROM purchases WHERE id = ?').get(p.ref_id) : null;
       return { p, order, purchase, marketplace: order ? ctx.marketplace.get(order.channel_id) ?? false : false };
     }

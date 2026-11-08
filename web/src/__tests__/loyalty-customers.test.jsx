@@ -84,7 +84,7 @@ describe('Hồ sơ khách: nhãn và xoá khỏi shop', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(api.put).toHaveBeenCalledWith('/customers/c1/tags', { shop_id: 'nh', tags: ['VIP', 'Quen'] }));
   });
-  it('gợi ý nhãn shop đang dùng, bấm là thêm', async () => {
+  it('gợi ý nhãn shop đang dùng, nhấn là thêm', async () => {
     open();
     fireEvent.click(await screen.findByRole('button', { name: 'Mua sỉ' }));
     await waitFor(() => expect(api.put).toHaveBeenCalledWith('/customers/c1/tags', { shop_id: 'nh', tags: ['VIP', 'Mua sỉ'] }));

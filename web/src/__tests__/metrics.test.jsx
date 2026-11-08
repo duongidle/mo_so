@@ -40,7 +40,7 @@ describe('từ điển chỉ số', () => {
 
 describe('MetricInfo', () => {
   const wrap = (ui) => render(<MemoryRouter><MetricFilters.Provider value={{ from: '2026-11-01', to: '2026-11-30' }}>{ui}</MetricFilters.Provider></MemoryRouter>);
-  it('mở bằng nút ⓘ, đóng bằng Esc và bằng bấm ra ngoài', async () => {
+  it('mở bằng nút ⓘ, đóng bằng Esc và bằng nhấn ra ngoài', async () => {
     wrap(<div><MetricInfo metric="cancel_rate_pct" /><p>ngoài</p></div>);
     const btn = screen.getByRole('button', { name: /Giải thích: Tỷ lệ huỷ/ });
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -52,8 +52,8 @@ describe('MetricInfo', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(btn);
     expect(screen.getByRole('dialog')).toBeTruthy();
-    await new Promise((r) => setTimeout(r, 20)); // Radix gắn bộ nghe "bấm ra ngoài" sau một nhịp
-    const outside = screen.getByText('ngoài'); // một cú bấm thật: pointerdown → mousedown → click
+    await new Promise((r) => setTimeout(r, 20)); // Radix gắn bộ nghe "nhấn ra ngoài" sau một nhịp
+    const outside = screen.getByText('ngoài'); // một cú nhấn thật: pointerdown → mousedown → click
     fireEvent.pointerDown(outside); fireEvent.mouseDown(outside); fireEvent.click(outside);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });

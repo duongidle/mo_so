@@ -49,7 +49,7 @@ function CreateCount({ warehouses, onClose, onCreated }) {
           <option value="empty">Phiếu trống, tự thêm từng mã</option>
         </select>
       </Field>
-      <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="vd: Kiểm kê cuối tháng 11" /></Field>
+      <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: Kiểm kê cuối tháng 11" /></Field>
       <ErrorBox error={error} />
     </Modal>
   );

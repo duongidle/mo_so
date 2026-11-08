@@ -89,12 +89,12 @@ export default function ProfileEditor({ profile, channels, columns = [], rows = 
       {missingRequired.length > 0 && <div className="alert err small">Cần chọn cột cho: {missingRequired.map((k) => IMPORT_FIELDS.find((f) => f[0] === k)[1]).join(', ')}.</div>}
 
       <h3>Trạng thái đơn: chữ trong file → trạng thái của Mở Sổ</h3>
-      <p className="small muted" style={{ margin: 0 }}>Chữ nào không có ở đây và app không đoán được sẽ báo lỗi dòng đó, không bỏ qua im lặng.</p>
+      <p className="small muted" style={{ margin: 0 }}>Chữ nào không có ở đây và hệ thống không đoán được sẽ báo lỗi dòng đó, không bỏ qua im lặng.</p>
       {statusMap.map(([k, v], i) => (
         <div className="row" key={i}>
           <input value={k} onChange={(e) => setStatusMap(statusMap.map((x, j) => (j === i ? [e.target.value, x[1]] : x)))} aria-label="Chữ trong file" />
           <span>→</span>
-          <select value={v} onChange={(e) => setStatusMap(statusMap.map((x, j) => (j === i ? [x[0], e.target.value] : x)))} aria-label="Trạng thái của app">{Object.entries(STATUS).map(([sk, sl]) => <option key={sk} value={sk}>{sl}</option>)}</select>
+          <select value={v} onChange={(e) => setStatusMap(statusMap.map((x, j) => (j === i ? [x[0], e.target.value] : x)))} aria-label="Trạng thái trong hệ thống">{Object.entries(STATUS).map(([sk, sl]) => <option key={sk} value={sk}>{sl}</option>)}</select>
           <button className="btn sm" aria-label="Bỏ dòng" onClick={() => setStatusMap(statusMap.filter((_, j) => j !== i))}>✕</button>
         </div>
       ))}

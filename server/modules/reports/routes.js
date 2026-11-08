@@ -42,6 +42,7 @@ r.get('/cashflow', (c) => {
   const data = svc.cashflow(flt);
   return c.json({ data, meta: { scope: { shop_filtered: shopFiltered(flt), shared_expenses_included: !shopFiltered(flt), shared_expenses_not_included: data.shared_expenses_not_included, supplier_payable: 'account', receivables: shopFiltered(flt) ? 'shop' : 'account', receivables_as_of: 'today' } } });
 });
+r.get('/return-reasons', (c) => c.json({ data: svc.returnReasons(f(c)) }));
 r.get('/expenses', (c) => c.json({ data: svc.expenseReport(f(c)) }));
 r.get('/aging', (c) => {
   const flt = f(c);

@@ -44,7 +44,7 @@ function validate(input, lines) {
     const a = accs.get(l.account_code);
     if (!a) throw badRequest('INVALID_ACCOUNT', `Tài khoản ${l.account_code} không tồn tại`);
     if (a.archived_at) throw conflict('ACCOUNT_ARCHIVED', `Tài khoản ${l.account_code} đã lưu trữ`);
-    if (NOT_POSTABLE.has(l.account_code)) throw badRequest('ACCOUNT_NOT_POSTABLE', `Tài khoản ${l.account_code} là tài khoản tổng: chọn tài khoản quỹ cụ thể (vd 1111) hoặc tài khoản khác`);
+    if (NOT_POSTABLE.has(l.account_code)) throw badRequest('ACCOUNT_NOT_POSTABLE', `Tài khoản ${l.account_code} là tài khoản tổng: chọn tài khoản quỹ cụ thể (ví dụ 1111) hoặc tài khoản khác`);
   }
   const sum = (k) => lines.reduce((a, l) => a + l[k], 0);
   if (sum('debit') !== sum('credit')) throw badRequest('UNBALANCED', `Bút toán không cân: Nợ ${sum('debit')} khác Có ${sum('credit')}`, { debit: sum('debit'), credit: sum('credit') });

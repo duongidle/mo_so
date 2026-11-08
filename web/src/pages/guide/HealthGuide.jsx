@@ -64,7 +64,7 @@ export default function HealthGuide() {
               <div className="stack" style={{ gap: 8 }}>
                 {COLOR_MEANING.map((m) => <div key={m.status} className="row"><b className={`h-${m.status}`} style={{ minWidth: 60 }}>● {m.label}</b><span>{m.text}</span></div>)}
               </div>
-              <p className="small muted" style={{ marginBottom: 0 }}>Các mức vàng/đỏ của tỷ lệ (biên lợi nhuận, huỷ đơn, hoàn trả, số ngày tồn, khách mua lại) do bạn đặt ở <Link to="/settings">Cài đặt → Ngưỡng & kho</Link>. App chỉ gợi ý mức mặc định, mỗi ngành hợp mức khác nhau nên hãy chỉnh cho đúng với bạn.</p>
+              <p className="small muted" style={{ marginBottom: 0 }}>Các mức vàng/đỏ của tỷ lệ (biên lợi nhuận, huỷ đơn, hoàn trả, số ngày tồn, khách mua lại) do bạn đặt ở <Link to="/settings">Cài đặt → Ngưỡng & kho</Link>. Hệ thống chỉ gợi ý mức mặc định, mỗi ngành hợp mức khác nhau nên bạn cần chỉnh cho đúng với shop của mình.</p>
               <div className="stack" style={{ gap: 4, marginTop: 12 }}>
                 {d.health.data.map((h) => <div key={h.key} className="row between small"><span>{h.label}</span><span><b className="num">{h.value === null ? '—' : String(h.value).replace('.', ',')}</b> <Dot status={h.status} /> <span className="muted">(vàng khi {h.threshold.direction === 'higher_better' ? 'dưới' : 'trên'} {h.threshold.warn}, đỏ khi {h.threshold.direction === 'higher_better' ? 'dưới' : 'trên'} {h.threshold.bad})</span></span></div>)}
               </div>
@@ -72,7 +72,7 @@ export default function HealthGuide() {
 
             <div className="stack">
               <h2 style={{ margin: '8px 0 0' }}>Từ điển các con số</h2>
-              <p className="small muted" style={{ margin: 0 }}>Bấm vào từng mục để xem nghĩa, cách tính và việc nên làm.</p>
+              <p className="small muted" style={{ margin: 0 }}>Nhấn vào từng mục để xem nghĩa, cách tính và việc nên làm.</p>
               {GLOSSARY.map((g) => (
                 <Card key={g.group} title={g.group}>
                   {g.items.map((it) => (

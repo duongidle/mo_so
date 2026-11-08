@@ -1,3 +1,4 @@
+import { reasonLabel } from '../lib/returnReasons.js';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
@@ -20,7 +21,7 @@ const INTRO = {
   products: 'Sản phẩm nào bán chạy và sản phẩm nào lãi?',
   customers: 'Có bao nhiêu khách mua, bao nhiêu là khách mới và khách quay lại?',
   inventory: 'Hàng còn bao nhiêu, bao nhiêu tiền đang nằm trong kho, món nào sắp hết hoặc bán chậm? Số tồn tính đến hôm nay.',
-  cash: 'Tiền đang có ở đâu, ai còn nợ mình và mình còn nợ ai?',
+  cash: 'Tiền đang có ở đâu, khách và sàn còn nợ bao nhiêu, bạn còn nợ nhà cung cấp bao nhiêu?',
   custom: 'Các chỉ số do bạn tự đặt công thức.',
   health: 'Các tỷ lệ chính đang xanh, vàng hay đỏ so với ngưỡng bạn đặt?',
 };
@@ -59,7 +60,7 @@ export default function Reports() {
   const state = useAsync(() => {
     const load = () => {
     switch (tab) {
-      case 'revenue': return Promise.all([api.get('/reports/overview', p), api.get('/reports/revenue', p)]);
+      case 'revenue': return Promise.all([api.get('/reports/overview', p), api.get('/reports/revenue', p), api.get('/reports/return-reasons', p)]);
       case 'profit': return Promise.all([api.get('/reports/overview', p), api.get('/reports/shops', p)]);
       case 'channels': return api.get('/reports/channels', p);
       case 'expenses': return api.get('/reports/expenses', p);
@@ -109,7 +110,7 @@ const Th = ({ m, children, className = 'num', ...rest }) => <th className={class
 
 function Body({ tab, d, elements }) {
   if (tab === 'revenue') {
-    const [{ data: ov }, series] = d;
+    const [{ data: ov }, series, rr] = d;
     const c = ov.current;
     return (
       <>
@@ -120,6 +121,14 @@ function Body({ tab, d, elements }) {
           <Kpi metric="cancel_rate_pct" label="Tỷ lệ huỷ / hoàn" value={`${pct(c.cancel_rate_pct)} / ${pct(c.return_rate_pct)}`} hint={<>Hoàn: {pct(c.return_rate_pct)} <MetricInfo metric="return_rate_pct" /></>} />
         </div>
         <Card title={<MetricLabel metric="revenue_by_day">Doanh thu theo ngày</MetricLabel>}><Bars data={series.data} value="net_revenue" /></Card>
+        {rr?.data?.rows?.length > 0 && (
+          <Card title="Trả hàng theo lý do">
+            <div className="stack small">
+              {rr.data.rows.map((x) => <div key={x.reason_code} className="row between"><span>{reasonLabel(x.reason_code === 'none' ? null : x.reason_code)}</span><span className="num">{x.returns_count} phiếu · {vnd(x.goods_amount)}</span></div>)}
+              {rr.data.write_offs.count > 0 && <div className="row between h-red" style={{ borderTop: '1px solid var(--hair)', paddingTop: 8 }}><span>Hàng hỏng không nhập lại ({rr.data.write_offs.count} phiếu hàng huỷ)</span><span className="num">giá vốn {vnd(rr.data.write_offs.cost)}</span></div>}
+            </div>
+          </Card>
+        )}
         <Card title="Từ tiền hàng đến doanh thu thuần"><div className="stack small">
           <Row m="gross_revenue" l="Doanh thu gộp (tiền hàng)" v={c.gross_revenue} /><Row m="discount_amount" l="Giảm giá" v={c.discount_amount} neg /><Row m="returned_amount" l="Hàng trả" v={c.returned_amount} neg /><Row m="net_revenue" l="Doanh thu thuần" v={c.net_revenue} bold />
         </div></Card>
@@ -256,7 +265,7 @@ function CashTab({ cf, aging, accounts, meta }) {
       <Card title={<MetricLabel metric="fund_balance">{`Số dư các quỹ · ${vnd(accounts.total_balance)}`}</MetricLabel>} actions={<Link className="btn sm" to="/expenses?tab=cash">Quản lý quỹ</Link>}>
         {accounts.data.map((a) => <div key={a.id} className="row between" style={{ padding: '8px 0' }}><span>{a.name}</span><b className={`num ${a.balance < 0 ? 'h-red' : ''}`}>{vnd(a.balance)}</b></div>)}
         {accounts.unassigned.has_activity && <div className="alert warn small" style={{ marginTop: 8 }}>Có {vnd(accounts.unassigned.net)} ở phương thức chưa gán quỹ nào ({accounts.unassigned.methods.join(', ')}). Gán ở Chi phí & đối soát → Quỹ tiền để số dư đủ.</div>}
-        <p className="small muted" style={{ marginBottom: 0 }}>Số dư tính đến hôm nay, không phụ thuộc khoảng ngày đang chọn. Hãy nhập số dư đầu và đếm tiền thật ở trang quản lý quỹ để số này khớp với két và tài khoản.</p>
+        <p className="small muted" style={{ marginBottom: 0 }}>Số dư tính đến hôm nay, không phụ thuộc khoảng ngày đang chọn. Vui lòng nhập số dư đầu và kiểm đếm tiền thật ở trang quản lý quỹ để số này khớp với két và tài khoản.</p>
       </Card>
       <div className="grid cols-3"><Kpi metric="cash_in" label="Đã thu trong kỳ" value={vnd(cf.cash_in)} /><Kpi metric="cash_out" label="Đã chi trong kỳ" value={vnd(cf.cash_out)} hint={`Gồm chi phí ${vnd(cf.cash_out_expenses)}`} /><Kpi metric="net_cash" label="Ròng trong kỳ" value={vnd(cf.net_cash)} /></div>
       {cf.shared_expenses_not_included > 0 && <div className="alert warn small">Đang lọc theo shop: chi phí chung {vnd(cf.shared_expenses_not_included)} không thuộc shop nào nên chưa tính vào số “Đã chi”.</div>}

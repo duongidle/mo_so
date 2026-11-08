@@ -131,7 +131,7 @@ export default function FieldsManager({ entities = Object.keys(ENTITIES), shop =
           ) : del.usage.values_count > 0 ? (
             <div className="stack small" style={{ gap: 8 }}>
               <div>Trường <b>{del.field.label}</b> đang có dữ liệu ở <b>{del.usage.values_count}</b> bản ghi. Xoá hẳn sẽ bỏ trường và toàn bộ dữ liệu đó khỏi các màn hình.</div>
-              <div className="muted">Bản sao dữ liệu được ghi vào nhật ký hệ thống để khôi phục tay nếu xoá nhầm. Muốn giữ dữ liệu và chỉ ẩn trường, đóng hộp này rồi bấm “Ẩn”.</div>
+              <div className="muted">Bản sao dữ liệu được ghi vào nhật ký hệ thống để khôi phục tay nếu xoá nhầm. Muốn giữ dữ liệu và chỉ ẩn trường, đóng hộp này rồi nhấn “Ẩn”.</div>
             </div>
           ) : (
             <div className="small">Trường <b>{del.field.label}</b> chưa có dữ liệu nào. Xoá hẳn sẽ giải phóng khoá <code>{del.field.key}</code> để dùng lại.</div>
@@ -156,7 +156,7 @@ export default function FieldsManager({ entities = Object.keys(ENTITIES), shop =
           )}
           {f.type !== 'formula' && <label className="check"><input type="checkbox" checked={!!f.required} onChange={(e) => setF({ ...f, required: e.target.checked })} />Bắt buộc nhập (báo lỗi khi lưu mà thiếu)</label>}
           {f.entity_type === 'customer' && f.type !== 'formula' && <label className="check"><input type="checkbox" checked={!!f.show_in_list} onChange={(e) => setF({ ...f, show_in_list: e.target.checked })} />Hiện thành cột ở danh sách khách</label>}
-          {roleChoices.length > 0 && <Field label="Vai trò đặc biệt" hint="Cho app biết trường này là mệnh ghi đè (để trống thì app tự tính từ ngày sinh của khách). Mỗi vai trò một trường."><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="">Không có</option>{roleChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
+          {roleChoices.length > 0 && <Field label="Vai trò đặc biệt" hint="Cho hệ thống biết trường này là mệnh ghi đè (để trống thì hệ thống tự tính từ ngày sinh của khách). Mỗi vai trò một trường."><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}><option value="">Không có</option>{roleChoices.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>}
           <ErrorBox error={error} />
         </Modal>
       )}

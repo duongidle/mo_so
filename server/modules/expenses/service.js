@@ -1,10 +1,11 @@
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
-import { nowIso, businessDate } from '../../lib/time.js';
+import { nowIso, businessDate, toIso } from '../../lib/time.js';
 import { notFound, badRequest } from '../../lib/errors.js';
 import { emit, audit } from '../../lib/events.js';
 import { recordPayment } from '../payments/service.js';
-import { addOrderPayment } from '../orders/service.js';
+import { addOrderPayment, updateOrder } from '../orders/service.js';
+import { getSetting } from '../settings/service.js';
 import { payoutMethodOf } from '../../lib/platforms.js';
 import { assertUnlocked } from '../../lib/period.js';
 
@@ -101,7 +102,8 @@ export function voidExpense(id, actor) {
 const PENDING_SQL = `
   SELECT o.id, o.code, o.external_id, o.shop_id, s.name AS shop_name, o.channel_id, o.customer_name, o.status,
          o.completed_at, o.business_date, o.net_amount, o.returned_amount, o.paid_amount,
-         (o.net_amount - o.returned_amount - o.paid_amount) AS pending_amount
+         (o.net_amount - o.returned_amount - o.paid_amount) AS pending_amount,
+         CAST(julianday('now') - julianday(o.completed_at) AS INTEGER) AS days_pending
   FROM orders o JOIN shops s ON s.id = o.shop_id JOIN channels ch ON ch.id = o.channel_id
   WHERE ch.is_marketplace = 1 AND o.status = 'completed' AND (o.net_amount - o.returned_amount - o.paid_amount) > 0`;
 
@@ -115,7 +117,11 @@ export function pendingPayouts({ shopIds, channel, from, to } = {}) {
   const rows = db()
     .prepare(`${PENDING_SQL} ${where.length ? 'AND ' + where.join(' AND ') : ''} ORDER BY o.completed_at`)
     .all(...params);
-  return { data: rows, total_pending: rows.reduce((a, r) => a + r.pending_amount, 0), count: rows.length };
+  // Đơn giao xong quá N ngày mà sàn chưa trả: nên khiếu nại với sàn (Shopee: đơn giao hơn 7 ngày chưa thanh toán)
+  const overdueDays = getSetting('payout_overdue_days') || 0;
+  const data = rows.map((r) => ({ ...r, overdue: overdueDays > 0 && r.days_pending >= overdueDays }));
+  const late = data.filter((r) => r.overdue);
+  return { data, total_pending: rows.reduce((a, r) => a + r.pending_amount, 0), count: rows.length, overdue_days: overdueDays, overdue_count: late.length, overdue_amount: late.reduce((a, r) => a + r.pending_amount, 0) };
 }
 
 /**
@@ -123,7 +129,7 @@ export function pendingPayouts({ shopIds, channel, from, to } = {}) {
  * items: [{ order_id?, external_id?, amount? }] — bỏ amount = nhận đủ số còn treo.
  * Đơn không tìm thấy hoặc không còn treo được báo lại, không bỏ qua im lặng.
  */
-export function recordPayouts({ items, method, channelId, paidAt, note, shopId }, actor) {
+export function recordPayouts({ items, method, channelId, paidAt, note, shopId, settleDifference = false }, actor) {
   const results = [];
   for (const it of items) {
     let o = null;
@@ -153,9 +159,30 @@ export function recordPayouts({ items, method, channelId, paidAt, note, shopId }
     }
     // Không chỉ định: dùng phương thức tiền về của nền tảng đang đối soát (shopee_payout, tiktok_payout…), kênh khác = chuyển khoản
     addOrderPayment(o.id, { amount, method: method ?? payoutMethodOf(channelId ?? o.channel_id), paidAt, note: note ?? 'Đối soát payout' }, actor);
-    results.push({ order_id: o.id, code: o.code, ok: true, amount, still_pending: Math.max(0, pending.pending_amount - amount) });
+    // Sàn trả khác kỳ vọng và chủ shop xác nhận đó là phí/phạt/hoàn phí thật: cộng phần lệch vào phí sàn của đơn để đơn hết treo và lãi đúng
+    let feeDelta = 0;
+    if (settleDifference && amount !== pending.pending_amount) {
+      feeDelta = pending.pending_amount - amount; // trả thiếu → phí sàn tăng; trả dư → phí sàn giảm (không âm)
+      const fee = o.platform_fee_amount ?? 0;
+      if (fee + feeDelta < 0) feeDelta = -fee;
+      updateOrder(o.id, { platform_fee_amount: fee + feeDelta }, actor);
+      db().prepare('INSERT INTO payout_adjustments (id, order_id, shop_id, channel_id, expected_amount, received_amount, fee_delta, note, business_date, actor_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        .run(newId('pad'), o.id, o.shop_id, o.channel_id, pending.pending_amount, amount, feeDelta, note ?? null, businessDate(toIso(paidAt) || nowIso()), actor?.id ?? null, nowIso());
+    }
+    results.push({ order_id: o.id, code: o.code, ok: true, amount, fee_delta: feeDelta, still_pending: Math.max(0, pending.pending_amount - amount - feeDelta) });
   }
   return { results, recorded: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length };
+}
+
+/** Các lần đối soát lệch (phần phí sàn tăng/giảm thêm theo từng đơn) */
+export function listPayoutAdjustments({ shopIds, from, to, limit = 200 } = {}) {
+  const where = [];
+  const params = [];
+  if (shopIds?.length) (where.push(`a.shop_id IN (${shopIds.map(() => '?').join(',')})`), params.push(...shopIds));
+  if (from) (where.push('a.business_date >= ?'), params.push(from));
+  if (to) (where.push('a.business_date <= ?'), params.push(to));
+  const rows = db().prepare(`SELECT a.*, o.code AS order_code, o.external_id FROM payout_adjustments a JOIN orders o ON o.id = a.order_id ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY a.created_at DESC LIMIT ?`).all(...params, limit);
+  return { data: rows, total_fee_delta: rows.reduce((a, r) => a + r.fee_delta, 0) };
 }
 
 export function listPayments({ direction, refType, method, from, to, shopIds, limit = 100, cursor }) {

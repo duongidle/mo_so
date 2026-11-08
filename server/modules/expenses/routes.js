@@ -79,6 +79,10 @@ r.get('/reconciliation/pending', (c) => {
   const q = query(c, z.object({ shop_id: z.string().optional(), channel_id: z.string().optional(), channel: z.string().optional(), from: date.optional(), to: date.optional() }));
   return c.json(svc.pendingPayouts({ shopIds: ids(q.shop_id), channel: q.channel_id ?? q.channel, from: q.from, to: q.to }));
 });
+r.get('/reconciliation/adjustments', (c) => {
+  const q = query(c, z.object({ shop_id: z.string().optional(), from: date.optional(), to: date.optional() }));
+  return c.json(svc.listPayoutAdjustments({ shopIds: ids(q.shop_id), from: q.from, to: q.to }));
+});
 r.post('/reconciliation/payouts', async (c) => {
   const input = await body(
     c,
@@ -89,9 +93,10 @@ r.post('/reconciliation/payouts', async (c) => {
       paid_at: z.string().nullish(),
       note: optionalText,
       shop_id: z.string().optional(),
+      settle_difference: z.boolean().default(false), // số sàn trả khác số còn treo: cộng phần lệch vào phí sàn của đơn
     }),
   );
-  return c.json({ data: tx(() => svc.recordPayouts({ items: input.items, method: input.method, channelId: input.channel_id, paidAt: input.paid_at, note: input.note, shopId: input.shop_id }, c.get('actor'))) });
+  return c.json({ data: tx(() => svc.recordPayouts({ items: input.items, method: input.method, channelId: input.channel_id, paidAt: input.paid_at, note: input.note, shopId: input.shop_id, settleDifference: input.settle_difference }, c.get('actor'))) });
 });
 
 export default r;

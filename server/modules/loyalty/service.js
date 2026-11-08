@@ -234,5 +234,5 @@ export function saveTemplate(id, { name, kind, body }) {
 
 /** Điền biến. Biến không biết giá trị thì GIỮ NGUYÊN chỗ trống rõ ràng để người gửi thấy, không tự bịa. */
 export function renderTemplate(body, vars) {
-  return body.replace(/\{(ten|san_pham|shop)\}/g, (m, k) => vars[k] || m);
+  return body.replace(/\{(ten|san_pham|shop|ma_don|con_no|han_tra)\}/g, (m, k) => vars[k] || m);
 }

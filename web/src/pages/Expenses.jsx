@@ -1,3 +1,4 @@
+import Shipping from './Shipping.jsx';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
@@ -17,8 +18,8 @@ export default function Expenses() {
   return (
     <div className="page stack">
       <PageHeader title="Chi phí & quỹ" />
-      <Toolbar><Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} /></Toolbar>
-      {tab === 'expenses' && <ExpenseList />}{tab === 'cash' && <CashAccounts />}{tab === 'reconcile' && hasMarket && <Reconcile />}
+      <Toolbar><Tabs options={[['expenses', 'Chi phí'], ['cash', 'Quỹ tiền'], ['shipping', 'Vận chuyển'], ...(hasMarket ? [['reconcile', 'Đối soát sàn']] : [])]} value={tab} onChange={setTab} /></Toolbar>
+      {tab === 'expenses' && <ExpenseList />}{tab === 'cash' && <CashAccounts />}{tab === 'shipping' && <Shipping />}{tab === 'reconcile' && hasMarket && <Reconcile />}
     </div>
   );
 }
@@ -77,28 +78,34 @@ function Reconcile() {
   const [sel, setSel] = useState({});
   const { busy, error, run } = useAction();
   const [result, setResult] = useState(null);
+  const [actual, setActual] = useState({}); // số sàn thực trả cho từng đơn (mặc định = số còn treo)
+  const [settle, setSettle] = useState(true);
   return (
     <Async state={state}>
       {(r) => {
         const chosen = r.data.filter((o) => sel[o.id]);
-        const sum = chosen.reduce((a, o) => a + o.pending_amount, 0);
+        const got = (o) => (actual[o.id] === undefined || actual[o.id] === '' ? o.pending_amount : Number(actual[o.id]));
+        const sum = chosen.reduce((a, o) => a + got(o), 0);
+        const diffs = chosen.filter((o) => got(o) !== o.pending_amount);
         return (
           <>
             {marketplaces.length > 1 && <Chips options={marketplaces.map((c) => [c.id, c.name])} value={channel.id} onChange={(v) => { setChannelId(v); setSel({}); setResult(null); }} />}
             <Kpi label={`Tiền ${channel.name} đang treo`} value={vnd(r.total_pending)} hint={`${r.count} đơn hoàn thành chưa ghi nhận tiền về`} tone={r.count ? 'yellow' : undefined} />
+            {r.overdue_count > 0 && <div className="alert warn small" role="status">{r.overdue_count} đơn ({vnd(r.overdue_amount)}) giao xong quá {r.overdue_days} ngày mà {channel.name} chưa trả tiền. Nên kiểm tra và khiếu nại với sàn.</div>}
             {result && <div className={`alert ${result.failed ? 'warn' : 'ok'}`}>Đã ghi nhận {result.recorded} đơn{result.failed ? `, lỗi ${result.failed}: ${result.results.filter((x) => !x.ok).map((x) => `${x.code || x.external_id}: ${x.error}`).join('; ')}` : ''}</div>}
             {!r.data.length ? <Empty>Không có đơn {channel.name} nào đang treo tiền.</Empty> : (
               <Card flat><div className="table-wrap"><table>
-                <thead><tr><th><input type="checkbox" aria-label="Chọn tất cả" style={{ width: 20, minHeight: 20 }} checked={chosen.length === r.data.length} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(r.data.map((o) => [o.id, true])) : {})} /></th><th>Đơn</th><th>Hoàn thành</th><th className="num">Sàn phải trả</th></tr></thead>
+                <thead><tr><th><input type="checkbox" aria-label="Chọn tất cả" style={{ width: 20, minHeight: 20 }} checked={chosen.length === r.data.length} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(r.data.map((o) => [o.id, true])) : {})} /></th><th>Đơn</th><th>Hoàn thành</th><th className="num">Sàn phải trả</th><th className="num">Sàn thực trả</th></tr></thead>
                 <tbody>{r.data.map((o) => (
                   <tr key={o.id}><td><input type="checkbox" aria-label={`Chọn ${o.code}`} style={{ width: 20, minHeight: 20 }} checked={!!sel[o.id]} onChange={(e) => setSel({ ...sel, [o.id]: e.target.checked })} /></td>
-                    <td><b>{o.code}</b><div className="small muted">{o.external_id} · {o.shop_name}</div></td><td>{fmtDate(o.completed_at)}</td><td className="num">{vnd(o.pending_amount)}</td></tr>
+                    <td><b>{o.code}</b><div className="small muted">{o.external_id} · {o.shop_name}</div></td><td>{fmtDate(o.completed_at)}{o.overdue && <span className="badge st-cancelled" style={{ marginLeft: 8 }}>Quá {o.days_pending} ngày</span>}</td><td className="num">{vnd(o.pending_amount)}</td><td className="num">{sel[o.id] ? <MoneyInput value={actual[o.id] ?? String(o.pending_amount)} onChange={(e) => setActual({ ...actual, [o.id]: e.target.value })} aria-label={`Sàn trả ${o.code}`} /> : <span className="muted">—</span>}</td></tr>
                 ))}</tbody>
               </table></div></Card>
             )}
+            {diffs.length > 0 && <label className="check small"><input type="checkbox" checked={settle} onChange={(e) => setSettle(e.target.checked)} />{diffs.length} đơn sàn trả lệch ({vnd(diffs.reduce((a, o) => a + (o.pending_amount - got(o)), 0))}). Phần lệch là phí/phạt của sàn: cộng vào phí sàn của đơn để đơn hết treo. Bỏ tick nếu chỉ trả thiếu, còn chờ sàn trả tiếp.</label>}
             <ErrorBox error={error} />
             <button className="btn primary" disabled={busy || !chosen.length} onClick={() => run(async () => {
-              const res = await api.post('/reconciliation/payouts', { items: chosen.map((o) => ({ order_id: o.id })), channel_id: channel.id });
+              const res = await api.post('/reconciliation/payouts', { items: chosen.map((o) => ({ order_id: o.id, amount: got(o) })), channel_id: channel.id, settle_difference: settle && diffs.length > 0 });
               setResult(res.data); setSel({}); state.reload();
             })}>Đã nhận tiền {chosen.length ? `(${chosen.length} đơn · ${vnd(sum)})` : ''}</button>
             <p className="small muted">Đối chiếu với bảng kê tiền về của {channel.name} (ví/số dư người bán) rồi mới đánh dấu. Số tiền ghi nhận là số còn treo sau trừ phí sàn.</p>

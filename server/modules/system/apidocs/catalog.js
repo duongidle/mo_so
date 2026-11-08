@@ -43,10 +43,14 @@ GET /products/:id/removal-impact | Xem trước việc gỡ sản phẩm: tồn 
 POST /products/:id/remove | Gỡ sản phẩm: xoá hẳn nếu chưa từng dùng, ngược lại ngừng kinh doanh (ẩn, khôi phục được). Còn hàng thì cần write_off
 POST /products/:id/restore | Khôi phục sản phẩm đã ngừng kinh doanh
 POST /products/:id/removal-preview | Xem trước việc bỏ biến thể: cái nào xoá hẳn, cái nào lưu trữ
+POST /products/import/preview | Xem trước việc nhập sản phẩm hàng loạt từ các dòng file: nhóm theo tên sản phẩm, báo dòng lỗi và danh mục sẽ tạo
+POST /products/import | Nhập sản phẩm hàng loạt (tối đa 2000 dòng): tạo các sản phẩm hợp lệ, bỏ qua dòng lỗi và báo lý do
 POST /products | Tạo sản phẩm (một hoặc nhiều biến thể, combo, tồn đầu kỳ)
 PATCH /products/:id | Sửa sản phẩm, thêm/đổi/bỏ biến thể và thuộc tính
 PUT /products/:id/images | Đặt thứ tự ảnh sản phẩm và gán ảnh cho biến thể
 GET /variants | Tìm biến thể để bán/nhập (kèm tồn, giá theo shop) | shop_id, warehouse_id, q, all, category_id, limit
+GET /channel-prices | Giá bán riêng theo kênh | product_id, variant_id, shop_id
+PUT /channel-prices | Đặt hoặc xoá (price=null) giá riêng của biến thể theo shop × kênh
 PUT /listings | Niêm yết biến thể ở shop, đặt giá riêng và trạng thái bán
 POST /listings/sync | Đồng bộ niêm yết từ shop này sang shop khác
 POST /uploads/images | Tải ảnh lên (thân thô, tối đa 3 MB, webp/jpeg/png)
@@ -73,6 +77,31 @@ GET /inventory-reports/export | Xuất báo cáo kho ra CSV | from, to, warehous
 GET /material-consumption | Báo cáo tiêu hao vật tư | from, to, warehouse_id
 GET /material-consumption/export | Xuất tiêu hao vật tư ra CSV
 POST /material-issues | Xuất vật tư dùng cho vận hành (hạch toán chi phí)` },
+  { id: 'costing', title: 'Phương pháp giá vốn', intro: 'Mặc định bình quân gia quyền di động theo kho. Chọn FIFO thì hàng nhập trước xuất trước, mỗi lần nhập là một lớp giá. Đổi phương pháp không làm đổi giá trị tồn hiện tại và không đổi giá vốn đã chụp trên đơn cũ, chỉ áp cho lần xuất sau đó. Không hỗ trợ LIFO.', routes: `
+GET /stock-lots | Các lô còn hàng kèm hạn dùng, số ngày còn lại, trạng thái (hết hạn, sắp hết hạn) | warehouse_id, variant_id, shop_id, within_days
+GET /stock-lots/summary | Số lô đã hết hạn và sắp hết hạn, số lượng và giá trị | shop_id
+GET /costing-method | Phương pháp đang dùng, các lựa chọn, số dòng tồn và giá trị tồn hiện tại
+PUT /costing-method | Đổi phương pháp (average | fifo), ghi nhật ký` },
+  { id: 'shipping', title: 'Hãng vận chuyển & đối soát COD', intro: 'Vận đơn gắn với đơn bán, đối soát với hãng theo file/bảng hãng gửi: giao thành công thì ghi thu COD (phương thức carrier_payout) và trừ phí, hãng báo hoàn thì lập phiếu trả chờ hàng về. Phí giao thuộc ship shop chịu của đơn được bù khoản phải trả; phần còn lại cùng phí COD, phí hoàn thành chi phí vận chuyển.', routes: `
+GET /carriers | Danh sách hãng vận chuyển | include_archived
+POST /carriers | Thêm hãng (tên, mẫu link tra cứu có {code}, ghi chú lịch chuyển tiền)
+PATCH /carriers/:id | Sửa hoặc lưu trữ hãng
+GET /shipments | Danh sách vận đơn | bucket (in_transit, unreconciled, returned, done), carrier_id, q, shop_id, limit
+GET /shipments/summary | Số vận đơn và tiền COD: đang giao, đã giao chưa đối soát, hoàn | carrier_id, shop_id
+POST /shipments/:id/status | Cập nhật tay trạng thái vận đơn (giao xong, hoàn, mất)
+POST /carrier-statements/preview | Xem trước một bảng đối soát: dòng khớp, dòng lỗi, tổng COD và phí
+POST /carrier-statements | Chốt phiếu đối soát: ghi thu COD, trừ phí, xử lý đơn hoàn
+GET /carrier-statements | Danh sách phiếu đối soát | carrier_id
+GET /carrier-statements/:id | Chi tiết một phiếu đối soát` },
+  { id: 'notifications', title: 'Thông báo cho chủ shop', intro: 'Hộp thông báo trong hệ thống, gửi qua Telegram và sự kiện notification.created cho webhook. Các loại: hàng sắp hết, hàng sắp hết hạn, đơn chờ giao lâu, khách nợ đến hạn, sắp đến hạn trả nhà cung cấp, đơn sàn chưa nhận tiền, tóm tắt ngày. Mỗi loại tối đa một lần mỗi ngày. Chỉ chủ shop đăng nhập dùng được.', routes: `
+GET /notifications | Danh sách thông báo và số chưa đọc | unread, limit
+POST /notifications/read | Đánh dấu đã đọc (ids hoặc all)
+GET /notifications/config | Cấu hình thông báo (token Telegram được che)
+PUT /notifications/config | Bật/tắt từng loại, chọn kênh, đặt tham số, cấu hình Telegram
+POST /notifications/test | Gửi thử qua các kênh đã chọn
+POST /notifications/run | Kiểm tra các quy tắc ngay bây giờ` },
+  { id: 'documents', title: 'Chứng từ', intro: 'Danh sách gộp mọi chứng từ: đơn bán, phiếu nhập, phiếu trả hàng, phiếu hàng huỷ, chuyển kho, điều chỉnh, kiểm kê. Thanh toán và chi phí có danh sách riêng ở /payments và /expenses.', routes: `
+GET /documents | Danh sách chứng từ mới nhất trước | type, q, from, to, shop_id, limit, offset` },
   { id: 'stock-close', title: 'Chốt kỳ kho', intro: 'Chốt kho đến hết một ngày: khoá biến động kho có ngày ≤ ngày chốt, chụp tồn từng kho × biến thể. Chỉ chốt được đến hết ngày hôm qua. Đơn import đặt trong kỳ đã chốt vẫn trừ kho nhưng được ghi vào ngày đầu của kỳ mở. Mở lại cần lý do và được ghi nhật ký.', routes: `
 GET /stock-close | Trạng thái chốt kho: ngày chốt, lần chốt đang hiệu lực, có thay đổi sau chốt không
 GET /stock-close/preview | Xem trước một ngày chốt: việc chặn, cảnh báo, tồn sẽ chụp | date
@@ -112,13 +141,21 @@ GET /orders/status-counts | Số đơn theo từng trạng thái (dùng cùng b�
 GET /orders/export | Xuất đơn CSV/JSON theo đúng bộ lọc danh sách (layout=orders: mỗi đơn một dòng, layout=lines: mỗi sản phẩm một dòng, format=count để đếm trước) | layout, format, và các bộ lọc như danh sách
 POST /orders/allocation-preview | Xem trước đơn sẽ lấy hàng từ kho nào, không ghi gì
 GET /orders/:id | Chi tiết đơn: dòng hàng, thanh toán, phân bổ kho, phiếu trả
+GET /orders/labels | Trang in nhiều nhãn giao hàng 100×150 mm (mã vạch mã vận đơn, người nhận, thu hộ) | ids (danh sách mã đơn, cách nhau bằng dấu phẩy)
+GET /orders/:id/label | Trang in nhãn giao hàng của một đơn
 GET /orders/:id/receipt | Dữ liệu in phiếu bán hàng
 POST /orders | Tạo đơn (nháp, xác nhận hoặc hoàn thành ngay)
 PATCH /orders/:id | Sửa đơn nháp, hoặc các trường được phép sửa sau khi chốt
-POST /orders/:id/status | Đổi trạng thái: xác nhận, giao, hoàn thành, huỷ (huỷ thì hoàn kho đúng giá vốn đã chụp)
+POST /orders/:id/status | Đổi trạng thái: xác nhận, giao, hoàn thành, huỷ (huỷ thì hoàn kho đúng giá vốn đã chụp). Đơn đang giao không huỷ được: dùng phiếu trả hàng chờ hàng về
 POST /orders/:id/payments | Ghi nhận thanh toán, nhiều lần được
-POST /orders/:id/returns | Tạo phiếu trả hàng (một phần hoặc toàn phần, hoàn ship, phí trả hàng)
-POST /orders/:id/returns/:returnId/receive | Xác nhận hàng trả từ sàn đã về kho
+GET /orders/warranty | Tra cứu bảo hành: dòng hàng đã bán của sản phẩm có bảo hành, còn hạn hay hết | q (mã đơn, SĐT, tên, SKU), shop_id, limit
+POST /orders/:id/split | Tách đơn (giao từng phần): chuyển một phần số lượng sang đơn nháp mới
+POST /orders/:id/reserve | Giữ hàng cho đơn nháp tới một ngày, hoặc bỏ giữ
+POST /orders/:id/ship | Giao đơn cho hãng vận chuyển: tạo vận đơn, đưa đơn sang đang giao, COD mặc định = số khách còn nợ
+GET /orders/return-reasons | Danh sách lý do trả hàng có mã
+POST /orders/:id/returns | Tạo phiếu trả hàng (một phần hoặc toàn phần, hoàn ship, phí trả hàng, reason_code, awaiting_goods=true nếu hàng chưa về kho). Dòng không nhập lại kho tự lập phiếu hàng huỷ
+POST /orders/:id/returns/:returnId/receive | Xác nhận hàng trả đã về (đơn sàn hoặc giao không thành); damaged_line_ids = dòng hàng về bị hỏng, lập phiếu hàng huỷ thay vì nhập kho
+POST /orders/:id/seller-shipping-payments | Ghi việc shop đã trả tiền ship cho hãng vận chuyển (đơn ngoài sàn có ship shop chịu)
 POST /orders/:id/exchange | Đổi hàng
 POST /imports/orders/preview | Import đơn: chạy thử, báo sẽ tạo/cập nhật/lỗi
 POST /imports/orders/commit | Import đơn: ghi thật, đơn đã có thì cập nhật theo (shop, kênh, mã đơn kênh)
@@ -127,7 +164,7 @@ POST /imports/profiles | Tạo mẫu map cột
 PUT /imports/profiles/:id | Sửa mẫu map cột
 GET /imports/batches | Lịch sử các lần import
 GET /imports/batches/:id | Chi tiết một lần import
-GET /imports/template.csv | Tải file mẫu chuẩn của app` },
+GET /imports/template.csv | Tải file mẫu chuẩn của Mở Sổ` },
   { id: 'money', title: 'Chi phí, quỹ tiền, đối soát', intro: 'Chi phí là tiền ra theo phương thức trả. Mỗi phương thức thanh toán thuộc đúng một quỹ. Số dư quỹ luôn tính từ sổ, không lưu.', routes: `
 GET /expense-categories | Danh mục chi phí
 POST /expense-categories | Tạo danh mục chi phí
@@ -147,6 +184,7 @@ POST /recurring-expenses/:id/run | Tạo ngay kỳ đến hạn
 GET /recurring-expenses/:id/preview | Xem các kỳ sắp tới | count
 GET /payments | Sổ thanh toán thu/chi | direction, ref_type, method, shop_id, from, to, limit, cursor
 GET /reconciliation/pending | Tiền sàn đang treo (đơn hoàn thành chưa ghi nhận tiền về) | channel_id, shop_id, from, to
+GET /reconciliation/adjustments | Các lần sàn trả lệch số kỳ vọng và phần phí sàn tăng/giảm theo đơn | shop_id, from, to
 POST /reconciliation/payouts | Ghi nhận sàn đã chuyển tiền về
 GET /cash/accounts | Các quỹ tiền và số dư | as_of, include_archived
 POST /cash/accounts | Tạo quỹ
@@ -166,6 +204,7 @@ GET /reports/elements | Theo ngũ hành (shop ngành phong thuỷ)
 GET /reports/customers | Khách mới, khách quay lại, top khách
 GET /reports/inventory | Giá trị tồn, số ngày tồn, hàng bán chậm, sắp hết
 GET /reports/cashflow | Dòng tiền, tiền sàn treo, công nợ
+GET /reports/return-reasons | Trả hàng theo lý do trong kỳ và giá vốn hàng hỏng không nhập lại
 GET /reports/expenses | Chi phí theo danh mục
 GET /reports/aging | Tuổi nợ khách, sàn, nhà cung cấp
 GET /reports/health | Sức khoẻ kinh doanh theo ngưỡng đã đặt
@@ -197,6 +236,14 @@ DELETE /accounting/assets/:id | Huỷ bản ghi nhập nhầm
 GET /accounting/lock | Trạng thái khoá sổ và thay đổi sau khoá
 POST /accounting/lock | Đặt hoặc bỏ ngày khoá sổ (chụp số dư các tài khoản)` },
   { id: 'loyalty', title: 'Chăm khách (Loyalty)', intro: 'Hạng khách, nhắc mua lại, sinh nhật, gợi ý theo mệnh và mẫu tin nhắn. Việc gửi tin vẫn do người dùng thực hiện.', routes: `
+GET /loyalty/promotions | Danh sách khuyến mãi kèm số lần dùng, tiền đã giảm, doanh thu | include_archived
+GET /loyalty/promotions/:id | Chi tiết một khuyến mãi
+POST /loyalty/promotions | Tạo khuyến mãi (giảm % đơn, giảm tiền, giảm theo sản phẩm, mua X tặng Y, theo hạng khách, tặng quà kèm sản phẩm khác, mã voucher)
+PUT /loyalty/promotions/:id | Sửa khuyến mãi
+DELETE /loyalty/promotions/:id | Lưu trữ khuyến mãi (không xoá lịch sử dùng)
+POST /loyalty/promotions/evaluate | Xem khuyến mãi nào áp dụng cho giỏ hàng và giảm bao nhiêu (không ghi)
+GET /loyalty/debts | Nhắc nợ: khách còn nợ đơn (quá hạn, sắp đến hạn, chưa có hạn) và phiếu nhập sắp đến hạn trả nhà cung cấp | shop_id, lookahead_days
+POST /loyalty/debts/action | Đã nhắc hoặc hoãn một khoản nợ khách: ẩn tới ngày hẹn nhắc lại
 GET /loyalty/tiers | Các hạng khách và ngưỡng chi tiêu
 PUT /loyalty/tiers | Đặt lại các hạng
 GET /loyalty/customers/:id | Hạng và chỉ số chăm sóc của một khách
@@ -225,6 +272,7 @@ GET /custom/metrics | Chỉ số báo cáo tuỳ chỉnh
 POST /custom/metrics | Tạo chỉ số báo cáo từ công thức
 DELETE /custom/metrics/:id | Xoá chỉ số báo cáo tuỳ chỉnh` },
   { id: 'system', title: 'Hệ thống: API key, webhook, sao lưu', intro: 'Chỉ chủ shop đăng nhập mới dùng được nhóm này. API key không được tự cấp quyền cho mình hay tải cả cơ sở dữ liệu.', session: true, routes: `
+GET /system/audit | Nhật ký thay đổi: ai làm gì với đối tượng nào, lúc nào, trường nào đổi từ gì sang gì (chỉ chủ shop đăng nhập) | entity_type, entity_id, action, q, from, to, limit, cursor
 GET /system/api-keys | Danh sách API key (không hiện lại khoá thật)
 POST /system/api-keys | Tạo API key (quyền read, write). Khoá thật chỉ hiện một lần
 DELETE /system/api-keys/:id | Thu hồi API key
@@ -260,7 +308,7 @@ export const EXAMPLES = {
   'POST /stock-adjustments': { body: { warehouse_id: 'whs_…', kind: 'adjust', reason: 'Đếm lại cuối tháng', lines: [{ variant_id: 'var_…', change: -2 }] } },
   'POST /transfers': { body: { from_warehouse_id: 'whs_…', to_warehouse_id: 'whs_…', lines: [{ variant_id: 'var_…', qty: 10 }] } },
   'POST /warehouses/:id/remove': { note: 'Gọi GET /warehouses/:id/impact trước. Kho còn hàng thì bắt buộc transfer_to. Kho đã có lịch sử chỉ được đóng, không xoá cứng', body: { transfer_to: 'whs_…', confirm: true } },
-  'POST /products/:id/remove': { note: 'Gọi GET /products/:id/removal-impact trước. Còn hàng trong kho thì cần write_off: true (app lập phiếu hàng hỏng). Đã có lịch sử thì chỉ ngừng kinh doanh, không xoá', body: { confirm: true, write_off: false } },
+  'POST /products/:id/remove': { note: 'Gọi GET /products/:id/removal-impact trước. Còn hàng trong kho thì cần write_off: true (hệ thống lập phiếu hàng hỏng). Đã có lịch sử thì chỉ ngừng kinh doanh, không xoá', body: { confirm: true, write_off: false } },
   'POST /stock-close': { note: 'Chốt đến hết ngày (chỉ đến hôm qua trở về trước). Gọi GET /stock-close/preview?date=… trước để xem việc phải xong', body: { date: '2026-10-31', note: 'Chốt kho tháng 10' } },
   'POST /stock-close/reopen': { body: { date: null, reason: 'Nhập sót phiếu nhập ngày 28/10' } },
   'POST /expenses': { body: { category_id: 'exc_…', shop_id: 'shp_…', amount: 350000, expense_date: '2026-11-05', method: 'bank', payee: 'Facebook Ads' } },

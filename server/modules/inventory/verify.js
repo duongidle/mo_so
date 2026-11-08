@@ -1,4 +1,6 @@
 import { getDb } from '../../db/index.js';
+import { verifyLayers } from './costing.js';
+import { verifyLots } from './lots.js';
 
 const db = () => getDb();
 const ACTIVE = "('confirmed','shipping','completed','returned')";
@@ -58,5 +60,7 @@ export function verifyStock() {
     .all()) {
     if (r.n > 0 && (r.qty !== r.out_q || r.restocked !== r.in_q)) out.push({ kind: 'allocation_vs_ledger', ...r });
   }
+  out.push(...verifyLayers());
+  out.push(...verifyLots());
   return out;
 }

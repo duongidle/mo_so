@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
+import NotificationSettings from './NotificationSettings.jsx';
+import AuditLog from './AuditLog.jsx';
 import RemoveWarehouse from '../components/RemoveWarehouse.jsx';
 import ShopColors from '../components/ShopColors.jsx';
 import { colorProblem } from '../lib/colors.js';
@@ -10,7 +12,7 @@ import FieldsManager from '../components/FieldsManager.jsx';
 import FormulaEditor from '../components/FormulaEditor.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 
-const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['notify', 'Thông báo'], ['audit', 'Nhật ký'], ['backup', 'Sao lưu & xuất'], ['account', 'Tài khoản']];
 
 export default function Settings() {
   const [tab, setTab] = useState('shops');
@@ -18,8 +20,8 @@ export default function Settings() {
     <div className="page stack">
       <PageHeader title="Cài đặt" />
       <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} wrap="lg" /></Toolbar>
-      {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'health' && <Thresholds />}{tab === 'fields' && <Fields />}
-      {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
+      {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'health' && <><Thresholds /><CostingMethod /></>}{tab === 'fields' && <Fields />}
+      {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'notify' && <NotificationSettings />}{tab === 'audit' && <AuditLog />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>
   );
 }
@@ -170,6 +172,12 @@ function Thresholds() {
           <Field label="Cảnh báo sắp hết khi còn ít hơn (ngày bán)"><input type="number" min="1" value={s.low_stock_days} onChange={(e) => setS({ ...s, low_stock_days: Number(e.target.value) })} /></Field>
           <Field label="Hàng bán chậm: không bán trong (ngày)"><input type="number" min="1" value={s.slow_moving_days} onChange={(e) => setS({ ...s, slow_moving_days: Number(e.target.value) })} /></Field>
         </div>
+        <div className="grid cols-3">
+          <Field label="Khách được nợ (ngày, 0 = không đặt hạn)" hint="Hạn thanh toán mặc định cho đơn còn nợ mà không đặt hạn riêng."><input type="number" min="0" value={s.payment_terms_days ?? 0} onChange={(e) => setS({ ...s, payment_terms_days: Number(e.target.value) })} /></Field>
+          <Field label="Nhận trả hàng trong (ngày, 0 = không giới hạn)" hint="Tính từ ngày đơn hoàn thành. Quá hạn vẫn nhận được nếu bạn xác nhận."><input type="number" min="0" value={s.return_window_days ?? 0} onChange={(e) => setS({ ...s, return_window_days: Number(e.target.value) })} /></Field>
+          <Field label="Báo đơn sàn chưa nhận tiền sau (ngày, 0 = tắt)" hint="Đơn giao xong quá số ngày này mà sàn chưa trả: nên khiếu nại."><input type="number" min="0" value={s.payout_overdue_days ?? 10} onChange={(e) => setS({ ...s, payout_overdue_days: Number(e.target.value) })} /></Field>
+          <Field label="Cảnh báo hàng sắp hết hạn dùng (ngày)" hint="Lô còn dưới số ngày này tới hạn dùng được đánh dấu sắp hết hạn."><input type="number" min="1" value={s.expiry_warn_days ?? 30} onChange={(e) => setS({ ...s, expiry_warn_days: Number(e.target.value) })} /></Field>
+        </div>
         <Field label="Chi phí chung chia về shop theo" hint="Chi phí không gắn shop nào (tiền thuê mặt bằng, phần mềm…) được chia về các shop khi xem báo cáo từng shop"><select value={s.expense_allocation} onChange={(e) => setS({ ...s, expense_allocation: e.target.value })}><option value="revenue">Doanh thu thuần (shop bán nhiều gánh nhiều)</option><option value="equal">Chia đều cho các shop</option><option value="fixed">Tỷ lệ cố định tự đặt</option></select></Field>
         {s.expense_allocation === 'fixed' && (() => {
           const fixed = s.expense_allocation_fixed || {};
@@ -177,7 +185,7 @@ function Thresholds() {
           return (
             <div className="stack" style={{ gap: 8 }}>
               {shops.map((x) => <div key={x.id} className="row between"><span>{x.name}</span><span className="row"><input type="number" min="0" max="100" style={{ width: 90 }} aria-label={`Tỷ lệ ${x.name}`} value={fixed[x.id] ?? ''} onChange={(e) => setS({ ...s, expense_allocation_fixed: { ...fixed, [x.id]: e.target.value === '' ? 0 : Number(e.target.value) } })} /><span className="muted">%</span></span></div>)}
-              <div className={`small ${total === 100 ? 'h-green' : 'h-yellow'}`}>Tổng {total}%{total === 100 ? '' : total === 0 ? ' (chưa đặt: app sẽ chia đều)' : ' (không cộng đủ 100% cũng được, app chia theo tỷ lệ tương đối)'}</div>
+              <div className={`small ${total === 100 ? 'h-green' : 'h-yellow'}`}>Tổng {total}%{total === 100 ? '' : total === 0 ? ' (chưa đặt: hệ thống sẽ chia đều)' : ' (không cộng đủ 100% cũng được, hệ thống chia theo tỷ lệ tương đối)'}</div>
             </div>
           );
         })()}
@@ -185,6 +193,51 @@ function Thresholds() {
         <ErrorBox error={error} />{saved && <div className="alert ok">Đã lưu.</div>}
         <div><button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.patch('/settings', s); setSaved(true); reload(); })}>Lưu</button></div>
       </div>
+    </Card>
+  );
+}
+
+/** Phương pháp tính giá vốn: bình quân gia quyền (mặc định) hoặc FIFO. LIFO không có vì không được chấp nhận trong kế toán Việt Nam (Thông tư 200). */
+function CostingMethod() {
+  const state = useAsync(() => api.get('/costing-method'), []);
+  const { busy, error, run } = useAction();
+  const [pick, setPick] = useState(null);
+  return (
+    <Card title="Phương pháp tính giá vốn">
+      <Async state={state}>
+        {({ data }) => {
+          const now = data.method;
+          const target = pick && pick !== now ? data.methods.find((m) => m.id === pick) : null;
+          return (
+            <div className="stack">
+              <div className="stack" style={{ gap: 8 }} role="radiogroup" aria-label="Phương pháp giá vốn">
+                {data.methods.map((m) => (
+                  <label key={m.id} className="check" style={{ alignItems: 'flex-start' }}>
+                    <input type="radio" name="costing" checked={(pick ?? now) === m.id} onChange={() => setPick(m.id)} />
+                    <span><b>{m.label}</b>{m.id === now && <span className="badge plain" style={{ marginLeft: 8 }}>Đang dùng</span>}<div className="small muted">{m.short}</div></span>
+                  </label>
+                ))}
+              </div>
+              <div className="small muted">Không có LIFO (nhập sau xuất trước): kế toán Việt Nam không dùng phương pháp này.</div>
+              {target && (
+                <div className="alert warn small">
+                  <b>Đổi sang {target.label}</b>
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                    <li>Giá trị tồn kho hiện tại ({vnd(data.stock_value)}) không đổi.</li>
+                    <li>Đơn đã bán giữ nguyên giá vốn đã chụp. Phương pháp mới chỉ áp cho lần xuất kho sau đó.</li>
+                    {target.id === 'fifo'
+                      ? <li>Hàng đang có trong kho được coi là một lô nhập duy nhất, tại giá bình quân hiện tại. Từ giờ mỗi lần nhập là một lô giá riêng.</li>
+                      : <li>Các lô giá được gộp lại: giá vốn lấy bình quân của hàng còn trong kho.</li>}
+                    <li>Có thể đổi lại bất cứ lúc nào. Nên đổi đầu kỳ, sau khi chốt kho.</li>
+                  </ul>
+                  <div style={{ marginTop: 8 }}><button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.put('/costing-method', { method: target.id }); setPick(null); state.reload(); })}>Đổi sang {target.label}</button></div>
+                </div>
+              )}
+              <ErrorBox error={error} />
+            </div>
+          );
+        }}
+      </Async>
     </Card>
   );
 }
@@ -201,12 +254,12 @@ function Tax() {
   return (
     <Card title="Ước tính thuế">
       <div className="stack">
-        <div className="alert warn small">Mức thuế và ngưỡng miễn thuế của hộ kinh doanh thay đổi theo từng thời kỳ nên app <b>không tự điền</b>. Nhập theo quy định đang áp dụng (hỏi kế toán hoặc chi cục thuế). Kết quả chỉ là <b>ước tính</b> để thấy lợi nhuận sau thuế, không phải tờ khai.</div>
+        <div className="alert warn small">Mức thuế và ngưỡng miễn thuế của hộ kinh doanh thay đổi theo từng thời kỳ nên hệ thống <b>không tự điền</b>. Nhập theo quy định đang áp dụng (hỏi kế toán hoặc chi cục thuế). Kết quả chỉ là <b>ước tính</b> để thấy lợi nhuận sau thuế, không phải tờ khai.</div>
         <label className="check"><input type="checkbox" checked={enabled} onChange={(e) => { setEnabled(e.target.checked); setSaved(false); }} />Hiện ước tính thuế trong báo cáo Lợi nhuận</label>
         {rules.map((r, i) => (
           <div key={i} className="card flat stack" style={{ gap: 8 }}>
             <div className="grid cols-2 collapse">
-              <Field label="Tên khoản thuế"><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} placeholder="VD: Thuế GTGT" /></Field>
+              <Field label="Tên khoản thuế"><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} placeholder="Ví dụ: Thuế GTGT" /></Field>
               <Field label="Tỷ lệ (%)"><input type="number" min="0" max="100" step="0.01" value={r.rate_pct} onChange={(e) => set(i, 'rate_pct', Number(e.target.value))} /></Field>
             </div>
             <div className="grid cols-2 collapse">

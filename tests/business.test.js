@@ -224,7 +224,12 @@ test('M5: bán hàng, trừ kho, giá vốn chụp, huỷ, trả hàng, thanh to
   const edited = await api.patch(`/orders/${d.body.data.id}`, { lines: [{ sku: 'NH-CAM-10', qty: 3 }] });
   assert.equal(edited.body.data.subtotal, 420000);
   await api.post(`/orders/${d.body.data.id}/status`, { status: 'confirmed' });
-  const locked = await api.patch(`/orders/${d.body.data.id}`, { lines: [{ sku: 'NH-CAM-10', qty: 1 }] });
+  // Đã xác nhận (hàng còn ở shop): sửa được dòng, kho trừ lại theo nội dung mới
+  const revised = await api.patch(`/orders/${d.body.data.id}`, { lines: [{ sku: 'NH-CAM-10', qty: 1 }] });
+  assert.equal(revised.status, 200, JSON.stringify(revised.body));
+  // Đã giao đi thì không sửa dòng nữa
+  await api.post(`/orders/${d.body.data.id}/status`, { status: 'shipping' });
+  const locked = await api.patch(`/orders/${d.body.data.id}`, { lines: [{ sku: 'NH-CAM-10', qty: 2 }] });
   assert.equal(locked.status, 409);
 
   // Phiếu bán hàng in được
@@ -235,7 +240,7 @@ test('M5: bán hàng, trừ kho, giá vốn chụp, huỷ, trả hàng, thanh to
   assert.equal(integrity.body.ok, true);
 });
 
-test('M6: import đơn — xem thử, tạo, chống trùng, cập nhật trạng thái', async () => {
+test('M6: import đơn — xem trước, tạo, chống trùng, cập nhật trạng thái', async () => {
   const { api, nh, pt, wh } = await setup();
   const { perfume } = await seedCatalog(api, nh, pt, wh);
   await api.post('/purchases', { warehouse_id: wh.id, lines: [{ variant_id: perfume.variants[0].id, qty: 5, unit_cost: 50000 }], receive: true });

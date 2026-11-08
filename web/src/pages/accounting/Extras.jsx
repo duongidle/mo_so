@@ -169,7 +169,7 @@ export function Recurring({ report }) {
       <div className="row between wrap"><span className="muted small">Job chạy mỗi giờ: tạo chi phí đến hạn, kể cả các kỳ bỏ lỡ khi máy tắt. Không bao giờ tạo trùng một kỳ.</span><button className="btn primary" onClick={() => setForm({})}>+ Chi phí định kỳ</button></div>
       <ErrorBox error={error} />
       <Async state={state}>
-        {({ data }) => (!data.length ? <Empty>Chưa có chi phí định kỳ. Thêm tiền thuê, internet, lương… để app tự ghi mỗi kỳ.</Empty> : (
+        {({ data }) => (!data.length ? <Empty>Chưa có chi phí định kỳ. Thêm tiền thuê, internet, lương… để hệ thống tự ghi mỗi kỳ.</Empty> : (
           <div className="stack">{data.map((r) => (
             <Card key={r.id}>
               <div className="row between wrap">
@@ -213,7 +213,7 @@ function RecurringForm({ initial, shops, onClose, onSaved }) {
   return (
     <FormPage embedded title={edit ? 'Sửa chi phí định kỳ' : 'Thêm chi phí định kỳ'} sub="Thiết lập khoản chi và lịch tạo tự động." onBack={onClose} error={error && <ErrorBox error={error} />} footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !(Number(f.amount) > 0)} onClick={save}>Lưu</button></>}>
       <Card title="Thông tin khoản chi"><div className="stack">
-      <Field label="Tên"><input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Vd: Thuê kho" /></Field>
+      <Field label="Tên"><input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Ví dụ: Thuê kho" /></Field>
       <div className="grid cols-2">
         <Field label="Danh mục"><select value={f.category_id} onChange={(e) => set('category_id', e.target.value)}>{cats.data?.data?.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
         <Field label="Shop"><select value={f.shop_id} onChange={(e) => set('shop_id', e.target.value)}><option value="">Chung</option>{shops.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
@@ -226,7 +226,7 @@ function RecurringForm({ initial, shops, onClose, onSaved }) {
         <Field label="Từ ngày"><input type="date" value={f.start_date} onChange={(e) => set('start_date', e.target.value)} /></Field>
         <Field label="Đến ngày (tuỳ chọn)"><input type="date" value={f.end_date} onChange={(e) => set('end_date', e.target.value)} /></Field>
       </div>
-      {past && <div className="alert warn" role="status">Ngày bắt đầu đã qua: app sẽ tạo bù mọi kỳ từ ngày đó đến hôm nay. Muốn bỏ qua các kỳ cũ, chọn ngày bắt đầu là hôm nay.</div>}
+      {past && <div className="alert warn" role="status">Ngày bắt đầu đã qua: hệ thống sẽ tạo bù mọi kỳ từ ngày đó đến hôm nay. Muốn bỏ qua các kỳ cũ, chọn ngày bắt đầu là hôm nay.</div>}
       </div></Card>
     </FormPage>
   );
@@ -295,7 +295,7 @@ function AssetForm({ shops, methodList, onClose, onSaved }) {
   return (
     <FormPage embedded title="Thêm tài sản / chi phí trả trước" sub="Ghi nhận nguyên giá, sau đó phân bổ đều theo tháng." onBack={onClose} error={error && <ErrorBox error={error} />} footer={<><button type="button" className="btn" onClick={onClose}>Huỷ</button><button type="button" className="btn primary" disabled={busy || !f.name.trim() || !(Number(f.cost) > 0) || !(Number(f.months) > 0)} onClick={save}>Lưu</button></>}>
       <Card title="Thông tin tài sản"><div className="stack">
-      <Field label="Tên"><input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Vd: Kệ trưng bày, Thuê mặt bằng 12 tháng" /></Field>
+      <Field label="Tên"><input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Ví dụ: Kệ trưng bày, Thuê mặt bằng 12 tháng" /></Field>
       <div className="grid cols-2">
         <Field label="Loại"><select value={f.kind} onChange={(e) => set('kind', e.target.value)}><option value="fixed_asset">Tài sản cố định (khấu hao)</option><option value="prepaid">Chi phí trả trước (phân bổ)</option></select></Field>
         <Field label="Ngày mua"><input type="date" value={f.start_date} onChange={(e) => set('start_date', e.target.value)} /></Field>
@@ -329,7 +329,7 @@ export function LockTab() {
                 {d.lock_date && <button className="btn" disabled={busy} onClick={() => set(null, 'Mở khoá sổ? Mọi kỳ cũ sửa được trở lại.')}>Mở khoá</button>}
               </div>
               <ErrorBox error={error} />
-              <p className="muted small">Đơn bán và phiếu nhập thuộc kỳ đã khoá vẫn sửa được (đơn sàn import muộn là bình thường). Khi đó số của kỳ đã khoá đổi, app báo ở đây và ở Tổng quan.</p>
+              <p className="muted small">Đơn bán và phiếu nhập thuộc kỳ đã khoá vẫn sửa được (đơn sàn import muộn là bình thường). Khi đó số của kỳ đã khoá đổi, hệ thống báo ở đây và ở Tổng quan.</p>
             </div>
           </Card>
           {d.lock_date && (d.changed ? (

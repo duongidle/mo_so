@@ -3,7 +3,7 @@ import { ELEMENTS } from './lunar.js';
 /**
  * Danh mục ngành bán. Mỗi ngành quyết định:
  *  - theme: giao diện web (phongthuy | nuochoa | oto | general)
- *  - features: tính năng bật theo ngành (vd 'feng_shui' = mệnh, ngũ hành, âm lịch)
+ *  - features: tính năng bật theo ngành (ví dụ 'feng_shui' = mệnh, ngũ hành, âm lịch)
  *  - customer_fields: trường thông tin khách tạo sẵn cho shop khi chọn ngành này
  *  - product_fields: trường thông tin sản phẩm tạo sẵn (riêng của shop đó), vd Ngũ hành hợp của shop phong thuỷ
  * Thêm ngành mới = thêm một mục ở đây (và một theme CSS nếu muốn giao diện riêng).

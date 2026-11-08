@@ -30,7 +30,7 @@ export default function CashAccounts() {
               <div className="small muted" style={{ marginTop: 8 }}>Số dư đầu {vnd(a.opening_balance)}{a.opening_date ? ` (từ ${fmtDate(a.opening_date)})` : ' (tính từ toàn bộ lịch sử)'} + thu {vnd(a.cash_in)} − chi {vnd(a.cash_out)} − chi phí {vnd(a.expenses_out)}{a.entries ? ` ${a.entries > 0 ? '+' : '−'} chuyển quỹ/điều chỉnh ${vnd(Math.abs(a.entries))}` : ''}</div>
             </Card>
           ))}
-          <p className="small muted">Mỗi phương thức thanh toán chỉ thuộc một quỹ. Thu tiền đơn, trả nhà cung cấp, hoàn tiền và chi phí tự đổ vào quỹ theo phương thức. Số dư không nhập tay: muốn khớp với tiền thật thì <b>nhập số dư đầu</b> hoặc bấm <b>Kiểm đếm</b> (app ghi phần chênh thành một dòng điều chỉnh, thu chi cũ giữ nguyên).</p>
+          <p className="small muted">Mỗi phương thức thanh toán chỉ thuộc một quỹ. Thu tiền đơn, trả nhà cung cấp, hoàn tiền và chi phí tự đổ vào quỹ theo phương thức. Số dư không nhập tay: muốn khớp với tiền thật thì <b>nhập số dư đầu</b> hoặc nhấn <b>Kiểm đếm</b> (hệ thống ghi phần chênh thành một dòng điều chỉnh, thu chi cũ giữ nguyên).</p>
           {edit && <AccountForm init={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); state.reload(); }} />}
           {ledger && <Ledger account={ledger} onClose={() => setLedger(null)} onChanged={() => state.reload()} />}
           {count && <CountForm account={count} onClose={() => setCount(null)} onDone={() => { setCount(null); state.reload(); }} />}
@@ -111,7 +111,7 @@ function CountForm({ account, onClose, onDone }) {
         <>
           <p style={{ margin: 0 }}>Hệ thống đang tính quỹ có <b>{vnd(account.balance)}</b>. Đếm tiền thật (hoặc xem số dư ngân hàng) rồi nhập vào đây.</p>
           <Field label="Số tiền thực tế (₫)"><MoneyInput allowNegative value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
-          {diff !== null && <div className={`small ${diff === 0 ? 'h-green' : 'h-yellow'}`}>{diff === 0 ? 'Khớp với hệ thống.' : `Chênh ${diff > 0 ? 'dư' : 'thiếu'} ${vnd(Math.abs(diff))}. Hãy nhớ lại có khoản thu chi nào chưa ghi sổ không trước khi chốt.`}</div>}
+          {diff !== null && <div className={`small ${diff === 0 ? 'h-green' : 'h-yellow'}`}>{diff === 0 ? 'Khớp với hệ thống.' : `Chênh ${diff > 0 ? 'dư' : 'thiếu'} ${vnd(Math.abs(diff))}. Vui lòng kiểm tra còn khoản thu chi nào chưa ghi sổ trước khi chốt.`}</div>}
         </>
       )}
       <ErrorBox error={error} />
@@ -132,7 +132,7 @@ function TransferForm({ accounts, onClose, onDone }) {
         <Field label="Số tiền (₫)"><MoneyInput value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
         <Field label="Ngày"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
       </div>
-      <Field label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="VD: Rút tiền ngân hàng về két" /></Field>
+      <Field label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Ví dụ: Rút tiền ngân hàng về két" /></Field>
       <p className="small muted" style={{ margin: 0 }}>Chuyển quỹ không phải thu hay chi: tổng tiền không đổi, chỉ đổi chỗ để.</p>
       <ErrorBox error={error} />
     </Modal>

@@ -1,3 +1,4 @@
+import ChannelPrices from '../../components/ChannelPrices.jsx';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import { useSession } from '../../session.jsx';
@@ -17,13 +18,13 @@ const blankRow = () => ({ sku: '', default_price: 0, opening_cost: '', opening_q
 
 /** Dữ liệu ban đầu của form từ một sản phẩm đã có (GET /products/:id) hoặc sản phẩm trống */
 export function initialForm(p, shopId, isAll) {
-  if (!p) return { name: '', item_type: 'product', default_supplier_id: '', category_id: '', brand: '', unit: 'cái', description: '', consumption_days: '', images: [], shop_ids: isAll ? [] : [shopId], mode: 'single', options: [{ name: '', values: [] }], rows: [blankRow()], removed: [], opening_warehouse_id: '', custom: {}, renames: [] };
+  if (!p) return { name: '', item_type: 'product', default_supplier_id: '', category_id: '', brand: '', unit: 'cái', description: '', consumption_days: '', warranty_days: '', images: [], shop_ids: isAll ? [] : [shopId], mode: 'single', options: [{ name: '', values: [] }], rows: [blankRow()], removed: [], opening_warehouse_id: '', custom: {}, renames: [] };
   const hasOptions = (p.options || []).length > 0;
   // Ma trận: chỉ các biến thể còn khớp thuộc tính hiện tại (biến thể đã lưu trữ do bỏ giá trị không hiện lại)
   const live = hasOptions ? p.variants.filter((v) => p.options.every((o) => o.values.includes(v.option_values?.[o.name]))) : p.variants;
   const form = {
     id: p.id, existing: true, name: p.name, item_type: p.item_type || 'product', default_supplier_id: p.default_supplier_id || '', category_id: p.category_id || '', brand: p.brand || '', unit: p.unit || 'cái', description: p.description || '',
-    consumption_days: p.consumption_days ?? '', images: (p.images || []).map((i) => ({ id: i.id, url: i.url })),
+    consumption_days: p.consumption_days ?? '', warranty_days: p.warranty_days ?? '', images: (p.images || []).map((i) => ({ id: i.id, url: i.url })),
     shop_ids: [...new Set(p.variants.flatMap((v) => (v.listings || []).map((l) => l.shop_id)))],
     mode: hasOptions ? 'matrix' : p.variants.length > 1 ? 'list' : 'single',
     options: hasOptions ? p.options : [{ name: '', values: [] }],
@@ -51,6 +52,7 @@ export function buildPayload(f, { customShopId } = {}) {
   const payload = {
     name: f.name.trim(), item_type: f.item_type || 'product', default_supplier_id: f.default_supplier_id || null, unit: f.unit || 'cái', category_id: f.category_id || null, brand: f.brand || null, description: f.description || null,
     consumption_days: f.consumption_days ? Number(f.consumption_days) : null,
+    warranty_days: f.warranty_days ? Number(f.warranty_days) : null,
     images: f.images.map(({ id }) => ({ id })),
     variants: [...rows.map(variant), ...f.removed.filter((r) => r.id).map((r) => ({ id: r.id, remove: true }))],
     ...(f.mode === 'matrix' ? { options: cleanOptions(f.options) } : {}),
@@ -171,11 +173,13 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
             <Field label="Thương hiệu"><input value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Field>
             <Field label="Đơn vị"><input value={f.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
             <Field label="Nhà cung cấp mặc định"><select value={f.default_supplier_id || ''} onChange={(e) => set({ default_supplier_id: e.target.value })}><option value="">Chưa chọn</option>{supplierRows.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+            {f.item_type === 'product' && <Field label="Bảo hành (ngày)" hint="Tính từ ngày hoàn thành đơn. Bỏ trống nếu không bảo hành."><input type="number" min="1" value={f.warranty_days} onChange={(e) => set({ warranty_days: e.target.value })} /></Field>}
             <Fold title="Nhắc mua lại">
               <Field label="Chu kỳ dùng hết (ngày)" hint="Để nhắc khách mua lại"><input type="number" min="1" value={f.consumption_days} onChange={(e) => set({ consumption_days: e.target.value })} /></Field>
             </Fold>
           </div>
         </Section>
+        {f.existing && f.item_type === 'product' && <ChannelPrices productId={f.id} variants={f.rows} />}
         {f.existing && f.item_type === 'product' && <PackagingSpec productId={f.id} />}
         {!f.existing && f.item_type === 'product' && (
           <Section title="Bán ở shop">
@@ -280,7 +284,7 @@ function PackagingSpec({ productId }) {
   </div></Section>;
 }
 
-/** Trường thông tin sản phẩm của shop (vd Ngũ hành hợp của shop phong thuỷ). Chỉ gửi các trường đã đổi. */
+/** Trường thông tin sản phẩm của shop (ví dụ Ngũ hành hợp của shop phong thuỷ). Chỉ gửi các trường đã đổi. */
 function ProductFields({ productId, shopId, value, onChange }) {
   const state = useAsync(async () => {
     if (!shopId) return { fields: [], values: {} };
@@ -326,11 +330,11 @@ function TagInput({ values, onChange, onRename, label }) {
         <span key={v} className="tag">
           {editing === v
             ? <CommitInput value={v} aria-label={`Đổi tên giá trị ${v}`} autoFocus style={{ minWidth: 80, minHeight: 28, padding: '0 8px' }} onCommit={(n) => { setEditing(null); onRename(v, n); }} />
-            : <span role="button" tabIndex={0} title="Bấm để đổi tên" onClick={() => setEditing(v)} onKeyDown={(e) => e.key === 'Enter' && setEditing(v)}>{v}</span>}
+            : <span role="button" tabIndex={0} title="Nhấn để đổi tên" onClick={() => setEditing(v)} onKeyDown={(e) => e.key === 'Enter' && setEditing(v)}>{v}</span>}
           <button type="button" aria-label={`Bỏ ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>✕</button>
         </span>
       ))}
-      <input value={text} aria-label={label} placeholder={values.length ? '' : 'Nhập giá trị rồi bấm Enter'} onChange={(e) => setText(e.target.value)} onBlur={commit}
+      <input value={text} aria-label={label} placeholder={values.length ? '' : 'Nhập giá trị rồi nhấn Enter'} onChange={(e) => setText(e.target.value)} onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(); } else if (e.key === 'Backspace' && !text && values.length) onChange(values.slice(0, -1)); }} />
     </div>
   );
@@ -377,7 +381,7 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
               {f.options.length > 1 && <button type="button" className="btn sm" aria-label={`Xoá thuộc tính ${o.name || i + 1}`} onClick={() => removeAttr(i)}>✕</button>}
             </div>
           </Field>
-          <Field label="Giá trị (bấm vào thẻ để đổi tên)"><TagInput values={o.values} label={`Giá trị của ${o.name || 'thuộc tính'}`} onChange={(values) => upd(i, { values })} onRename={(a, b) => renameValue(i, a, b)} /></Field>
+          <Field label="Giá trị (nhấn vào thẻ để đổi tên)"><TagInput values={o.values} label={`Giá trị của ${o.name || 'thuộc tính'}`} onChange={(values) => upd(i, { values })} onRename={(a, b) => renameValue(i, a, b)} /></Field>
         </div>
       ))}
       {f.options.length < 3 && <div><button type="button" className="btn sm" onClick={() => set({ options: [...f.options, { name: '', values: [] }] })}>+ Thuộc tính</button></div>}

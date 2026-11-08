@@ -14,6 +14,7 @@ import { runBackup, listBackups, backupDir } from '../../jobs/backup.js';
 import { processDue, deliver } from '../../jobs/webhooks.js';
 import { toCsv, EXPORTS } from './export.js';
 import { EVENT_TYPES } from './events.js';
+import { listAudit, auditFacets } from './auditlog.js';
 
 const r = new Hono();
 const db = () => getDb();
@@ -22,6 +23,12 @@ const db = () => getDb();
 r.use('*', async (c, next) => {
   if (c.get('actor')?.type !== 'user') throw forbidden('Chỉ chủ shop đăng nhập mới dùng được chức năng này');
   return next();
+});
+
+// ---------- Nhật ký thay đổi ----------
+r.get('/audit', (c) => {
+  const q = query(c, z.object({ entity_type: z.string().optional(), entity_id: z.string().optional(), action: z.string().optional(), q: z.string().trim().max(80).optional(), from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().optional() }));
+  return c.json({ ...listAudit({ entityType: q.entity_type, entityId: q.entity_id, action: q.action, q: q.q, from: q.from, to: q.to, limit: q.limit, cursor: q.cursor }), facets: q.cursor ? undefined : auditFacets() });
 });
 
 // ---------- API key ----------

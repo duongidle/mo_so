@@ -1,4 +1,5 @@
 import { getDb } from '../../db/index.js';
+import { addLot } from '../inventory/lots.js';
 import { newId } from '../../lib/id.js';
 import { nowIso, toIso } from '../../lib/time.js';
 import { allocate } from '../../lib/money.js';
@@ -107,14 +108,14 @@ function computeTotals(lines, { discount_amount = 0, shipping_fee = 0, other_fee
 function writeLines(purchaseId, lines) {
   db().prepare('DELETE FROM purchase_lines WHERE purchase_id = ?').run(purchaseId);
   const ins = db().prepare(
-    `INSERT INTO purchase_lines (id, purchase_id, variant_id, qty, unit_cost, line_total, allocated_cost, landed_unit_cost, sort_order)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO purchase_lines (id, purchase_id, variant_id, qty, unit_cost, line_total, allocated_cost, landed_unit_cost, sort_order, lot_no, expiry_date)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
   );
   lines.forEach((l, i) => {
     const v = db().prepare('SELECT id, kind FROM variants WHERE id = ?').get(l.variant_id);
     if (!v) throw notFound(`Biến thể ${l.variant_id}`);
     if (v.kind === 'bundle') throw badRequest('BUNDLE_NO_STOCK', 'Không nhập hàng cho combo. Nhập từng sản phẩm thành phần.');
-    ins.run(newId('pul'), purchaseId, l.variant_id, l.qty, l.unit_cost, l.line_total, l.allocated_cost, l.landed_unit_cost, i);
+    ins.run(newId('pul'), purchaseId, l.variant_id, l.qty, l.unit_cost, l.line_total, l.allocated_cost, l.landed_unit_cost, i, l.lot_no ?? null, l.expiry_date ?? null);
   });
 }
 
@@ -132,6 +133,7 @@ export function createPurchase(input, actor) {
     )
     .run(id, code, input.supplier_id ?? null, input.warehouse_id, input.shop_id ?? null, t.subtotal, input.discount_amount ?? 0, input.shipping_fee ?? 0, input.other_fee ?? 0, t.total, input.note ?? null, input.supplier_ref ?? null, orderedAt, at, at, t.carrier);
   writeLines(id, t.lines);
+  if (input.due_date !== undefined) db().prepare('UPDATE purchases SET due_date = ? WHERE id = ?').run(input.due_date, id);
   audit(actor, 'purchase.created', 'purchase', id, null, input);
   if (input.receive) receivePurchase(id, actor);
   if (input.paid_amount) addPurchasePayment(id, { amount: input.paid_amount, method: input.payment_method ?? 'cash' }, actor);
@@ -142,7 +144,7 @@ export function updatePurchase(id, input, actor) {
   const before = getPurchase(id);
   if (before.status !== 'draft') throw conflict('NOT_DRAFT', 'Chỉ sửa được phiếu nhập ở trạng thái nháp');
   const merged = { ...before, ...input };
-  const lines = input.lines ?? before.lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty, unit_cost: l.unit_cost }));
+  const lines = input.lines ?? before.lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty, unit_cost: l.unit_cost, lot_no: l.lot_no, expiry_date: l.expiry_date }));
   const t = computeTotals(lines, { ...merged, carrier_ship: (input.shipping_payee ?? (before.carrier_amount > 0 ? 'carrier' : 'supplier')) === 'carrier' });
   db()
     .prepare(
@@ -151,6 +153,7 @@ export function updatePurchase(id, input, actor) {
     )
     .run(merged.supplier_id, merged.warehouse_id, merged.shop_id, t.subtotal, merged.discount_amount, merged.shipping_fee, merged.other_fee, t.total, merged.note, merged.supplier_ref, toIso(merged.ordered_at) || before.ordered_at, nowIso(), t.carrier, id);
   writeLines(id, t.lines);
+  if (input.due_date !== undefined) db().prepare('UPDATE purchases SET due_date = ? WHERE id = ?').run(input.due_date, id);
   const after = getPurchase(id);
   audit(actor, 'purchase.updated', 'purchase', id, before, after);
   return after;
@@ -174,6 +177,7 @@ export function receivePurchase(id, actor) {
       actorId: actor?.id,
       at,
     });
+    addLot({ warehouseId: p.warehouse_id, variantId: l.variant_id, qty: l.qty, lotNo: l.lot_no, expiryDate: l.expiry_date, receivedAt: at, refType: 'purchase', refId: id, refLineId: l.id });
   }
   db().prepare("UPDATE purchases SET status='received', received_at=?, updated_at=? WHERE id=?").run(at, at, id);
   const after = getPurchase(id);
@@ -197,7 +201,7 @@ export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
     for (const l of p.lines) {
       const level = getLevel(p.warehouse_id, l.variant_id);
       if (level.on_hand < l.qty) {
-        throw conflict('STOCK_NOT_ENOUGH', `Không thể huỷ: hàng ${l.sku} đã bán bớt (còn ${level.on_hand}, cần rút ${l.qty}). Hãy tạo phiếu điều chỉnh thay vì huỷ.`);
+        throw conflict('STOCK_NOT_ENOUGH', `Không thể huỷ: hàng ${l.sku} đã bán bớt (còn ${level.on_hand}, cần rút ${l.qty}). Vui lòng tạo phiếu điều chỉnh thay vì huỷ.`);
       }
     }
     for (const l of p.lines) {

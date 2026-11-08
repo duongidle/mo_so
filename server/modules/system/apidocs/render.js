@@ -208,7 +208,7 @@ def valid(raw_body: bytes, header: str, secret: str) -&gt; bool:
     expected = 'sha256=' + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, header or '')</pre>
 <p class="note"><b>Quan trọng:</b> tính chữ ký trên thân thô (bytes nhận được), không parse rồi dựng lại JSON.</p>
-<h3>Gửi lại khi thất bại</h3><p>Trả mã 2xx trong 10 giây là thành công. Ngược lại app thử lại sau 1 phút, 5 phút, 30 phút, 2 giờ, 12 giờ (tối đa 6 lần). Xem log và gửi lại tay ở Cài đặt → API &amp; webhook.</p>
+<h3>Gửi lại khi thất bại</h3><p>Trả mã 2xx trong 10 giây là thành công. Ngược lại hệ thống thử lại sau 1 phút, 5 phút, 30 phút, 2 giờ, 12 giờ (tối đa 6 lần). Xem log và gửi lại tay ở Cài đặt → API &amp; webhook.</p>
 <h3>Sự kiện</h3><p>${events}</p></div>
 
 <h2 class="sec" style="margin-top:56px">Tài nguyên</h2>

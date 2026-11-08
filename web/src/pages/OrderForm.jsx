@@ -21,7 +21,7 @@ export default function OrderForm() {
   if (!id) return <Form order={null} />;
   return (
     <Async state={state}>
-      {({ data: o }) => (o.status !== 'draft' ? <Navigate to={`/orders/${o.id}`} replace /> : <Form order={o} />)}
+      {({ data: o }) => (!['draft', 'confirmed'].includes(o.status) ? <Navigate to={`/orders/${o.id}`} replace /> : <Form order={o} />)}
     </Async>
   );
 }
@@ -49,6 +49,10 @@ function Form({ order }) {
   const [platformFee, setPlatformFee] = useState(order?.platform_fee_amount || 0);
   const [sellerShipping, setSellerShipping] = useState(order?.seller_shipping_amount || 0);
   const [note, setNote] = useState(order?.note || '');
+  const [dueDate, setDueDate] = useState(order?.due_date || '');
+  const revise = isEdit && order.status === 'confirmed'; // đơn đã xác nhận, hàng còn ở shop: sửa được, kho trừ lại
+  const [promoCode, setPromoCode] = useState('');
+  const [promo, setPromo] = useState(null); // kết quả POST /loyalty/promotions/evaluate
   const [paid, setPaid] = useState('');
   const [method, setMethod] = useState('cash');
   const [preview, setPreview] = useState(null);
@@ -72,9 +76,18 @@ function Form({ order }) {
   useEffect(() => {
     if (!shopId) return undefined;
     let off = false;
-    api.get('/variants', { shop_id: shopId, q: dq || undefined, limit: 20 }).then((r) => !off && setResults(r.data)).catch(() => !off && setResults([]));
+    api.get('/variants', { shop_id: shopId, channel_id: channelId, q: dq || undefined, limit: 20 }).then((r) => !off && setResults(r.data)).catch(() => !off && setResults([]));
     return () => { off = true; };
-  }, [shopId, dq]);
+  }, [shopId, dq, channelId]);
+
+  // Đổi kênh khi tạo đơn mới: dòng đã thêm lấy lại giá theo kênh (giá riêng của kênh nếu có)
+  useEffect(() => {
+    if (isEdit || !shopId || !lines.length) return undefined;
+    let off = false;
+    Promise.all(lines.map((l) => api.get('/variants', { shop_id: shopId, channel_id: channelId, q: l.sku, all: 1, limit: 5 }).then((r) => r.data.find((v) => v.id === l.variant_id)?.price ?? null).catch(() => null)))
+      .then((prices) => { if (!off) setLines((ls) => ls.map((l, i) => (prices[i] != null && prices[i] !== l.price ? { ...l, price: prices[i] } : l))); });
+    return () => { off = true; };
+  }, [channelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tạo đơn mới: đổi shop thì giỏ cũ không còn đúng giá/niêm yết
   useEffect(() => { if (!isEdit) { setLines([]); setEdits({}); setCustomer(null); } }, [shopId, isEdit]);
@@ -85,7 +98,7 @@ function Form({ order }) {
     let off = false;
     (async () => {
       const base = order.lines.map((l) => ({
-        uid: l.id, variant_id: l.variant_id, sku: l.sku, kind: 'single', name: l.name, image_url: l.image_url, qty: l.qty, price: l.unit_price, discount: l.discount_amount,
+        uid: l.id, is_gift: !!l.is_gift, variant_id: l.variant_id, sku: l.sku, kind: 'single', name: l.name, image_url: l.image_url, qty: l.qty, price: l.unit_price, discount: l.discount_amount,
         avg_cost: null, on_hand_total: null, stock_by_warehouse: [],
       }));
       const ed = {};
@@ -109,7 +122,8 @@ function Form({ order }) {
     return () => { off = true; };
   }, [order]);
 
-  const totals = useMemo(() => computeTotals({ lines, discount, shipping, platformFee, sellerShipping, marketplace }), [lines, discount, shipping, platformFee, sellerShipping, marketplace]);
+  const promoDiscount = !isEdit && promo ? promo.total_discount : 0;
+  const totals = useMemo(() => computeTotals({ lines, discount: toMoney(discount) + promoDiscount, shipping, platformFee, sellerShipping, marketplace }), [lines, discount, promoDiscount, shipping, platformFee, sellerShipping, marketplace]);
 
   // Xem trước phân bổ kho: làm mới (trễ 300ms) khi dòng đổi
   const sig = JSON.stringify(serverLines(lines, edits, { withPrice: false }));
@@ -123,6 +137,17 @@ function Form({ order }) {
       .catch((e) => { if (!off) setPreviewErr(e); });
     return () => { off = true; };
   }, [dsig, shopId]);
+
+  // Khuyến mãi (Loyalty): máy chủ tính, đây chỉ xem trước. Tạo đơn thì máy chủ tính lại.
+  useEffect(() => {
+    if (isEdit || !shopId || !lines.length) { setPromo(null); return undefined; }
+    let off = false;
+    const t = setTimeout(() => {
+      api.post('/loyalty/promotions/evaluate', { shop_id: shopId, channel_id: channelId, customer_id: customer?.id || null, code: promoCode || null, lines: lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty, unit_price: l.price, discount_amount: l.discount || 0 })) })
+        .then((r) => !off && setPromo(r.data)).catch(() => !off && setPromo(null));
+    }, 300);
+    return () => { off = true; clearTimeout(t); };
+  }, [dsig, shopId, channelId, customer?.id, promoCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const upd = (uid, patch) => setLines((ls) => ls.map((l) => (l.uid === uid ? { ...l, ...patch } : l)).filter((l) => l.qty > 0));
   const pick = (v) => { setLines((ls) => addVariant(ls, v)); setQ(''); setOpenSearch(false); };
@@ -139,7 +164,7 @@ function Form({ order }) {
     setLocalErrors(errs);
     if (errs.length) return undefined;
     return run(async () => {
-      const common = { shopId, channelId, externalId, customerId: customer?.id, address, lines, edits, discount, shipping, platformFee, sellerShipping, marketplace, note };
+      const common = { shopId, channelId, externalId, customerId: customer?.id, address, lines, edits, discount, shipping, platformFee, sellerShipping, marketplace, note, dueDate };
       const collected = method === 'customer_credit' && paid === '' ? Math.min(totals.amountDue, customerCredit) : paid;
       const payments = paymentsFor(status, collected, totals.amountDue, method);
       const askNegative = (e) => e.code === 'STOCK_NOT_ENOUGH' && status !== 'draft' && window.confirm(`${e.message}\n\nVẫn xác nhận và cho phép âm kho?`);
@@ -147,15 +172,16 @@ function Form({ order }) {
         if (!isEdit) {
           const body = buildPayload({ ...common, status, payments });
           try {
-            finish((await api.post('/orders', body, { 'Idempotency-Key': key.current })).data);
+            finish((await api.post('/orders', { ...body, auto_promotions: true, promotion_code: promoCode || null }, { 'Idempotency-Key': key.current })).data);
           } catch (e) {
             key.current = newKey(); // lỗi 4xx được lưu theo khoá; thử lại phải dùng khoá mới
             if (!askNegative(e)) throw e;
-            finish((await api.post('/orders', { ...body, allow_negative_stock: true }, { 'Idempotency-Key': key.current })).data);
+            finish((await api.post('/orders', { ...body, auto_promotions: true, promotion_code: promoCode || null, allow_negative_stock: true }, { 'Idempotency-Key': key.current })).data);
           }
           return;
         }
         await api.patch(`/orders/${order.id}`, buildPayload(common));
+        if (revise) { nav(`/orders/${order.id}`); return; }
         if (status !== 'draft') {
           try { await api.post(`/orders/${order.id}/status`, { status }); } catch (e) {
             if (!askNegative(e)) throw e;
@@ -289,19 +315,32 @@ function Form({ order }) {
             </div>
           </Section>
 
+          {!isEdit && (
+            <Section title="Khuyến mãi">
+              <div className="stack">
+                <Field label="Mã giảm giá (nếu có)"><input value={promoCode} onChange={(e) => setPromoCode(e.target.value.toUpperCase())} placeholder="Ví dụ: GIAM50" aria-label="Mã giảm giá" /></Field>
+                {promo?.code_status && !promo.code_status.ok && promoCode && <div className="alert err small" role="alert">{promo.code_status.reason}</div>}
+                {promo?.applied?.length > 0
+                  ? promo.applied.map((a) => <div key={a.id} className="ledger-line"><span>{a.name}</span><span className="num h-green">{a.kind === 'gift' ? `Tặng ${promo.gifts.find((g) => g.promotion_id === a.id)?.product_name || ''} × ${promo.gifts.find((g) => g.promotion_id === a.id)?.qty || 1}` : `−${vnd(a.amount)}`}</span></div>)
+                  : <span className="muted small">Chưa có khuyến mãi nào áp dụng cho giỏ hàng này.</span>}
+              </div>
+            </Section>
+          )}
+
           <Section title="Tiền">
             <div className="stack">
               <div className="grid cols-2 collapse">
                 <Field label="Giảm giá đơn"><MoneyInput value={discount} onChange={(e) => setDiscount(toMoney(e.target.value))} aria-label="Giảm giá đơn" /></Field>
                 <Field label="Phí ship khách trả"><MoneyInput value={shipping} onChange={(e) => setShipping(toMoney(e.target.value))} aria-label="Phí ship khách trả" /></Field>
                 {marketplace && <Field label="Phí sàn"><MoneyInput value={platformFee} onChange={(e) => setPlatformFee(toMoney(e.target.value))} aria-label="Phí sàn" /></Field>}
-                {marketplace && <Field label="Ship shop chịu"><MoneyInput value={sellerShipping} onChange={(e) => setSellerShipping(toMoney(e.target.value))} aria-label="Ship shop chịu" /></Field>}
+                <Field label={marketplace ? 'Ship shop chịu' : 'Ship shop tự trả hãng vận chuyển'}><MoneyInput value={sellerShipping} onChange={(e) => setSellerShipping(toMoney(e.target.value))} aria-label="Ship shop chịu" /></Field>
               </div>
               <div>
                 <div className="ledger-line"><span>Tạm tính</span><span className="num">{vnd(totals.subtotal)}</span></div>
-                {totals.lineDiscount + totals.orderDiscount > 0 && <div className="ledger-line"><span>Giảm giá</span><span className="num">−{vnd(totals.lineDiscount + totals.orderDiscount)}</span></div>}
+                {totals.lineDiscount + totals.orderDiscount > 0 && <div className="ledger-line"><span>Giảm giá{promoDiscount > 0 ? ' (gồm khuyến mãi)' : ''}</span><span className="num">−{vnd(totals.lineDiscount + totals.orderDiscount)}</span></div>}
                 {toMoney(shipping) > 0 && <div className="ledger-line"><span>Phí ship khách trả</span><span className="num">{vnd(shipping)}</span></div>}
                 <div className="ledger-line total"><span>Khách phải trả</span><span className="num" data-testid="total">{vnd(totals.total)}</span></div>
+                {toMoney(sellerShipping) > 0 && !marketplace && <div className="ledger-line"><span>Ship shop tự trả</span><span className="num">−{vnd(sellerShipping)}</span></div>}
                 {marketplace && <div className="ledger-line"><span>Shop thực nhận</span><span className="num" data-testid="net">{vnd(totals.net)}</span></div>}
                 <div className="ledger-line small muted"><span>Lãi gộp (ước tính)</span><span className="num" data-testid="profit">{totals.profit === null ? '—' : vnd(totals.profit)}</span></div>
               </div>
@@ -317,6 +356,7 @@ function Form({ order }) {
                 <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Phương thức thanh toán">{methodList(method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{customerCredit > 0 && !marketplace && <option value="customer_credit">Tiền khách gửi</option>}</select>
               </Field>
             </div>
+            {!marketplace && <Field label="Hạn thanh toán phần còn nợ (tuỳ chọn)" hint="Để trống: dùng số ngày công nợ mặc định trong Cài đặt (nếu có)"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} aria-label="Hạn thanh toán" /></Field>}
             {customerCredit > 0 && !marketplace && <p className="small muted">Khách còn {vnd(customerCredit)} tiền gửi trong shop này.</p>}
           </Section>
         </div>
@@ -333,9 +373,13 @@ function Form({ order }) {
             <ErrorBox error={error} />
           </div>}
           <div className="of-btns">
-            <button type="button" className="btn" aria-label="Lưu nháp" disabled={busy} onClick={() => submit('draft')}>Lưu nháp</button>
-            <button type="button" className="btn" aria-label="Xác nhận đơn" disabled={busy || problems.length > 0} onClick={() => submit('confirmed')}>Xác nhận</button>
-            <button type="button" className="btn primary" aria-label="Bán xong" disabled={busy || problems.length > 0} onClick={() => submit('completed')}>{busy ? 'Đang lưu…' : 'Bán xong'}</button>
+            {revise ? (
+              <button type="button" className="btn primary" aria-label="Lưu thay đổi" disabled={busy || problems.length > 0} onClick={() => submit('confirmed')}>{busy ? 'Đang lưu…' : 'Lưu thay đổi'}</button>
+            ) : (<>
+              <button type="button" className="btn" aria-label="Lưu nháp" disabled={busy} onClick={() => submit('draft')}>Lưu nháp</button>
+              <button type="button" className="btn" aria-label="Xác nhận đơn" disabled={busy || problems.length > 0} onClick={() => submit('confirmed')}>Xác nhận</button>
+              <button type="button" className="btn primary" aria-label="Bán xong" disabled={busy || problems.length > 0} onClick={() => submit('completed')}>{busy ? 'Đang lưu…' : 'Bán xong'}</button>
+            </>)}
           </div>
         </div>
       </div>

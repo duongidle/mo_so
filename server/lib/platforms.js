@@ -7,7 +7,7 @@
  * Thêm nền tảng = thêm một mục ở đây + một migration seed kênh (lưu trữ sẵn) và mẫu import.
  * Bật/tắt từng nền tảng ở Cài đặt → Nền tảng bán hàng; tắt chỉ ẩn kênh, không mất dữ liệu.
  */
-export const BASE_PAYMENT_METHODS = ['cash', 'bank', 'cod', 'card', 'ewallet', 'other'];
+export const BASE_PAYMENT_METHODS = ['cash', 'bank', 'cod', 'carrier_payout', 'card', 'ewallet', 'other'];
 
 export const PLATFORMS = {
   shopee: {

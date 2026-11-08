@@ -6,6 +6,9 @@ import * as svc from './service.js';
 import * as counts from './counts.js';
 import * as materials from './materials.js';
 import * as close from './close.js';
+import * as costing from './costing.js';
+import * as lots from './lots.js';
+import { shopWarehouseIds } from '../orders/allocation.js';
 import { flushJournal } from '../accounting/journal.js';
 import { rowsToCsv } from '../system/export.js';
 
@@ -119,6 +122,23 @@ r.post('/transfers', async (c) => {
   );
   const res = tx(() => svc.createTransfer({ fromWarehouseId: input.from_warehouse_id, toWarehouseId: input.to_warehouse_id, lines: input.lines, note: input.note }, c.get('actor')));
   return c.json({ data: res }, 201);
+});
+
+// Lô và hạn dùng
+r.get('/stock-lots', (c) => {
+  const q = query(c, z.object({ warehouse_id: z.string().optional(), variant_id: z.string().optional(), shop_id: z.string().optional(), within_days: z.coerce.number().int().min(0).max(3650).optional() }));
+  return c.json({ data: lots.listLots({ warehouseId: q.warehouse_id, variantId: q.variant_id, withinDays: q.within_days, shopWarehouseIds: q.shop_id ? shopWarehouseIds(q.shop_id) : undefined }) });
+});
+r.get('/stock-lots/summary', (c) => {
+  const q = query(c, z.object({ shop_id: z.string().optional() }));
+  return c.json({ data: lots.lotSummary({ shopWarehouseIds: q.shop_id ? shopWarehouseIds(q.shop_id) : undefined }) });
+});
+
+// Phương pháp giá vốn
+r.get('/costing-method', (c) => c.json({ data: costing.costingStatus() }));
+r.put('/costing-method', async (c) => {
+  const input = await body(c, z.object({ method: z.enum(['average', 'fifo']) }));
+  return c.json({ data: tx(() => costing.setCostingMethod(input.method, c.get('actor'))) });
 });
 
 // Chốt kỳ kho

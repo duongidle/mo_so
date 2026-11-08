@@ -89,7 +89,7 @@ const LIST = [
   }),
   M('platform_fee', 'Phí sàn', {
     group: 'Doanh thu và lãi', what: 'Hoa hồng, phí thanh toán, phí dịch vụ sàn thu trên đơn.', formula: 'Σ phí sàn ghi trên đơn',
-    source: `${COUNTED_TXT} ${BY_DATE} Khi khách trả hàng, app giả định sàn không hoàn lại phí sàn.`, tip: 'Phí sàn ăn nhiều: xem lại giá bán trên sàn hoặc chương trình tham gia.', drill: ordersCounted, drillNote: ORDERS_NOTE,
+    source: `${COUNTED_TXT} ${BY_DATE} Khi khách trả hàng, hệ thống giả định sàn không hoàn lại phí sàn.`, tip: 'Phí sàn ăn nhiều: xem lại giá bán trên sàn hoặc chương trình tham gia.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('seller_shipping', 'Ship shop chịu', {
     group: 'Doanh thu và lãi', what: 'Tiền ship shop tự trả (khách không trả).', formula: 'Σ phí ship shop chịu ghi trên đơn', source: `${COUNTED_TXT} ${BY_DATE}`,
@@ -114,7 +114,7 @@ const LIST = [
     group: 'Doanh thu và lãi', scope: 'shop_plus_shared', what: 'Các khoản chi vận hành đã ghi ở trang Chi phí (quảng cáo, bao bì, thuê mặt bằng…), đã quy về shop đang xem.',
     formula: 'Chi phí của shop + phần chi phí chung chia về shop',
     source: 'Chi phí chưa huỷ, tính theo ngày chi. Chi phí không gắn shop nào được chia cho các shop đang hoạt động theo quy tắc ở Cài đặt (theo doanh thu thuần của mọi shop và mọi kênh, chia đều, hoặc tỷ lệ cố định). Chi phí của shop đã lưu trữ vẫn tính vào tổng.',
-    tip: 'Nhìn tỷ lệ chi phí trên doanh thu và khoản nào tăng nhanh nhất, đừng chỉ nhìn tổng.', drill: () => '/expenses',
+    tip: 'Nhìn tỷ lệ chi phí trên doanh thu và khoản nào tăng nhanh nhất, không chỉ xem tổng.', drill: () => '/expenses',
   }),
   M('net_profit_estimate', 'Lợi nhuận ròng ước tính', {
     group: 'Doanh thu và lãi', scope: 'shop_plus_shared', what: 'Lãi gộp trừ chi phí, cộng chênh lệch kho và kiểm đếm quỹ khi xem tất cả shop. Chưa gồm khấu hao và chứng từ thu/chi khác lập tay.',
@@ -131,7 +131,7 @@ const LIST = [
     group: 'Doanh thu và lãi', scope: 'account', what: 'Chỉ có khi bạn bật và tự nhập mức thuế ở Cài đặt → Thuế. Để thấy lợi nhuận sau thuế, không phải tờ khai.',
     formula: 'Theo từng khoản bạn đặt: tỷ lệ % × (cơ sở cộng dồn từ đầu năm − ngưỡng miễn thuế), trừ phần đã tính trước kỳ',
     source: 'Tính cho cả hộ kinh doanh trên mọi shop và mọi kênh, cộng dồn từ đầu năm dương lịch. Khi lọc theo một shop thì không hiện vì thuế không chia theo shop.',
-    tip: 'Mức thuế thay đổi theo thời kỳ, hãy hỏi kế toán trước khi đặt.', drill: () => '/settings',
+    tip: 'Mức thuế thay đổi theo thời kỳ, nên hỏi kế toán trước khi đặt.', drill: () => '/settings',
   }),
   M('profit_after_tax_estimate', 'Lợi nhuận sau thuế ước tính', {
     group: 'Doanh thu và lãi', scope: 'account', what: 'Lợi nhuận ròng ước tính trừ thuế ước tính.', formula: 'Lợi nhuận ròng ước tính − thuế ước tính',
@@ -142,7 +142,7 @@ const LIST = [
   M('expenses_total', 'Tổng chi phí', {
     group: 'Chi phí', scope: 'shop_plus_shared', what: 'Tổng chi phí trong kỳ của shop đang xem, gồm phần chi phí chung chia về.', formula: 'Chi phí của shop + phần chung đã chia',
     source: 'Chi phí chưa huỷ, tính theo ngày chi. Phần chung chia theo quy tắc ở Cài đặt; phép chia dùng cách chia không lệch đồng nên cộng các shop lại bằng đúng số gốc. Tất cả shop: tổng chi phí của tài khoản.',
-    tip: 'So với kỳ trước và với doanh thu, đừng chỉ nhìn tổng.', drill: () => '/expenses',
+    tip: 'So với kỳ trước và với doanh thu, không chỉ xem tổng.', drill: () => '/expenses',
   }),
   M('expense_ratio_pct', 'Chi phí / doanh thu thuần (%)', {
     group: 'Chi phí', scope: 'shop_plus_shared', what: 'Chi phí chiếm bao nhiêu phần trăm doanh thu thuần.', formula: 'Tổng chi phí ÷ doanh thu thuần × 100',
@@ -252,7 +252,7 @@ const LIST = [
 
   // ---------- Tiền & công nợ ----------
   M('fund_balance', 'Số dư quỹ', {
-    group: 'Tiền và công nợ', scope: 'account', time: 'today', what: 'Tiền thật đang có trong két, tài khoản ngân hàng, ví. App tự tính từ thu chi, bạn kiểm đếm để khớp.',
+    group: 'Tiền và công nợ', scope: 'account', time: 'today', what: 'Tiền thật đang có trong két, tài khoản ngân hàng, ví. Hệ thống tự tính từ thu chi, bạn kiểm đếm để khớp.',
     formula: 'Số dư đầu + thu − chi − chi phí ± chuyển quỹ ± điều chỉnh kiểm đếm', source: 'Sổ quỹ của cả tài khoản, tính đến hôm nay, không theo shop và không theo khoảng ngày. Số dư không lưu sẵn, luôn tính lại từ sổ.',
     tip: 'Chênh với tiền thật: có khoản thu chi chưa ghi. Kiểm đếm hằng tuần.', drill: () => '/expenses?tab=cash',
   }),
@@ -342,7 +342,7 @@ const LIST = [
   }),
   M('acc_lock', 'Khoá sổ', {
     group: 'Kế toán', scope: 'account', time: 'today', what: 'Từ ngày khoá trở về trước, chứng từ tay, chi phí, thanh toán, chuyển quỹ và tài sản không tạo, sửa, huỷ được.', formula: 'Chứng từ có ngày ≤ ngày khoá bị chặn (PERIOD_LOCKED)',
-    source: 'Đơn bán và phiếu nhập trong kỳ đã khoá vẫn sửa được (đơn sàn import muộn là chuyện bình thường); khi đó số kỳ đã khoá đổi và app cảnh báo so với ảnh chụp lúc khoá.', tip: 'Khoá sau khi chốt số cuối tháng; có cảnh báo thì xem kỹ những tài khoản bị đổi.',
+    source: 'Đơn bán và phiếu nhập trong kỳ đã khoá vẫn sửa được (đơn sàn import muộn là chuyện bình thường); khi đó số kỳ đã khoá đổi và hệ thống cảnh báo so với ảnh chụp lúc khoá.', tip: 'Khoá sau khi chốt số cuối tháng; có cảnh báo thì xem kỹ những tài khoản bị đổi.',
   }),
   M('acc_assets', 'Tổng tài sản', {
     group: 'Kế toán', scope: 'account', time: 'today', what: 'Tiền, phải thu, hàng tồn, tài sản cố định, chi phí trả trước.', formula: 'Σ số dư các tài khoản tài sản (đã trừ hao mòn)', source: 'Toàn tài khoản, không lọc shop, tính đến ngày chọn.', tip: 'Phải bằng nợ phải trả cộng vốn cộng lợi nhuận.',
@@ -363,7 +363,7 @@ const LIST = [
     source: 'Tính trên cùng bộ số với tab Doanh thu và Lợi nhuận (đúng shop và khoảng ngày đang xem). Thiếu dữ liệu hoặc chia cho 0 thì để trống.', tip: 'Sửa công thức ở Cài đặt → Chỉ số tuỳ chỉnh.', drill: () => '/settings',
   }),
   M('health_status', 'Màu sức khoẻ', {
-    group: 'Tiền và công nợ', what: 'Xanh, vàng, đỏ cho từng chỉ số tỷ lệ.', formula: 'So giá trị với ngưỡng vàng và đỏ bạn đặt', source: 'Ngưỡng ở Cài đặt → Ngưỡng & kho. App không tự bịa ngưỡng.', tip: 'Chỉnh ngưỡng cho hợp ngành của bạn.', drill: () => '/settings',
+    group: 'Tiền và công nợ', what: 'Xanh, vàng, đỏ cho từng chỉ số tỷ lệ.', formula: 'So giá trị với ngưỡng vàng và đỏ bạn đặt', source: 'Ngưỡng ở Cài đặt → Ngưỡng & kho. Hệ thống không tự bịa ngưỡng.', tip: 'Chỉnh ngưỡng cho hợp ngành của bạn.', drill: () => '/settings',
   }),
 
   // ---------- Tổng quan ----------

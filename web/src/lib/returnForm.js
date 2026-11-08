@@ -53,5 +53,5 @@ export function codRefusedForm(order, base = {}) {
   const lines = {};
   for (const l of order.lines) if (l.qty - l.returned_qty > 0) lines[l.id] = { qty: l.qty - l.returned_qty, restock: true };
   const shipLeft = Math.max(0, order.shipping_fee - (order.returned_shipping_amount || 0));
-  return { ...base, lines, shipOn: shipLeft > 0, shipRefund: String(shipLeft), fee: '', refund: '0', reason: base.reason || 'Khách không nhận hàng' };
+  return { ...base, lines, shipOn: shipLeft > 0, shipRefund: String(shipLeft), fee: '', refund: '0', reason: base.reason || '', reasonCode: base.reasonCode || 'customer_refused', awaitingGoods: true };
 }

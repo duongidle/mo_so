@@ -12,6 +12,8 @@ import { OrderList, OrderDetail } from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
 import ProductPage from './pages/products/ProductPage.jsx';
 import Stock from './pages/Stock.jsx';
+import NotificationBell from './components/NotificationBell.jsx';
+import Documents from './pages/Documents.jsx';
 import Purchases, { NewPurchasePage, PurchasePage } from './pages/Purchases.jsx';
 import { CustomerList, CustomerDetail } from './pages/Customers.jsx';
 import Loyalty from './pages/Loyalty.jsx';
@@ -24,7 +26,7 @@ import Settings from './pages/Settings.jsx';
 import Onboarding, { GettingStarted, useSetupProgress, readDismissed, DISMISS_KEY } from './pages/Onboarding.jsx';
 
 const NAV = [
-  { group: null, items: [['/', 'Tổng quan', 'home', true], ['/orders', 'Đơn hàng', 'receipt']] },
+  { group: null, items: [['/', 'Tổng quan', 'home', true], ['/orders', 'Đơn hàng', 'receipt'], ['/documents', 'Chứng từ', 'book']] },
   { group: 'Hàng hoá', items: [['/products', 'Sản phẩm', 'tag'], ['/stock', 'Kho', 'box'], ['/purchases', 'Nhập hàng', 'truck']] },
   { group: 'Khách', items: [['/customers', 'Khách hàng', 'users'], ['/loyalty', 'Loyalty & Campaign', 'heart']] },
   { group: 'Kế toán', items: [['/expenses', 'Chi phí & quỹ', 'wallet'], ['/accounting', 'Sổ kế toán', 'book']] },
@@ -107,7 +109,7 @@ function Shell({ progress, reopenGuide }) {
       <div className="main">
         <header className="topbar">
           <div className="row"><span className="mark-wrap"><img className="mark" src="/logo-mark.svg" alt="Mở Sổ" /></span><ShopSwitcher /></div>
-          <div className="row"><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span>{has('feng_shui') && <><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></>}</span>{!pathname.startsWith('/orders/new') && <Link to="/orders/new" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
+          <div className="row"><NotificationBell /><span className="small muted topdate"><span style={{ textTransform: 'capitalize' }}>{dateText}</span>{has('feng_shui') && <><span className="sep"> · </span><span className="lunar">Âm lịch {lunar.day}/{lunar.month}{lunar.leap ? ' nhuận' : ''}<span className="cc"> · {lunar.dayCanChi}</span></span></>}</span>{!pathname.startsWith('/orders/new') && <Link to="/orders/new" className="btn primary sm cta"><Icon name="plus" />Bán nhanh</Link>}</div>
         </header>
         <Routes>
           <Route path="/" element={<Dashboard progress={progress} reopenGuide={reopenGuide} />} />
@@ -122,6 +124,7 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/products/combo/new" element={<ProductPage combo />} />
           <Route path="/products/:id" element={<ProductPage />} />
           <Route path="/stock" element={<Stock />} />
+          <Route path="/documents" element={<Documents />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<NewPurchasePage />} />
           <Route path="/purchases/:id" element={<PurchasePage />} />

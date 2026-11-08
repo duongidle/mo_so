@@ -82,9 +82,9 @@ export function exportOrders(filters, layout = 'orders') {
   const total = db.prepare(`SELECT COUNT(*) AS n FROM orders o ${wsql}`).get(...params).n;
   if (layout === 'lines') {
     const lines = db.prepare(`SELECT COUNT(*) AS n FROM order_lines l JOIN orders o ON o.id = l.order_id ${wsql}`).get(...params).n;
-    if (lines > MAX_ROWS) throw badRequest('TOO_MANY_ROWS', `Có ${lines} dòng hàng, vượt giới hạn ${MAX_ROWS}. Hãy thu hẹp khoảng ngày hoặc bộ lọc.`);
+    if (lines > MAX_ROWS) throw badRequest('TOO_MANY_ROWS', `Có ${lines} dòng hàng, vượt giới hạn ${MAX_ROWS}. Vui lòng thu hẹp khoảng ngày hoặc bộ lọc.`);
   } else if (total > MAX_ROWS) {
-    throw badRequest('TOO_MANY_ROWS', `Có ${total} đơn, vượt giới hạn ${MAX_ROWS}. Hãy thu hẹp khoảng ngày hoặc bộ lọc.`);
+    throw badRequest('TOO_MANY_ROWS', `Có ${total} đơn, vượt giới hạn ${MAX_ROWS}. Vui lòng thu hẹp khoảng ngày hoặc bộ lọc.`);
   }
 
   const base = `FROM orders o JOIN shops s ON s.id = o.shop_id JOIN channels ch ON ch.id = o.channel_id`;

@@ -21,12 +21,12 @@ const groupOf = (tab) => (GROUPS.find(([, , tabs]) => tabs.includes(tab)) || GRO
 
 const INTRO = {
   vouchers: 'Chứng từ lập tay cho những việc không đi qua đơn, nhập hàng hay chi phí: góp vốn, rút vốn, tiền phạt, thu nhập khác. Bút toán tổng hợp để ghi tự do nhiều dòng. Huỷ không xoá hẳn.',
-  recurring: 'Khoản chi lặp lại (thuê kho, internet, lương). App tự tạo chi phí mỗi kỳ, tạo bù cả kỳ bỏ lỡ khi máy tắt.',
+  recurring: 'Khoản chi lặp lại (thuê kho, internet, lương). Hệ thống tự tạo chi phí mỗi kỳ, tạo bù cả kỳ bỏ lỡ khi máy tắt.',
   assets: 'Tài sản cố định và chi phí trả trước: ghi vào tài sản khi mua, rồi chia đều theo tháng thành chi phí (khấu hao hoặc phân bổ).',
   lock: 'Khoá sổ để chốt số kỳ cũ: không ai sửa nhầm chi phí, thanh toán, chứng từ tay của kỳ đã chốt.',
   overview: 'Tiền, công nợ, hàng tồn và lãi của tháng này theo sổ kế toán. Có thể xem số gắn với shop; các khoản chung xem ở Tất cả shop.',
-  journal: 'Mọi bút toán theo thời gian, mỗi bút toán có Nợ bằng Có. Bấm mã chứng từ để mở đơn hay phiếu gốc.',
-  ledger: 'Một tài khoản: số dư đầu, từng dòng phát sinh, số dư cuối. Bấm diễn giải để mở chứng từ gốc.',
+  journal: 'Mọi bút toán theo thời gian, mỗi bút toán có Nợ bằng Có. Nhấn mã chứng từ để mở đơn hay phiếu gốc.',
+  ledger: 'Một tài khoản: số dư đầu, từng dòng phát sinh, số dư cuối. Nhấn diễn giải để mở chứng từ gốc.',
   trial: 'Số dư đầu, phát sinh và số dư cuối của mọi tài khoản; có thể lọc các bút toán theo shop.',
   income: 'Doanh thu, giá vốn, chi phí và lãi trong kỳ. Lọc theo shop được (chi phí chung chia về shop như ở Báo cáo).',
   balance: 'Tài sản bằng nợ phải trả cộng vốn cộng lợi nhuận. Luôn tính cho cả tài khoản, không lọc theo shop.',

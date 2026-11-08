@@ -42,7 +42,7 @@ test('daily_stats khớp bảng đơn sau mỗi thao tác: tạo, sửa, đổi 
   // Bất kỳ đường nào khác sửa bảng đơn (kể cả SQL trực tiếp) cũng được trigger bắt
   getDb().prepare("UPDATE orders SET cogs_amount = cogs_amount + 777 WHERE id = ?").run(o1.id);
   ok('sửa thẳng DB');
-  getDb().pragma('foreign_keys = OFF'); // chỉ để thử trigger xoá (app không xoá cứng đơn)
+  getDb().pragma('foreign_keys = OFF'); // chỉ để thử trigger xoá (hệ thống không xoá cứng đơn)
   getDb().prepare('DELETE FROM orders WHERE id = ?').run(o1.id);
   getDb().pragma('foreign_keys = ON');
   ok('xoá đơn');

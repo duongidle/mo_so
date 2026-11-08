@@ -102,6 +102,9 @@ function paymentEntry({ p, order, purchase, marketplace }, ctx) {
     counter = '331';
     extra = purchase?.supplier_id ? { partner_type: 'supplier', partner_id: purchase.supplier_id } : {};
     what = p.direction === 'in' ? `NCC hoàn tiền phiếu ${purchase?.code ?? p.ref_id}` : `Trả NCC phiếu ${purchase?.code ?? p.ref_id}`;
+  } else if (p.ref_type === 'order_seller_shipping') {
+    // Ship shop chịu trả hãng vận chuyển: bù khoản phải trả khác (3388) đã ghi lúc bán
+    what = `Trả ship đơn ${order?.code ?? p.ref_id}`;
   } else if (p.ref_type === 'purchase_carrier') {
     // Ship nhập trả bên vận chuyển: bù khoản phải trả khác (3388) đã ghi lúc nhận hàng
     what = p.direction === 'in' ? `Hoàn tiền ship nhập phiếu ${purchase?.code ?? p.ref_id}` : `Trả ship nhập phiếu ${purchase?.code ?? p.ref_id}`;

@@ -36,7 +36,7 @@ function allMatching(filters) {
     const page = listCustomers({ ...filters, limit: 200, cursor });
     out.push(...page.data);
     cursor = page.next_cursor;
-    if (out.length > MAX_ROWS) throw badRequest('TOO_MANY_ROWS', `Có hơn ${MAX_ROWS} khách, vượt giới hạn. Hãy lọc theo nhãn hoặc mệnh để thu hẹp.`);
+    if (out.length > MAX_ROWS) throw badRequest('TOO_MANY_ROWS', `Có hơn ${MAX_ROWS} khách, vượt giới hạn. Vui lòng lọc theo nhãn hoặc mệnh để thu hẹp.`);
   } while (cursor);
   return out;
 }

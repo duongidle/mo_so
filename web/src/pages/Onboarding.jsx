@@ -52,7 +52,7 @@ export default function Onboarding() {
       <p className="muted" style={{ margin: 0 }}>Shop là một mảng kinh doanh của bạn (ví dụ “Nước hoa ô tô”). Bạn có thể thêm shop khác bất cứ lúc nào trong Cài đặt. Tài khoản này chỉ thấy các shop do chính bạn tạo.</p>
       <form className="card stack" onSubmit={submit}>
         <div className="grid cols-2">
-          <Field label="Tên shop"><input value={f.name} onChange={setName} placeholder="vd: Nước hoa ô tô" required autoFocus /></Field>
+          <Field label="Tên shop"><input value={f.name} onChange={setName} placeholder="Ví dụ: Nước hoa ô tô" required autoFocus /></Field>
           <Field label="Mã shop" hint="Dùng trong mã đơn hàng, vd DH-NHOT-261103-001"><input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase(), codeTouched: true })} maxLength={6} required /></Field>
         </div>
         <div className="stack" style={{ gap: 8 }}>

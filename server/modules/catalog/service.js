@@ -145,7 +145,7 @@ export function listProducts({ shopId, q, categoryId, type, itemType, includeArc
     where.push(`(p.name LIKE ? OR EXISTS (SELECT 1 FROM variants v WHERE v.product_id = p.id AND (v.sku LIKE ? OR v.name LIKE ? OR v.barcode = ?)))`);
     params.push(`%${q}%`, `%${q}%`, `%${q}%`, q);
   }
-  // Sản phẩm chưa gắn vào shop nào (vd vật tư, hàng mới tạo): không hiện khi lọc theo shop nên cần một đường riêng để tìm, sửa, xoá chúng
+  // Sản phẩm chưa gắn vào shop nào (ví dụ vật tư, hàng mới tạo): không hiện khi lọc theo shop nên cần một đường riêng để tìm, sửa, xoá chúng
   if (unlistedOnly) where.push('NOT EXISTS (SELECT 1 FROM variants v JOIN shop_listings l ON l.variant_id = v.id WHERE v.product_id = p.id)');
   if (shopId && !includeUnlisted) {
     where.push(`EXISTS (SELECT 1 FROM variants v JOIN shop_listings l ON l.variant_id = v.id WHERE v.product_id = p.id AND l.shop_id = ?)`);
@@ -188,7 +188,7 @@ export function listProducts({ shopId, q, categoryId, type, itemType, includeArc
 /** Kiểm tra bộ thuộc tính: tối đa 3, tên và giá trị không rỗng, không trùng (không phân biệt hoa thường) */
 function normalizeOptions(options) {
   if (!options) return [];
-  if (options.length > 3) throw badRequest('TOO_MANY_OPTIONS', 'Tối đa 3 thuộc tính biến thể (vd Mùi, Size, Màu)');
+  if (options.length > 3) throw badRequest('TOO_MANY_OPTIONS', 'Tối đa 3 thuộc tính biến thể (ví dụ Mùi, Size, Màu)');
   const names = new Set();
   return options.map((o) => {
     const name = o.name.trim();
@@ -410,10 +410,10 @@ export function createProduct(input, actor) {
   const at = nowIso();
   db()
     .prepare(
-      `INSERT INTO products (id, name, description, category_id, unit, image_url, brand, consumption_days, options, tags, item_type, default_supplier_id, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO products (id, name, description, category_id, unit, image_url, brand, consumption_days, options, tags, item_type, default_supplier_id, created_at, updated_at, warranty_days)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.name, input.description ?? null, input.category_id ?? null, input.unit ?? 'cái', input.image_url ?? null, input.brand ?? null, input.consumption_days ?? null, options.length ? json(options) : null, json(input.tags ?? []), input.item_type ?? 'product', input.default_supplier_id ?? null, at, at);
+    .run(id, input.name, input.description ?? null, input.category_id ?? null, input.unit ?? 'cái', input.image_url ?? null, input.brand ?? null, input.consumption_days ?? null, options.length ? json(options) : null, json(input.tags ?? []), input.item_type ?? 'product', input.default_supplier_id ?? null, at, at, input.warranty_days ?? null);
   const variantImages = [];
   const bySku = new Map();
   input.variants.forEach((v, i) => {
@@ -434,7 +434,7 @@ export function createProduct(input, actor) {
   return p;
 }
 
-const PRODUCT_FIELDS = ['name', 'description', 'category_id', 'unit', 'image_url', 'brand', 'consumption_days', 'options', 'tags', 'archived_at', 'item_type', 'default_supplier_id'];
+const PRODUCT_FIELDS = ['name', 'description', 'category_id', 'unit', 'image_url', 'brand', 'consumption_days', 'warranty_days', 'options', 'tags', 'archived_at', 'item_type', 'default_supplier_id'];
 
 export function updateProduct(id, input, actor) {
   const before = getProduct(id);
@@ -504,6 +504,30 @@ export function updateProduct(id, input, actor) {
   return after;
 }
 
+// ---------- Giá theo kênh ----------
+/** items: [{ shop_id, channel_id, variant_id, price }]; price = null xoá giá riêng (về giá niêm yết của shop) */
+export function setChannelPrices(items, actor) {
+  const at = nowIso();
+  for (const it of items) {
+    if (!db().prepare('SELECT 1 FROM variants WHERE id = ?').get(it.variant_id)) throw notFound(`Biến thể ${it.variant_id}`);
+    if (!db().prepare('SELECT 1 FROM shops WHERE id = ?').get(it.shop_id)) throw notFound('Shop');
+    if (!db().prepare('SELECT 1 FROM channels WHERE id = ?').get(it.channel_id)) throw badRequest('INVALID_CHANNEL', `Kênh ${it.channel_id} không tồn tại`);
+    if (it.price === null) db().prepare('DELETE FROM channel_prices WHERE shop_id = ? AND channel_id = ? AND variant_id = ?').run(it.shop_id, it.channel_id, it.variant_id);
+    else db().prepare('INSERT INTO channel_prices (variant_id, shop_id, channel_id, price, updated_at) VALUES (?,?,?,?,?) ON CONFLICT(shop_id, channel_id, variant_id) DO UPDATE SET price = excluded.price, updated_at = excluded.updated_at').run(it.variant_id, it.shop_id, it.channel_id, it.price, at);
+  }
+  audit(actor, 'channel_prices.set', 'variant', items[0]?.variant_id ?? null, null, { count: items.length });
+  return items.length;
+}
+
+export function listChannelPrices({ productId, variantId, shopId } = {}) {
+  const where = [];
+  const params = [];
+  if (productId) (where.push('v.product_id = ?'), params.push(productId));
+  if (variantId) (where.push('c.variant_id = ?'), params.push(variantId));
+  if (shopId) (where.push('c.shop_id = ?'), params.push(shopId));
+  return db().prepare(`SELECT c.* FROM channel_prices c JOIN variants v ON v.id = c.variant_id ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY c.shop_id, c.channel_id`).all(...params);
+}
+
 // ---------- Niêm yết & đồng bộ ----------
 export function setListings(items, actor) {
   const results = items.map((it) => {
@@ -555,7 +579,7 @@ export function syncListings({ fromShopId, toShopId, variantIds = null, productI
  * đơn có thể lấy hàng; không có cả hai thì mọi kho. Biến thể đơn và combo dùng cùng một phạm vi.
  * `on_hand_total` = tồn trên phạm vi shop/mọi kho (không phụ thuộc warehouse_id); `stock_by_warehouse` = từng kho của shop.
  */
-export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30, onlyListed = true }) {
+export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30, onlyListed = true, channelId = null }) {
   const params = [shopId ?? null];
   const where = ["v.archived_at IS NULL", "p.archived_at IS NULL", "p.item_type = 'product'"];
   if (q) {
@@ -594,8 +618,11 @@ export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30,
     .all(...params, ...cat.params, limit)
     .map((r) => {
       const comps = r.kind === 'bundle' ? componentsOf(r.id) : null;
+      // Giá riêng theo kênh (nếu có) thay giá niêm yết của shop
+      const cp = channelId && shopId ? db().prepare('SELECT price FROM channel_prices WHERE shop_id = ? AND channel_id = ? AND variant_id = ?').get(shopId, channelId, r.id) : null;
       return {
         ...r,
+        ...(cp ? { price: cp.price, price_source: 'channel' } : { price_source: 'shop' }),
         option_values: r.option_values ? JSON.parse(r.option_values) : null,
         on_hand: onHandOf(r, scope),
         on_hand_total: onHandOf(r, shopWh),

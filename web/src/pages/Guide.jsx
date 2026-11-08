@@ -3,6 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { PageHeader } from '../components/ui.jsx';
 import { GUIDES, GROUPS, byId, searchText } from '../guides/content.js';
 import HealthGuide from './guide/HealthGuide.jsx';
+import Handbook from './guide/Handbook.jsx';
 
 const slugOf = (g) => g.id;
 const INDEX = GUIDES.map((g) => ({ g, text: searchText(g) }));
@@ -88,7 +89,7 @@ export default function Guide() {
             <div className="guide-start">
               <div className="guide-box tip">
                 <div className="guide-box-title">Mới dùng lần đầu?</div>
-                <p>Đọc theo thứ tự: <Link to="/guide/bat-dau">Bắt đầu nhanh</Link> → <Link to="/guide/tao-don">Tạo đơn</Link> → <Link to="/guide/nhap-hang">Nhập hàng</Link> → <Link to="/guide/suc-khoe-kinh-doanh">Cách đọc sức khoẻ kinh doanh</Link>.</p>
+                <p>Xem <Link to="/guide/cam-nang">Cẩm nang từng bước</Link> để thấy thao tác thật, rồi đọc theo thứ tự: <Link to="/guide/bat-dau">Bắt đầu nhanh</Link> → <Link to="/guide/tao-don">Tạo đơn</Link> → <Link to="/guide/nhap-hang">Nhập hàng</Link> → <Link to="/guide/suc-khoe-kinh-doanh">Cách đọc sức khoẻ kinh doanh</Link>.</p>
               </div>
             </div>
           ) : (
@@ -99,7 +100,7 @@ export default function Guide() {
                 <h2>{guide.title}</h2>
                 <p className="guide-summary">{guide.summary}</p>
               </header>
-              {guide.special === 'health' ? <HealthGuide /> : <Blocks guide={guide} />}
+              {guide.special === 'health' ? <HealthGuide /> : guide.special === 'handbook' ? <Handbook /> : <Blocks guide={guide} />}
               <footer className="guide-foot">
                 {prev ? <Link to={`/guide/${prev.id}`} className="guide-pn"><small>Trước</small>{prev.title}</Link> : <span />}
                 {next ? <Link to={`/guide/${next.id}`} className="guide-pn next"><small>Tiếp</small>{next.title}</Link> : <span />}

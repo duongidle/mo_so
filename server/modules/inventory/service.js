@@ -8,6 +8,9 @@ import { runningCode } from '../../lib/codes.js';
 import { getSetting } from '../settings/service.js';
 import { availableBundles } from '../catalog/bundles.js';
 import { categoryClause } from '../../lib/categories.js';
+import { reservedByVariant } from '../orders/reservation.js';
+import { consumeLots, addLot } from './lots.js';
+import { costingMethod, addLayer, consumeLayers, layerAverage, summarize } from './costing.js';
 
 const db = () => getDb();
 
@@ -34,7 +37,7 @@ export function getLevel(warehouseId, variantId) {
  * @param {number} m.qty  số dương; dấu được suy ra từ type
  * @param {number} [m.unitCost] bắt buộc với biến động vào kho có giá (purchase_in, opening, adjust_in, sale_*_in, transfer_in);
  *                              với biến động ra kho, bỏ trống = dùng giá vốn bình quân hiện tại
- * @param {boolean} [m.allowNegative] cho phép âm kho (vd đơn import từ sàn)
+ * @param {boolean} [m.allowNegative] cho phép âm kho (ví dụ đơn import từ sàn)
  * @returns {{ unitCost:number, balanceAfter:number, negative:boolean }}
  */
 export function applyMovement(m) {
@@ -53,15 +56,23 @@ export function applyMovement(m) {
     closedNote = `Ngày gốc ${businessDate(at)} thuộc kỳ kho đã chốt, ghi vào ${addDays(lock, 1)}`;
     at = new Date(`${addDays(lock, 1)}T00:00:00+07:00`).toISOString();
   }
-  let unitCost;
+  const fifo = costingMethod() === 'fifo';
+  // Mỗi biến động gồm một hay nhiều "phần", mỗi phần một đơn giá nguyên: bình quân luôn một phần; FIFO xuất qua nhiều lớp giá thì nhiều phần
+  let slices;
   let newOnHand;
   let newAvg = level.avg_cost;
 
   if (isIn) {
-    unitCost = m.unitCost ?? level.avg_cost;
+    const inCost = m.unitCost ?? level.avg_cost;
+    slices = [{ qty: m.qty, unitCost: inCost }];
     newOnHand = level.on_hand + m.qty;
-    if (level.on_hand <= 0) newAvg = unitCost;
-    else newAvg = Math.round((level.on_hand * level.avg_cost + m.qty * unitCost) / newOnHand);
+    if (fifo) {
+      // Phần hàng vào bù chỗ âm kho không tạo lớp giá (hàng đó đã bán rồi)
+      const fill = Math.min(m.qty, Math.max(0, -level.on_hand));
+      addLayer({ warehouseId: m.warehouseId, variantId: m.variantId, qty: m.qty - fill, unitCost: inCost, receivedAt: m.layerAt ?? at, refType: m.refType, refId: m.refId, refLineId: m.refLineId });
+      newAvg = layerAverage(m.warehouseId, m.variantId) ?? inCost;
+    } else if (level.on_hand <= 0) newAvg = inCost;
+    else newAvg = Math.round((level.on_hand * level.avg_cost + m.qty * inCost) / newOnHand);
   } else {
     newOnHand = level.on_hand - m.qty;
     const allowNeg = m.allowNegative ?? getSetting('allow_negative_stock');
@@ -74,14 +85,22 @@ export function applyMovement(m) {
         required: m.qty,
       });
     }
-    if (m.unitCost !== undefined && m.type === 'purchase_cancel_out') {
+    if (fifo) {
+      // Huỷ phiếu nhập lấy lớp giá của chính phiếu đó trước; còn lại lấy lớp cũ nhất
+      const first = m.type === 'purchase_cancel_out' && m.refId ? { refId: m.refId, refLineId: m.refLineId } : null;
+      const got = consumeLayers(m.warehouseId, m.variantId, m.qty, first);
+      slices = got.slices;
+      if (got.shortfall > 0) slices.push({ qty: got.shortfall, unitCost: level.avg_cost }); // âm kho: không có lớp nào, tạm tính theo giá gần nhất
+      newAvg = layerAverage(m.warehouseId, m.variantId) ?? level.avg_cost;
+    } else if (m.unitCost !== undefined && m.type === 'purchase_cancel_out') {
       // Huỷ phiếu nhập: rút đúng giá vốn đã nhập ra khỏi bình quân
-      unitCost = m.unitCost;
-      newAvg = newOnHand > 0 ? Math.max(0, Math.round((level.on_hand * level.avg_cost - m.qty * unitCost) / newOnHand)) : level.avg_cost;
+      slices = [{ qty: m.qty, unitCost: m.unitCost }];
+      newAvg = newOnHand > 0 ? Math.max(0, Math.round((level.on_hand * level.avg_cost - m.qty * m.unitCost) / newOnHand)) : level.avg_cost;
     } else {
-      unitCost = level.avg_cost;
+      slices = [{ qty: m.qty, unitCost: level.avg_cost }];
     }
   }
+  const unitCost = slices.length === 1 ? slices[0].unitCost : summarize(slices).unitCost;
 
   if (level._new) {
     db()
@@ -102,31 +121,23 @@ export function applyMovement(m) {
       .run(newOnHand, newAvg, at, at, nowIso(), m.warehouseId, m.variantId);
   }
 
-  db()
-    .prepare(
-      `INSERT INTO stock_movements (id, warehouse_id, variant_id, type, qty, unit_cost, balance_after, avg_cost_after,
-        ref_type, ref_id, ref_line_id, shop_id, note, actor_id, created_at, business_date, expense_account_code)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    )
-    .run(
-      newId('mov'),
-      m.warehouseId,
-      m.variantId,
-      m.type,
-      isIn ? m.qty : -m.qty,
-      unitCost,
-      newOnHand,
-      newAvg,
-      m.refType ?? null,
-      m.refId ?? null,
-      m.refLineId ?? null,
-      m.shopId ?? null,
+  // Sổ phụ lô/hạn: xuất thì lấy lô hết hạn sớm nhất trước (huỷ phiếu nhập thì lấy lô của chính phiếu đó trước)
+  const lots = isIn ? [] : consumeLots(m.warehouseId, m.variantId, m.qty, m.type === 'purchase_cancel_out' && m.refId ? { refId: m.refId, refLineId: m.refLineId } : null);
+  const ins = db().prepare(
+    `INSERT INTO stock_movements (id, warehouse_id, variant_id, type, qty, unit_cost, balance_after, avg_cost_after,
+      ref_type, ref_id, ref_line_id, shop_id, note, actor_id, created_at, business_date, expense_account_code)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  );
+  let running = level.on_hand;
+  slices.forEach((sl, i) => {
+    running = i === slices.length - 1 ? newOnHand : Math.round((running + (isIn ? sl.qty : -sl.qty)) * 1000) / 1000;
+    ins.run(
+      newId('mov'), m.warehouseId, m.variantId, m.type, isIn ? sl.qty : -sl.qty, sl.unitCost, running, newAvg,
+      m.refType ?? null, m.refId ?? null, m.refLineId ?? null, m.shopId ?? null,
       closedNote ? (m.note ? `${m.note} · ${closedNote}` : closedNote) : m.note ?? null,
-      m.actorId ?? null,
-      at,
-      businessDate(at),
-      m.expenseAccountCode ?? null,
+      m.actorId ?? null, at, businessDate(at), m.expenseAccountCode ?? null,
     );
+  });
 
   emit('stock.changed', {
     entityType: 'variant',
@@ -134,7 +145,7 @@ export function applyMovement(m) {
     shopId: m.shopId ?? null,
     data: { warehouse_id: m.warehouseId, variant_id: m.variantId, type: m.type, qty: isIn ? m.qty : -m.qty, on_hand: newOnHand },
   });
-  return { unitCost, balanceAfter: newOnHand, negative: newOnHand < 0 };
+  return { unitCost, balanceAfter: newOnHand, negative: newOnHand < 0, slices, lots, totalCost: slices.reduce((a, x) => a + Math.round(x.qty * x.unitCost), 0) };
 }
 
 // ---------- Truy vấn ----------
@@ -188,6 +199,7 @@ export function listStock({ warehouseId, shopId, q, categoryId, filter, limit = 
   const lowDays = getSetting('low_stock_days');
   const slowDays = getSetting('slow_moving_days');
   const slowBefore = new Date(Date.now() - slowDays * 86400000).toISOString();
+  const held = reservedByVariant();
   let out = rows.map((r) => {
     // Combo không có tồn riêng: số bán được = min theo thành phần; giá trị tồn nằm ở thành phần nên không cộng lần nữa
     if (r.kind === 'bundle') {
@@ -199,7 +211,7 @@ export function listStock({ warehouseId, shopId, q, categoryId, filter, limit = 
     const daysLeft = r.item_type === 'product' && perDay > 0 ? Math.floor(r.on_hand / perDay) : null;
     const low = r.on_hand <= r.min_stock || (daysLeft !== null && daysLeft < lowDays);
     const slow = r.item_type === 'product' && r.on_hand > 0 && (!r.last_out_at || r.last_out_at < slowBefore);
-    return { ...r, stock_value: Math.max(0, r.on_hand) * r.avg_cost, sold_30d: sold30, days_left: daysLeft, is_low: low, is_slow: slow, is_negative: r.on_hand < 0 };
+    return { ...r, reserved_qty: held.get(r.variant_id) || 0, stock_value: Math.max(0, r.on_hand) * r.avg_cost, sold_30d: sold30, days_left: daysLeft, is_low: low, is_slow: slow, is_negative: r.on_hand < 0 };
   });
   if (filter === 'low') out = out.filter((r) => r.is_low);
   if (filter === 'slow') out = out.filter((r) => r.is_slow);
@@ -293,7 +305,10 @@ export function createTransfer({ fromWarehouseId, toWarehouseId, lines, note }, 
   const done = [];
   for (const l of lines) {
     const out = applyMovement({ warehouseId: fromWarehouseId, variantId: l.variant_id, type: 'transfer_out', qty: l.qty, refType: 'transfer', refId: id, note, actorId: actor?.id, allowNegative: false, at });
-    applyMovement({ warehouseId: toWarehouseId, variantId: l.variant_id, type: 'transfer_in', qty: l.qty, unitCost: out.unitCost, refType: 'transfer', refId: id, note, actorId: actor?.id, at });
+    // Mỗi phần xuất (FIFO có thể nhiều lớp giá) nhập sang kho đến đúng giá và giữ tuổi lớp, nên FIFO ở kho đến vẫn đúng thứ tự
+    // Lô/hạn dùng đi theo hàng sang kho đến
+    for (const lt of out.lots) addLot({ warehouseId: toWarehouseId, variantId: l.variant_id, qty: lt.qty, lotNo: lt.lot_no, expiryDate: lt.expiry_date, receivedAt: lt.received_at, refType: 'transfer', refId: id });
+    for (const sl of out.slices) applyMovement({ warehouseId: toWarehouseId, variantId: l.variant_id, type: 'transfer_in', qty: sl.qty, unitCost: sl.unitCost, layerAt: sl.receivedAt, refType: 'transfer', refId: id, note, actorId: actor?.id, at });
     done.push({ variant_id: l.variant_id, qty: l.qty, unit_cost: out.unitCost });
   }
   db()

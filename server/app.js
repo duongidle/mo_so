@@ -18,6 +18,9 @@ import orderRoutes from './modules/orders/routes.js';
 import importRoutes from './modules/imports/routes.js';
 import expenseRoutes from './modules/expenses/routes.js';
 import reportRoutes from './modules/reports/routes.js';
+import notificationRoutes from './modules/notifications/routes.js';
+import shippingRoutes from './modules/shipping/routes.js';
+import documentRoutes from './modules/documents/routes.js';
 import cashRoutes from './modules/cash/routes.js';
 import accountingRoutes from './modules/accounting/routes.js';
 import loyaltyRoutes from './modules/loyalty/routes.js';
@@ -50,6 +53,9 @@ export function createApp() {
   secured.route('/orders', orderRoutes);
   secured.route('/imports', importRoutes);
   secured.route('/', expenseRoutes); // /expenses, /expense-categories, /payments, /reconciliation
+  secured.route('/notifications', notificationRoutes);
+  secured.route('/', shippingRoutes); // /carriers, /shipments, /carrier-statements
+  secured.route('/', documentRoutes); // /documents
   secured.route('/reports', reportRoutes);
   secured.route('/cash', cashRoutes);
   secured.route('/accounting', accountingRoutes);

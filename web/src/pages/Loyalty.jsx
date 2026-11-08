@@ -1,3 +1,4 @@
+import Promotions from './Promotions.jsx';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
@@ -7,7 +8,7 @@ import { Element } from '../components/Motif.jsx';
 import { fmtDate, vnd } from '../lib.js';
 import MoneyInput from '../components/MoneyInput.jsx';
 
-const KIND = { reorder: 'Nhắc mua lại', birthday: 'Sinh nhật', general: 'Chung' };
+const KIND = { reorder: 'Nhắc mua lại', birthday: 'Sinh nhật', debt: 'Nhắc nợ', general: 'Chung' };
 
 /** Hộp soạn tin: điền sẵn biến, sửa được trước khi sao chép */
 function ComposeModal({ msg, onClose }) {
@@ -25,19 +26,58 @@ function useCompose() {
   const tpl = useAsync(() => api.get('/loyalty/templates'), []);
   const [msg, setMsg] = useState(null);
   const { busy, error, run } = useAction();
-  const compose = (kind, { customerId, productId, shopId }) => run(async () => {
+  const compose = (kind, { customerId, productId, shopId, orderId }) => run(async () => {
     const list = tpl.data?.data || [];
     const t = list.find((x) => x.kind === kind) || list.find((x) => x.kind === 'general') || list[0];
     if (!t) throw new Error('Chưa có mẫu tin nhắn nào. Tạo ở tab “Mẫu tin nhắn”.');
-    const res = await api.post('/loyalty/render', { template_id: t.id, customer_id: customerId, product_id: productId, shop_id: shopId });
+    const res = await api.post('/loyalty/render', { template_id: t.id, customer_id: customerId, product_id: productId, shop_id: shopId, order_id: orderId });
     setMsg(res.data);
   });
   return { compose, busy, error, modal: msg && <ComposeModal msg={msg} onClose={() => setMsg(null)} /> };
 }
 
 /** Khách sắp hết hàng cần mua lại + sinh nhật sắp tới */
+const DEBT_LABEL = { overdue: 'Quá hạn', due_soon: 'Sắp đến hạn', no_due: 'Chưa đặt hạn' };
+/** Nhắc nợ: khách còn nợ đơn và các khoản shop sắp đến hạn trả nhà cung cấp */
+function DebtCards({ state, compose, busy }) {
+  const { busy: acting, error, run } = useAction();
+  const snooze = (id) => run(async () => { await api.post('/loyalty/debts/action', { order_id: id, days: 3 }); state.reload(); });
+  return (
+    <Async state={state}>
+      {({ customers, suppliers }) => (
+        <>
+          <Card title={`Nhắc nợ khách (${customers.data.length})`}>
+            <ErrorBox error={error} />
+            {!customers.data.length ? <span className="muted small">Không có khoản nợ nào cần nhắc. Đặt hạn thanh toán ở form đơn hoặc số ngày công nợ mặc định trong Cài đặt.</span> : (
+              <>
+                <div className="small muted" style={{ marginBottom: 8 }}>Tổng còn nợ {vnd(customers.total)}{customers.overdue_count ? ` · ${customers.overdue_count} khoản quá hạn` : ''}</div>
+                {customers.data.map((d) => (
+                  <div key={d.id} className="stack" style={{ gap: 8, padding: '12px 0', borderBottom: '1px solid var(--hairline)' }}>
+                    <div className="row between"><span>{d.customer_id ? <Link to={`/customers/${d.customer_id}`}><b>{d.customer_name || 'Khách lẻ'}</b></Link> : <b>{d.customer_name || 'Khách lẻ'}</b>} <Link to={`/orders/${d.id}`} className="small">{d.code}</Link></span><b className="num">{vnd(d.debt)}</b></div>
+                    <div className="small muted">{DEBT_LABEL[d.bucket]}{d.days_overdue > 0 ? ` ${d.days_overdue} ngày` : ''}{d.due_date ? ` · hạn ${fmtDate(d.due_date)}` : ''} · {d.customer_phone || 'chưa có số điện thoại'}</div>
+                    <div className="row wrap">
+                      {d.customer_id && <button className="btn sm primary" disabled={busy} onClick={() => compose('debt', { customerId: d.customer_id, shopId: d.shop_id, orderId: d.id })}>Soạn tin nhắc nợ</button>}
+                      <button className="btn sm" disabled={acting} onClick={() => snooze(d.id)}>Đã nhắc, hẹn 3 ngày sau</button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </Card>
+          {suppliers.data.length > 0 && (
+            <Card title={`Sắp đến hạn trả nhà cung cấp (${suppliers.data.length})`}>
+              {suppliers.data.map((p) => <div key={p.id} className="row between small" style={{ padding: '6px 0' }}><span><Link to={`/purchases/${p.id}`}><b>{p.code}</b></Link> · {p.supplier_name || 'Không có nhà cung cấp'} · {p.bucket === 'overdue' ? `quá hạn ${p.days_overdue} ngày` : `hạn ${fmtDate(p.due_date)}`}</span><b className="num">{vnd(p.debt)}</b></div>)}
+            </Card>
+          )}
+        </>
+      )}
+    </Async>
+  );
+}
+
 function Today({ shopId }) {
   const state = useAsync(() => api.get('/loyalty/today', { shop_id: shopId }), [shopId]);
+  const debts = useAsync(() => api.get('/loyalty/debts', { shop_id: shopId }), [shopId]);
   const c = useCompose();
   const { busy, error, run } = useAction();
   const act = (r, action) => run(async () => { await api.post('/loyalty/reminders/action', { customer_id: r.customer_id, product_id: r.product_id, base_date: r.last_purchase_date, action }); state.reload(); });
@@ -47,6 +87,7 @@ function Today({ shopId }) {
       <Async state={state}>
         {({ data }) => (
           <>
+            <DebtCards state={debts} compose={c.compose} busy={c.busy} />
             <Card title={`Sắp hết hàng (${data.reminders.length})`}>
               {!data.reminders.length ? <Empty>Chưa có khách nào đến hạn mua lại. Nhắc nhở dựa trên “chu kỳ dùng hết” của sản phẩm — nhớ điền ở trang Sản phẩm.</Empty> : data.reminders.map((r) => (
                 <div key={`${r.customer_id}${r.product_id}`} className="stack" style={{ gap: 8, padding: '12px 0', borderBottom: '1px solid var(--hairline)' }}>
@@ -145,7 +186,7 @@ function Templates() {
   });
   return (
     <Card title="Mẫu tin nhắn" actions={<button className="btn sm primary" onClick={() => setF({ name: '', kind: 'general', body: '' })}>+ Mẫu</button>}>
-      <p className="small muted" style={{ marginTop: 0 }}>Dùng được các biến <code>{'{ten}'}</code> (tên gọi của khách), <code>{'{san_pham}'}</code>, <code>{'{shop}'}</code>. Khi soạn tin, app chọn mẫu đầu tiên đúng loại.</p>
+      <p className="small muted" style={{ marginTop: 0 }}>Dùng được các biến <code>{'{ten}'}</code> (tên gọi của khách), <code>{'{san_pham}'}</code>, <code>{'{shop}'}</code>. Khi soạn tin, hệ thống chọn mẫu đầu tiên đúng loại.</p>
       <ErrorBox error={error} />
       <Async state={state}>{({ data }) => !data.length ? <Empty>Chưa có mẫu nào.</Empty> : data.map((t) => (
         <div key={t.id} className="stack" style={{ gap: 4, padding: '12px 0', borderBottom: '1px solid var(--hairline)' }}>
@@ -170,7 +211,7 @@ function Templates() {
 function Automation() {
   return (
     <Card title="Tự động hoá">
-      <div className="alert warn small">Chưa có gì chạy tự động. Hiện mọi việc ở đây đều do bạn bấm tay.</div>
+      <div className="alert warn small">Chưa có gì chạy tự động. Hiện mọi việc ở đây đều do bạn nhấn tay.</div>
       <p style={{ marginBottom: 8 }}>Dự kiến làm ở module này:</p>
       <ul className="small" style={{ margin: 0, paddingLeft: 16, lineHeight: 1.7 }}>
         <li><b>Tự động nhắn tin</b>: gửi nhắc mua lại, lời chúc sinh nhật theo mẫu, khi đến hạn.</li>
@@ -184,7 +225,7 @@ function Automation() {
 export default function Loyalty() {
   const { shop, isAll, has } = useSession();
   const shopId = isAll ? undefined : shop?.id;
-  const options = [['today', 'Hôm nay'], ...(isAll || has('feng_shui') ? [['menh', 'Gợi ý theo mệnh']] : []), ['tiers', 'Hạng khách'], ['templates', 'Mẫu tin nhắn'], ['auto', 'Tự động hoá']];
+  const options = [['today', 'Hôm nay'], ...(isAll || has('feng_shui') ? [['menh', 'Gợi ý theo mệnh']] : []), ['tiers', 'Hạng khách'], ['promos', 'Khuyến mãi'], ['templates', 'Mẫu tin nhắn'], ['auto', 'Tự động hoá']];
   const [tab, setTab] = useState('today');
   const current = options.some(([v]) => v === tab) ? tab : 'today';
   return (
@@ -194,6 +235,7 @@ export default function Loyalty() {
       {current === 'today' && <Today shopId={shopId} />}
       {current === 'menh' && (isAll ? <Empty>Gợi ý theo mệnh là của từng shop phong thuỷ. Chọn một shop ở góc trên.</Empty> : <ElementCampaign shopId={shopId} shopName={shop?.name} />)}
       {current === 'tiers' && <Tiers />}
+      {current === 'promos' && <Promotions />}
       {current === 'templates' && <Templates />}
       {current === 'auto' && <Automation />}
     </div>

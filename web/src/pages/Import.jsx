@@ -119,14 +119,14 @@ export default function ImportPanel({ onClose, defaultShop }) {
         {parsed && <p className="small">Đọc được <b>{parsed.rows.length}</b> dòng, <b>{parsed.columns.length}</b> cột.</p>}
         {missing.length > 0 && <div className="alert warn small">Không thấy các cột mà mẫu đang mong đợi: {[...new Set(missing.map(([k, c]) => `“${c}” (${k})`))].join(', ')}. Dữ liệu các trường này sẽ trống. Nếu sàn đã đổi tên cột, sửa mẫu map cột trong Cài đặt.</div>}
         <ErrorBox error={error} />
-        <div className="row" style={{ marginTop: 12 }}><button className="btn primary" disabled={!parsed || busy} onClick={() => send(false)}>{busy ? 'Đang xử lý…' : 'Xem thử (chưa ghi gì)'}</button></div>
+        <div className="row" style={{ marginTop: 12 }}><button className="btn primary" disabled={!parsed || busy} onClick={() => send(false)}>{busy ? 'Đang xử lý…' : 'Xem trước (chưa ghi gì)'}</button></div>
       </Card>
 
       {editing && <ProfileEditor profile={editing.profile} channels={channels} columns={parsed?.columns || []} rows={parsed?.rows || []} onClose={() => setEditing(null)}
         onSaved={(p) => { setEditing(null); profiles.reload(); setProfileId(p.id); setChannel(p.channel_id); setPreview(null); }} />}
 
       {show && (
-        <Card title={final ? '3. Kết quả' : '2. Xem thử'}>
+        <Card title={final ? '3. Kết quả' : '2. Xem trước'}>
           <div className="grid cols-4">
             <Kpi label="Tạo mới" value={show.summary.created} /><Kpi label="Cập nhật" value={show.summary.updated} />
             <Kpi label="Không đổi" value={show.summary.unchanged} /><Kpi label="Lỗi" value={show.summary.error} tone={show.summary.error ? 'red' : undefined} />

@@ -17,7 +17,7 @@ r.patch('/suppliers/:id', async (c) => {
   return c.json({ data: svc.updateSupplier(c.req.param('id'), input, c.get('actor')) });
 });
 
-const lineInput = z.object({ variant_id: z.string(), qty, unit_cost: money });
+const lineInput = z.object({ variant_id: z.string(), qty, unit_cost: money, lot_no: z.string().trim().max(60).nullish(), expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish() });
 const purchaseInput = z.object({
   supplier_id: z.string().nullish(),
   warehouse_id: z.string(),
@@ -27,6 +27,7 @@ const purchaseInput = z.object({
   shipping_payee: z.enum(['supplier', 'carrier']).default('supplier'), // ai nhận tiền ship: NCC hay bên vận chuyển
   other_fee: money.default(0),
   note: optionalText,
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(), // hạn trả nhà cung cấp
   supplier_ref: optionalText,
   ordered_at: z.string().nullish(),
   lines: z.array(lineInput).min(1),

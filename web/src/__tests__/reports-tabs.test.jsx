@@ -13,6 +13,7 @@ const aging = { total: 0, count: 0, buckets: [], items: [] };
 const ROUTES = {
   '/reports/overview': () => ({ data: { current: cur, previous: cur, change_pct: {}, tax: null } }),
   '/reports/revenue': () => ({ data: [] }),
+  '/reports/return-reasons': () => ({ data: { rows: [], write_offs: { count: 0, cost: 0 } } }),
   '/reports/shops': () => ({ data: [] }),
   '/reports/channels': () => ({ data: [{ channel_id: 'direct', channel_name: 'Trực tiếp', order_count: 1, net_revenue: 1, platform_fee: 0, gross_profit: 1, gross_margin_pct: 1, cancel_rate_pct: 0 }] }),
   '/reports/expenses': () => ({ data: { total: 100, direct: 100, shared: 0, previous_total: 0, change_pct: null, net_revenue: 1000, expense_ratio_pct: 10, by_category: [{ category_id: 'c', name: 'Quảng cáo', amount: 100, direct: 100, shared: 0, share_pct: 100, previous_amount: 0, change_pct: null }], by_shop: [], largest: [] } }),

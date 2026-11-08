@@ -85,7 +85,7 @@ describe('FormulaEditor', () => {
     await waitFor(() => expect(ta.value).toBe('1 + ROUND()'));
   });
 
-  it('bấm biến ở bảng Biến thì chèn vào công thức', async () => {
+  it('nhấn biến ở bảng Biến thì chèn vào công thức', async () => {
     render(<Host initial="1 + " />);
     await screen.findByRole('combobox');
     fireEvent.click(screen.getByRole('button', { name: 'Biến' }));

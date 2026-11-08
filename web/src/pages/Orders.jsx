@@ -12,6 +12,9 @@ import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
 import MoneyInput from '../components/MoneyInput.jsx';
 import ReturnModal, { emptyReturnForm } from './ReturnModal.jsx';
 import ExchangeModal from './ExchangeModal.jsx';
+import { ShipModal, SplitModal, ReserveModal, ShipmentsSection } from '../components/OrderActions.jsx';
+import { codRefusedForm } from '../lib/returnForm.js';
+import { reasonLabel } from '../lib/returnReasons.js';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
 const PAY_CLASS = { paid: 'st-completed', partial: 'st-returned', unpaid: 'st-draft', refunded: 'st-returned' };
@@ -127,14 +130,19 @@ export function OrderDetail() {
               {o.refund_owed_amount > 0 ? <div className="alert warn">Còn phải trả khách {vnd(o.refund_owed_amount)} (đã thu {vnd(o.paid_amount)}, số phải thu sau trả hàng thấp hơn). Hoàn bằng nút “Hoàn tiền”.</div> : o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
               <div className="row wrap no-print">
                 {(NEXT[o.status] || []).map(([st, label]) => <button key={st} className={`btn ${st === NEXT[o.status][0][0] ? 'primary' : ''}`} disabled={act.busy} onClick={() => doStatusForce(st)}>{label}</button>)}
-                {o.status === 'draft' && <Link className="btn" to={`/orders/${o.id}/edit`}>Sửa</Link>}
-                {['draft', 'confirmed', 'shipping'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
+                {['draft', 'confirmed'].includes(o.status) && <Link className="btn" to={`/orders/${o.id}/edit`}>Sửa</Link>}
+                {o.status === 'confirmed' && !o.is_marketplace && <button className="btn primary" onClick={() => setModal('ship')}>Giao cho hãng vận chuyển</button>}
+                {o.status === 'draft' && <button className="btn" onClick={() => setModal('reserve')}>{o.reserve_stock ? 'Đang giữ hàng' : 'Giữ hàng'}</button>}
+                {['draft', 'confirmed'].includes(o.status) && (o.lines.length > 1 || o.lines[0]?.qty > 1) && <button className="btn" onClick={() => setModal('split')}>Tách đơn</button>}
+                {o.status === 'shipping' && <button className="btn danger" onClick={() => { setForm(codRefusedForm(o, emptyReturnForm(o.is_marketplace))); setModal('return'); }}>Giao không thành</button>}
+                {['draft', 'confirmed'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
                 {o.amount_due > 0 && !['cancelled', 'draft'].includes(o.status) && <button className="btn" onClick={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}>Thu tiền ({vnd(o.amount_due)})</button>}
                 {o.refund_owed_amount > 0 && <button className="btn primary" onClick={() => { setForm({ amount: o.refund_owed_amount, method: 'cash' }); setModal('refund'); }}>Hoàn tiền ({vnd(o.refund_owed_amount)})</button>}
                 {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm(emptyReturnForm(o.is_marketplace)); setModal('return'); }}>Trả hàng</button>}
                 {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('packaging')}>Xác nhận đóng gói</button>}
                 {!o.is_marketplace && o.customer_id && ['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('exchange')}>Đổi hàng</button>}
                 <a className="btn" href={`/api/v1/orders/${o.id}/receipt`} target="_blank" rel="noreferrer">In phiếu</a>
+                {!o.is_marketplace && ['confirmed', 'shipping', 'completed'].includes(o.status) && <a className="btn" href={`/api/v1/orders/${o.id}/label`} target="_blank" rel="noreferrer">In nhãn giao hàng</a>}
               </div>
 
               <div className="grid cols-2 collapse">
@@ -168,20 +176,31 @@ export function OrderDetail() {
                 <div className="table-wrap"><table>
                   <thead><tr><th>Sản phẩm</th><th className="num">SL</th><th className="num">Đơn giá</th><th className="num">Giá vốn</th><th className="num">Thành tiền</th></tr></thead>
                   <tbody>{o.lines.map((l) => (
-                    <tr key={l.id}><td><div className="row" style={{ gap: 8 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div>{l.allocations?.length > 0 && <div className="small muted">Lấy từ: {l.allocations.map((a) => `${a.warehouse_name}${l.allocations.some((x) => x.sku !== l.sku) ? ` (${a.sku})` : ''} × ${a.qty}`).join(', ')}</div>}{!l.allocations?.length && l.planned_allocations?.length > 0 && <div className="small muted">Dự kiến lấy từ kho đã chọn tay</div>}</div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
+                    <tr key={l.id}><td><div className="row" style={{ gap: 8 }}><ProductThumb src={l.image_url} name={l.name} size={36} /><div>{l.name}{l.is_gift ? <span className="badge plain" style={{ marginLeft: 8 }}>Quà tặng</span> : null}<div className="small muted">{l.sku}{l.returned_qty > 0 && ` · đã trả ${l.returned_qty}`}</div>{l.allocations?.length > 0 && <div className="small muted">Lấy từ: {l.allocations.map((a) => `${a.warehouse_name}${l.allocations.some((x) => x.sku !== l.sku) ? ` (${a.sku})` : ''} × ${a.qty}`).join(', ')}</div>}{!l.allocations?.length && l.planned_allocations?.length > 0 && <div className="small muted">Dự kiến lấy từ kho đã chọn tay</div>}</div></div></td><td className="num">{num(l.qty)}</td><td className="num">{vnd(l.unit_price)}</td><td className="num muted">{vnd(l.unit_cost)}</td><td className="num">{vnd(l.line_total)}</td></tr>
                   ))}</tbody>
                 </table></div>
               </Section>
 
+              <ShipmentsSection order={o} reload={state.reload} />
+              {o.parent_order_id && <div className="alert ok small">Đơn này được tách từ một đơn khác. Xem ghi chú đơn.</div>}
+              {o.status === 'completed' && o.amount_due > 0 && !o.is_marketplace && <div className="alert warn small row between"><span>Khách còn nợ {vnd(o.amount_due)}{o.due_date ? `, hạn ${fmtDate(o.due_date)}` : ', chưa đặt hạn thanh toán'}.</span><button className="btn sm" onClick={() => { setForm({ due: o.due_date || '' }); setModal('due'); }}>Đặt hạn</button></div>}
+              {o.reserve_stock ? <div className="alert warn small">Đang giữ hàng cho đơn này{o.reserved_until ? ` đến ${o.reserved_until}` : ''}.</div> : null}
               <div className="grid cols-2 collapse">
                 <Section title="Thanh toán">
                   {o.payments.length === 0 ? <span className="muted small">Chưa có khoản thu nào.</span> : o.payments.filter((p) => !p.voided_at).map((p) => (
                     <div key={p.id} className="row between small"><span>{fmtDate(p.paid_at)} · {p.method === 'customer_credit' ? 'Tiền khách gửi' : methodLabels[p.method] || p.method}{p.direction === 'out' && ' (hoàn / cộng tiền gửi)'}</span><b>{p.direction === 'out' ? '−' : ''}{vnd(p.amount)}</b></div>
                   ))}
+                  {!o.is_marketplace && o.seller_shipping_amount > 0 && (
+                    <div className="row between small" style={{ marginTop: 8 }}>
+                      <span>Ship shop tự trả hãng vận chuyển: {vnd(o.seller_shipping_amount)}{o.seller_shipping_paid_amount > 0 && ` · đã trả ${vnd(o.seller_shipping_paid_amount)}`}</span>
+                      {o.seller_shipping_due > 0 ? <button className="btn sm" onClick={() => { setForm({ amount: o.seller_shipping_due, method: 'cash' }); setModal('sellership'); }}>Ghi đã trả ({vnd(o.seller_shipping_due)})</button> : o.seller_shipping_paid_amount > 0 ? <b className="h-green">Đã trả đủ</b> : null}
+                    </div>
+                  )}
                 </Section>
                 <Section title="Lịch sử">
                   {o.history.map((h) => <div key={h.id} className="small"><span className="muted">{fmtDate(h.created_at)}</span> · {h.from_status ? `${STATUS[h.from_status]} → ` : ''}{STATUS[h.to_status]}{h.note && ` (${h.note})`}</div>)}
-                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.awaiting_goods ? <> · <b>Chờ hàng về</b> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, {}); state.reload(); })}>Đã nhận hàng</button></> : r.goods_received_at && o.is_marketplace ? ' · Đã nhận hàng' : ''}{r.reason && ` — ${r.reason}`}</div>)}
+                  {o.write_offs?.map((w) => <div key={w.id} className="small h-red">{w.code}: phiếu hàng huỷ, giá vốn {vnd(w.total_cost)} ({w.lines.map((x) => `${x.sku} ×${x.qty}`).join(', ')})</div>)}
+                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.awaiting_goods ? <> · <b>Chờ hàng về</b> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, {}); state.reload(); })}>Đã nhận hàng, nhập kho</button> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, { damaged_line_ids: r.lines.map((x) => x.order_line_id) }); state.reload(); })}>Hàng về bị hỏng</button></> : r.goods_received_at && o.is_marketplace ? ' · Đã nhận hàng' : ''} · {reasonLabel(r.reason_code)}{r.reason && ` — ${r.reason}`}</div>)}
                 </Section>
               </div>
 
@@ -191,6 +210,23 @@ export function OrderDetail() {
                 <Modal title="Huỷ đơn" onClose={() => setModal(null)} footer={<button className="btn danger" disabled={act.busy} onClick={() => doStatus('cancelled', form.note)}>Xác nhận huỷ</button>}>
                   <p className="muted small">Hàng đã trừ kho sẽ được cộng lại.</p>
                   <Field label="Lý do"><input value={form.note || ''} onChange={(e) => setForm({ ...form, note: e.target.value })} /></Field>
+                  <ErrorBox error={act.error} />
+                </Modal>
+              )}
+              {modal === 'due' && (
+                <Modal title="Hạn thanh toán" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.patch(`/orders/${o.id}`, { due_date: form.due || null }); setModal(null); state.reload(); })}>Lưu</button>}>
+                  <Field label="Khách thanh toán trước ngày"><input type="date" value={form.due || ''} onChange={(e) => setForm({ ...form, due: e.target.value })} aria-label="Hạn thanh toán" /></Field>
+                  <ErrorBox error={act.error} />
+                </Modal>
+              )}
+              {modal === 'ship' && <ShipModal order={o} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
+              {modal === 'split' && <SplitModal order={o} onClose={() => setModal(null)} onDone={(childId) => { setModal(null); navigate(`/orders/${childId}`); }} />}
+              {modal === 'reserve' && <ReserveModal order={o} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
+              {modal === 'sellership' && (
+                <Modal title="Ghi đã trả ship cho hãng vận chuyển" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/seller-shipping-payments`, { amount: Number(form.amount), method: form.method }); setModal(null); state.reload(); })}>Ghi nhận</button>}>
+                  <p className="muted small">Tiền chi ra khỏi quỹ theo phương thức chọn. Không tính vào tiền khách trả của đơn.</p>
+                  <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).filter(([k]) => k !== 'customer_credit').map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}
@@ -233,7 +269,7 @@ function PackagingModal({ orderId, warehouses, onClose, onDone }) {
       {!lines.length ? <div className="alert warn">Chưa có định mức đóng gói cho sản phẩm trong đơn. Thêm định mức ở trang sản phẩm hoặc bỏ qua nếu đơn không dùng vật tư.</div> : lines.map((x) => <div className="row" key={x.variant_id}><div className="grow">{x.name}<div className="small muted">{x.sku} · {x.unit} · dự kiến {num(x.qty)}</div></div><Field label="Thực tế"><input type="number" min="0.001" step="0.001" value={x.qty} onChange={(e) => change(x.variant_id, e.target.value)} /></Field></div>)}
       <Field label="Kho xuất"><select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
       <Field label="Ghi chú"><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-      <div className="small muted">Chỉ ghi nhận sau khi bấm xác nhận. Lần xác nhận thứ hai sẽ không trừ kho thêm.</div>
+      <div className="small muted">Chỉ ghi nhận sau khi nhấn xác nhận. Lần xác nhận thứ hai sẽ không trừ kho thêm.</div>
       <ErrorBox error={error} />
     </>}</Async>
   </Modal>;
