@@ -21,7 +21,7 @@ import Expenses from './pages/Expenses.jsx';
 import Reports from './pages/Reports.jsx';
 import Accounting from './pages/Accounting.jsx';
 import Guide from './pages/Guide.jsx';
-import { allowsAllShops } from './lib/routes.js';
+import { allowsAllShops, hidesShopSwitcher } from './lib/routes.js';
 import Settings from './pages/Settings.jsx';
 import Onboarding, { GettingStarted, useSetupProgress, readDismissed, DISMISS_KEY } from './pages/Onboarding.jsx';
 
@@ -55,6 +55,7 @@ function ShopSwitcher() {
     return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', k); };
   }, [open]);
   const pick = (id) => { setShopId(id); setOpen(false); };
+  if (hidesShopSwitcher(pathname)) return null;
   return (
     <div className="shop-switch" ref={ref}>
       <button className="shop-btn" onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open}>

@@ -10,8 +10,11 @@ import ExportOrders from '../components/ExportOrders.jsx';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
 import MoneyInput from '../components/MoneyInput.jsx';
+import MoneyFill from '../components/MoneyFill.jsx';
 import ReturnModal, { emptyReturnForm } from './ReturnModal.jsx';
 import ExchangeModal from './ExchangeModal.jsx';
+import OrderFlow from '../components/OrderFlow.jsx';
+import OrderActionBar from '../components/OrderActionBar.jsx';
 import { ShipModal, SplitModal, ReserveModal, ShipmentsSection } from '../components/OrderActions.jsx';
 import { codRefusedForm } from '../lib/returnForm.js';
 import { reasonLabel } from '../lib/returnReasons.js';
@@ -61,7 +64,7 @@ export function OrderList() {
         {(res) => {
           const rows = [...res.data, ...extra];
           const next = extra.length || cursor ? cursor : res.next_cursor;
-          if (!rows.length) return <Empty action={<div className="row"><button className="btn" onClick={() => setImport(true)}><Icon name="upload" />Nhập từ file</button><Link to="/orders/new" className="btn primary">Tạo đơn</Link></div>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
+          if (!rows.length) return <Empty action={<Link to="/orders/new" className="btn primary">Tạo đơn</Link>}>Chưa có đơn nào khớp bộ lọc.</Empty>;
           return (
             <Card flat className="list-card sticky-head">
               <div className="table-wrap"><table className="stackable order-table">
@@ -93,8 +96,6 @@ export function OrderList() {
     </div>
   );
 }
-
-const NEXT = { draft: [['confirmed', 'Xác nhận (trừ kho)']], confirmed: [['shipping', 'Đang giao'], ['completed', 'Hoàn thành']], shipping: [['completed', 'Hoàn thành']] };
 
 export function OrderDetail() {
   const { id } = useParams();
@@ -133,22 +134,15 @@ export function OrderDetail() {
               <ErrorBox error={act.error} />
               {o.stock_warning ? <div className="alert warn">Đơn này làm tồn kho âm. Kiểm tra kho thực tế và điều chỉnh nếu cần.</div> : null}
               {o.refund_owed_amount > 0 ? <div className="alert warn">Còn phải trả khách {vnd(o.refund_owed_amount)} (đã thu {vnd(o.paid_amount)}, số phải thu sau trả hàng thấp hơn). Hoàn bằng nút “Hoàn tiền”.</div> : o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
-              <div className="row wrap no-print">
-                {(NEXT[o.status] || []).map(([st, label]) => <button key={st} className={`btn ${st === NEXT[o.status][0][0] ? 'primary' : ''}`} disabled={act.busy} onClick={() => doStatusForce(st)}>{label}</button>)}
-                {['draft', 'confirmed'].includes(o.status) && <Link className="btn" to={`/orders/${o.id}/edit`}>Sửa</Link>}
-                {o.status === 'confirmed' && !o.is_marketplace && <button className="btn primary" onClick={() => setModal('ship')}>Giao cho hãng vận chuyển</button>}
-                {o.status === 'draft' && <button className="btn" onClick={() => setModal('reserve')}>{o.reserve_stock ? 'Đang giữ hàng' : 'Giữ hàng'}</button>}
-                {['draft', 'confirmed'].includes(o.status) && (o.lines.length > 1 || o.lines[0]?.qty > 1) && <button className="btn" onClick={() => setModal('split')}>Tách đơn</button>}
-                {o.status === 'shipping' && <button className="btn danger" onClick={() => { setForm(codRefusedForm(o, emptyReturnForm(o.is_marketplace))); setModal('return'); }}>Giao không thành</button>}
-                {['draft', 'confirmed'].includes(o.status) && <button className="btn danger" disabled={act.busy} onClick={() => { setForm({ note: '' }); setModal('cancel'); }}>Huỷ đơn</button>}
-                {o.amount_due > 0 && !['cancelled', 'draft'].includes(o.status) && <button className="btn" onClick={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}>Thu tiền ({vnd(o.amount_due)})</button>}
-                {refundMax > 0 && <button className="btn primary" onClick={() => { setForm({ amount: refundMax, method: 'cash' }); setModal('refund'); }}>Hoàn tiền ({vnd(refundMax)})</button>}
-                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => { setForm(emptyReturnForm(o.is_marketplace)); setModal('return'); }}>Trả hàng</button>}
-                {['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('packaging')}>Xác nhận đóng gói</button>}
-                {!o.is_marketplace && o.customer_id && ['confirmed', 'shipping', 'completed'].includes(o.status) && <button className="btn" onClick={() => setModal('exchange')}>Đổi hàng</button>}
-                <a className="btn" href={`/api/v1/orders/${o.id}/receipt`} target="_blank" rel="noreferrer">In phiếu</a>
-                {!o.is_marketplace && ['confirmed', 'shipping', 'completed'].includes(o.status) && <a className="btn" href={`/api/v1/orders/${o.id}/label`} target="_blank" rel="noreferrer">In nhãn giao hàng</a>}
-              </div>
+              <OrderFlow order={o} />
+              <OrderActionBar
+                o={o} busy={act.busy} refundMax={refundMax}
+                onStatus={doStatusForce} onModal={setModal}
+                onReturn={(form) => { setForm(form); setModal('return'); }}
+                onPay={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}
+                onRefund={() => { setForm({ amount: refundMax, method: 'cash' }); setModal('refund'); }}
+                onCancel={() => { setForm({ note: '' }); setModal('cancel'); }}
+              />
 
               <div className="grid cols-2 collapse">
                 <Section title="Khách">
@@ -177,7 +171,7 @@ export function OrderDetail() {
                 </Section>
               </div>
 
-              <Section title="Sản phẩm" flush>
+              <Section flush>
                 <div className="table-wrap"><table>
                   <thead><tr><th>Sản phẩm</th><th className="num">SL</th><th className="num">Đơn giá</th><th className="num">Giá vốn</th><th className="num">Thành tiền</th></tr></thead>
                   <tbody>{o.lines.map((l) => (
@@ -247,14 +241,14 @@ export function OrderDetail() {
               )}
               {modal === 'pay' && (
                 <Modal title="Thu tiền" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method }); setModal(null); state.reload(); })}>Ghi nhận</button>}>
-                  <Field label="Số tiền"><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label={`Số tiền (còn phải thu ${vnd(o.amount_due)})`}><MoneyFill fill={o.amount_due} label="Thu đủ" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} autoFocus /></Field>
                   <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{o.customer_credit_balance > 0 && !o.is_marketplace && <option value="customer_credit">Tiền khách gửi ({vnd(o.customer_credit_balance)})</option>}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
               )}
               {modal === 'refund' && (
                 <Modal title="Hoàn tiền cho khách" onClose={() => setModal(null)} footer={<button className="btn primary" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/payments`, { amount: Number(form.amount), method: form.method, direction: 'out' }); setModal(null); state.reload(); })}>Ghi nhận hoàn tiền</button>}>
-                  <Field label={`Số tiền (tối đa ${vnd(refundMax)})`}><MoneyInput value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
+                  <Field label={`Số tiền (tối đa ${vnd(refundMax)})`}><MoneyFill fill={refundMax} label="Hoàn đủ" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
                   <Field label="Phương thức"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{o.customer_id && !o.is_marketplace && <option value="customer_credit">Chuyển thành tiền khách gửi</option>}</select></Field>
                   <ErrorBox error={act.error} />
                 </Modal>

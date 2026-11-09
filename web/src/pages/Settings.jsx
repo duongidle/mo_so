@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import NotificationSettings from './NotificationSettings.jsx';
@@ -12,15 +13,16 @@ import FieldsManager from '../components/FieldsManager.jsx';
 import FormulaEditor from '../components/FormulaEditor.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 
-const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['notify', 'Thông báo'], ['audit', 'Nhật ký'], ['backup', 'Sao lưu'], ['account', 'Tài khoản']];
+const TABS = [['shops', 'Shop & kho'], ['platforms', 'Nền tảng'], ['shipping', 'Vận chuyển'], ['health', 'Ngưỡng & kho'], ['fields', 'Trường tuỳ chỉnh'], ['metrics', 'Chỉ số báo cáo'], ['tax', 'Thuế ước tính'], ['api', 'API & webhook'], ['notify', 'Thông báo'], ['audit', 'Nhật ký'], ['backup', 'Sao lưu'], ['account', 'Tài khoản']];
 
 export default function Settings() {
-  const [tab, setTab] = useState('shops');
+  const [sp] = useSearchParams();
+  const [tab, setTab] = useState(TABS.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : 'shops');
   return (
     <div className="page stack">
       <PageHeader title="Cài đặt" />
       <Toolbar><Tabs options={TABS} value={tab} onChange={setTab} wrap="lg" /></Toolbar>
-      {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'health' && <><Thresholds /><CostingMethod /></>}{tab === 'fields' && <Fields />}
+      {tab === 'shops' && <Shops />}{tab === 'platforms' && <Platforms />}{tab === 'shipping' && <Carriers />}{tab === 'health' && <><Thresholds /><CostingMethod /></>}{tab === 'fields' && <Fields />}
       {tab === 'metrics' && <Metrics />}{tab === 'tax' && <Tax />}{tab === 'api' && <ApiAndHooks />}{tab === 'notify' && <NotificationSettings />}{tab === 'audit' && <AuditLog />}{tab === 'backup' && <Backup />}{tab === 'account' && <Account />}
     </div>
   );
@@ -102,6 +104,46 @@ function WarehouseOrder({ ids, warehouses, onChange }) {
 const FEATURE = { import: 'Nhập đơn từ file', reconciliation: 'Đối soát tiền sàn trả về' };
 
 /** Nền tảng bán hàng: bật = kênh hiện ở bộ chọn, có mẫu import và (với sàn) đối soát tiền về. Tắt chỉ ẩn kênh, không mất dữ liệu. */
+/** Hãng vận chuyển: thêm/sửa/ẩn ở đây, form giao hàng chỉ chọn từ danh sách */
+export function Carriers() {
+  const list = useAsync(() => api.get('/carriers', { include_archived: 1 }), []);
+  const { busy, error, run } = useAction();
+  const [f, setF] = useState(null);
+  const save = () => run(async () => {
+    const body = { name: f.name, tracking_url: f.tracking_url || null, remit_note: f.remit_note || null };
+    if (f.id) await api.patch(`/carriers/${f.id}`, body); else await api.post('/carriers', body);
+    setF(null); list.reload();
+  });
+  return (
+    <>
+      <Note>Hãng ở đây là danh sách để chọn khi giao đơn và đối soát COD. Ẩn một hãng chỉ bỏ nó khỏi bộ chọn, vận đơn cũ vẫn giữ.</Note>
+      <Card title="Hãng vận chuyển" actions={<button className="btn sm" onClick={() => setF({ name: '', tracking_url: '', remit_note: '' })}>+ Hãng</button>}>
+        <Async state={list}>{({ data }) => (
+          <>
+            {!data.length && <span className="muted small">Chưa có hãng nào. Thêm hãng bạn hay dùng (GHN, GHTK, Viettel Post…).</span>}
+            {data.map((c) => (
+              <div key={c.id} className="pick" onClick={() => setF({ ...c, tracking_url: c.tracking_url || '', remit_note: c.remit_note || '' })}>
+                <span><b>{c.name}</b>{c.tracking_url && <span className="small muted"> · {c.tracking_url}</span>}</span>
+                {c.archived_at && <span className="badge plain">Đã ẩn</span>}
+              </div>
+            ))}
+          </>
+        )}</Async>
+      </Card>
+      {f && (
+        <Modal title={f.id ? 'Sửa hãng' : 'Thêm hãng'} onClose={() => setF(null)} footer={<>
+          {f.id && <button className="btn" disabled={busy} onClick={() => run(async () => { await api.patch(`/carriers/${f.id}`, { archived: !f.archived_at }); setF(null); list.reload(); })}>{f.archived_at ? 'Dùng lại' : 'Ẩn hãng'}</button>}
+          <button className="btn primary" disabled={busy || !f.name.trim()} onClick={save}>Lưu</button></>}>
+          <Field label="Tên hãng"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus aria-label="Tên hãng" /></Field>
+          <Field label="Link tra cứu (dùng {code} cho mã vận đơn)" hint="Ví dụ https://donhang.ghn.vn/?order_code={code}"><input value={f.tracking_url} onChange={(e) => setF({ ...f, tracking_url: e.target.value })} aria-label="Link tra cứu" /></Field>
+          <Field label="Ghi chú đối soát"><input value={f.remit_note} onChange={(e) => setF({ ...f, remit_note: e.target.value })} aria-label="Ghi chú đối soát" placeholder="Ví dụ: đối soát thứ 2, 4, 6" /></Field>
+          <ErrorBox error={error} />
+        </Modal>
+      )}
+    </>
+  );
+}
+
 export function Platforms() {
   const { platforms, allChannels, reload } = useSession();
   const { busy, error, run } = useAction();

@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Empty, ErrorBox, Field, Fold, PageHeader, Section, useAction, useAsync, useDebounced } from '../components/ui.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
+import MoneyFill from '../components/MoneyFill.jsx';
 import Icon from '../components/Icon.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
 import CustomerPicker from '../components/CustomerPicker.jsx';
@@ -350,7 +351,7 @@ function Form({ order }) {
           <Section title="Thanh toán">
             <div className="grid cols-2 collapse">
               <Field label={method === 'customer_credit' ? 'Số tiền dùng từ tiền gửi' : 'Số tiền thu'} hint={method === 'customer_credit' ? `Còn ${vnd(customerCredit)} trong shop này` : 'Để trống: Bán xong thu đủ, Xác nhận không thu'}>
-                <MoneyInput value={paid} placeholder={String(method === 'customer_credit' ? Math.min(totals.amountDue, customerCredit) : totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
+                <MoneyFill fill={method === 'customer_credit' ? Math.min(totals.amountDue, customerCredit) : totals.amountDue} label="Thu đủ" value={paid} placeholder={String(method === 'customer_credit' ? Math.min(totals.amountDue, customerCredit) : totals.amountDue)} onChange={(e) => setPaid(e.target.value === '' ? '' : String(toMoney(e.target.value)))} aria-label="Số tiền thu" />
               </Field>
               <Field label="Phương thức">
                 <select value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Phương thức thanh toán">{methodList(method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{customerCredit > 0 && !marketplace && <option value="customer_credit">Tiền khách gửi</option>}</select>

@@ -16,7 +16,7 @@ export default function Shipping() {
   const { shopId, isAll } = useSession();
   const [bucket, setBucket] = useState('');
   const [carrierId, setCarrierId] = useState('');
-  const [open, setOpen] = useState(null); // 'statement' | 'carriers'
+  const [open, setOpen] = useState(null); // 'statement'
   const [voiding, setVoiding] = useState(null); // phiếu đối soát đang xem để huỷ
   const carriers = useAsync(() => api.get('/carriers'), []);
   const summary = useAsync(() => api.get('/shipments/summary', { carrier_id: carrierId || undefined, shop_id: isAll ? undefined : shopId }), [carrierId, shopId]);
@@ -31,7 +31,7 @@ export default function Shipping() {
       <div className="row between wrap">
         <div className="row wrap">
           <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} aria-label="Hãng vận chuyển"><option value="">Mọi hãng</option>{(carriers.data?.data || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-          <button className="btn" onClick={() => setOpen('carriers')}>Quản lý hãng</button>
+          <Link className="btn" to="/settings?tab=shipping">Quản lý hãng</Link>
         </div>
         <span className="row">{Object.values(picked).some(Boolean) && <a className="btn" target="_blank" rel="noreferrer" href={`/api/v1/orders/labels?ids=${Object.keys(picked).filter((k) => picked[k]).join(',')}`}>In nhãn ({Object.values(picked).filter(Boolean).length})</a>}<button className="btn primary" onClick={() => setOpen('statement')}>Nhập bảng đối soát của hãng</button></span>
       </div>
@@ -78,24 +78,8 @@ export default function Shipping() {
         )}
       </Async>
       {open === 'statement' && <StatementModal carriers={carriers.data?.data || []} onClose={() => setOpen(null)} onDone={() => { setOpen(null); reload(); }} />}
-      {open === 'carriers' && <CarriersModal state={carriers} onClose={() => setOpen(null)} />}
       {voiding && <VoidStatementModal statement={voiding} onClose={() => setVoiding(null)} onDone={() => { setVoiding(null); reload(); }} />}
     </div>
-  );
-}
-
-function CarriersModal({ state, onClose }) {
-  const { busy, error, run } = useAction();
-  const [name, setName] = useState('');
-  const [url, setUrl] = useState('');
-  return (
-    <Modal title="Hãng vận chuyển" onClose={onClose}>
-      <Async state={state}>{({ data }) => data.map((c) => <div key={c.id} className="row between small"><span><b>{c.name}</b>{c.tracking_url ? ` · ${c.tracking_url}` : ''}</span><button className="btn sm" disabled={busy} onClick={() => run(async () => { await api.patch(`/carriers/${c.id}`, { archived: true }); state.reload(); })}>Ẩn</button></div>)}</Async>
-      <Field label="Tên hãng mới"><input value={name} onChange={(e) => setName(e.target.value)} aria-label="Tên hãng" /></Field>
-      <Field label="Link tra cứu (dùng {code} cho mã vận đơn)" hint="Ví dụ https://donhang.ghn.vn/?order_code={code}"><input value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Link tra cứu" /></Field>
-      <button className="btn primary" disabled={busy || !name.trim()} onClick={() => run(async () => { await api.post('/carriers', { name, tracking_url: url || null }); setName(''); setUrl(''); state.reload(); })}>Thêm hãng</button>
-      <ErrorBox error={error} />
-    </Modal>
   );
 }
 

@@ -8,6 +8,7 @@ import { useLeaveGuard } from '../components/leaveGuard.js';
 import { vnd, num, fmtDate, METHODS } from '../lib.js';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
+import MoneyFill from '../components/MoneyFill.jsx';
 
 const ST = { draft: 'Nháp', received: 'Đã nhận', cancelled: 'Đã huỷ' };
 const ST_CLASS = { draft: 'st-draft', received: 'st-completed', cancelled: 'st-cancelled' };
@@ -59,13 +60,25 @@ function Suppliers({ list, reload }) {
   );
 }
 
+/** Tồn hiện tại của món: "Chưa có ở kho này" khi món chưa từng nhập vào kho đó, đỏ khi hết, vàng khi sắp hết (dưới mức tối thiểu), mờ khi bình thường */
+function StockTag({ n, min = 0, never, scope }) {
+  const v = Number(n) || 0;
+  const low = v <= (Number(min) || 0);
+  const cls = never ? 'muted' : v <= 0 ? 'h-red' : low ? 'h-yellow' : 'muted';
+  const text = never ? 'Chưa có ở kho này' : v <= 0 ? 'Hết hàng' : low ? `Sắp hết · còn ${v}` : `Còn ${v}`;
+  return <span className={`small ${cls}`} style={{ whiteSpace: 'nowrap', fontWeight: !never && low ? 600 : 400 }} title={scope}>{text}</span>;
+}
+
+/** Tên món kèm biến thể để phân biệt các món trùng tên */
+const itemName = (productName, variantName) => (variantName && variantName !== productName ? `${productName} · ${variantName}` : productName);
+
 /** Trang phiếu nhập mới: cột chính là các dòng hàng, cột phụ là nhà cung cấp, phí, thanh toán */
 export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
   const { warehouses } = useSession();
   const editing = !!initial; // sửa phiếu nháp: lưu bằng PATCH, nhận hàng là bước riêng
   const [wh, setWh] = useState(initial?.warehouse_id ?? warehouses[0]?.id);
   const [supplier, setSupplier] = useState(initial?.supplier_id ?? '');
-  const [lines, setLines] = useState(() => initial?.lines.map((l) => ({ id: l.variant_id, sku: l.sku, name: l.product_name, qty: l.qty, unit_cost: l.unit_cost, lot_no: l.lot_no || '', expiry_date: l.expiry_date || '' })) ?? []);
+  const [lines, setLines] = useState(() => initial?.lines.map((l) => ({ id: l.variant_id, sku: l.sku, name: itemName(l.product_name, l.variant_name), qty: l.qty, unit_cost: l.unit_cost, lot_no: l.lot_no || '', expiry_date: l.expiry_date || '' })) ?? []);
   const [fees, setFees] = useState({ shipping_fee: initial?.shipping_fee ?? 0, other_fee: initial?.other_fee ?? 0, discount_amount: initial?.discount_amount ?? 0 });
   const [paid, setPaid] = useState(0);
   const [shipTo, setShipTo] = useState(initial?.shipping_payee ?? 'supplier'); // ai nhận tiền ship: nhà cung cấp hay bên vận chuyển
@@ -73,7 +86,17 @@ export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const sup = useAsync(() => api.get('/suppliers'), []);
-  const found = useAsync(() => (dq ? api.get('/variants', { q: dq, all: '1', limit: 8 }) : null), [dq]);
+  const found = useAsync(() => (dq ? api.get('/variants', { q: dq, all: '1', limit: 8, warehouse_id: wh }) : null), [dq, wh]);
+  // Tồn từng món tại kho nhận: hiện cạnh kết quả tìm, ở dòng hàng, và để gợi ý món hết hoặc sắp hết khi chưa gõ gì
+  const stock = useAsync(() => api.get('/stock', { warehouse_id: wh, limit: 2000 }), [wh]);
+  const stockAll = useAsync(() => api.get('/stock', { limit: 2000 }), []); // tồn tổng mọi kho: để gợi ý món hết hoặc sắp hết
+  const stockRows = Array.isArray(stock.data?.data) ? stock.data.data : [];
+  const stockOf = new Map(stockRows.map((r) => [r.variant_id, r]));
+  const whName = warehouses.find((w) => w.id === wh)?.name;
+  const [lotOpen, setLotOpen] = useState(() => new Set());
+  const addLine = (v) => { setTouched(true); setLines((l) => (l.some((x) => x.id === v.id) ? l : [...l, { id: v.id, sku: v.sku, name: itemName(v.product_name, v.variant_name), qty: 1, unit_cost: v.avg_cost || 0 }])); setQ(''); };
+  const allRows = Array.isArray(stockAll.data?.data) ? stockAll.data.data : [];
+  const lowItems = allRows.filter((r) => r.kind !== 'bundle' && r.item_type === 'product' && r.on_hand <= (r.min_stock || 0) && !lines.some((x) => x.id === r.variant_id)).sort((a, b) => a.on_hand - b.on_hand).slice(0, 8);
   const { busy, error, run } = useAction();
   const sub = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
   const carrier = shipTo === 'carrier' ? Number(fees.shipping_fee) || 0 : 0;
@@ -128,7 +151,7 @@ export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
             <Field label="Phí khác"><MoneyInput value={fees.other_fee} onChange={(e) => { setTouched(true); setFees({ ...fees, other_fee: e.target.value }); }} /></Field>
             <Field label="Chiết khấu"><MoneyInput value={fees.discount_amount} onChange={(e) => { setTouched(true); setFees({ ...fees, discount_amount: e.target.value }); }} /></Field>
             <Field label="Hạn trả nhà cung cấp (tuỳ chọn)" hint="Khoản còn nợ hiện ở Chi phí & quỹ → Công nợ phải trả"><input type="date" value={dueDate} onChange={(e) => { setTouched(true); setDueDate(e.target.value); }} aria-label="Hạn trả nhà cung cấp" /></Field>
-            <Field label="Đã trả nhà cung cấp" hint="Chỉ ghi nhận khi nhấn Nhận hàng & lưu"><MoneyInput value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
+            <Field label="Đã trả nhà cung cấp" hint="Chỉ ghi nhận khi nhấn Nhận hàng & lưu"><MoneyFill fill={total} label="Trả đủ" value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
             <div>
               <div className="ledger-line"><span>Tiền hàng</span><span className="num">{vnd(sub)}</span></div>
               {carrier > 0 && <div className="ledger-line"><span>Ship trả bên vận chuyển</span><span className="num">{vnd(carrier)}</span></div>}
@@ -141,23 +164,29 @@ export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
       <Section title={`Hàng nhập${lines.length ? ` (${lines.length})` : ''}`}>
         <div className="stack">
           <input placeholder="Tìm SKU hoặc tên để thêm…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Tìm SKU" autoFocus />
-          {found.data?.data?.length > 0 && <div className="pick-list">{found.data.data.map((v) => <div key={v.id} className="pick" onClick={() => { setTouched(true); setLines((l) => (l.some((x) => x.id === v.id) ? l : [...l, { id: v.id, sku: v.sku, name: v.product_name, qty: 1, unit_cost: v.avg_cost || 0 }])); setQ(''); }}><span>{v.product_name} <span className="muted small">{v.sku}</span></span></div>)}</div>}
+          {found.data?.data?.length > 0 && <div className="pick-list">{found.data.data.map((v) => <div key={v.id} className="pick" onClick={() => addLine(v)}><span>{itemName(v.product_name, v.variant_name)} <span className="muted small">{v.sku}</span></span><StockTag n={v.on_hand} min={v.min_stock} never={!!stock.data && !stockOf.has(v.id)} scope={whName ? `Tồn tại ${whName}` : undefined} /></div>)}</div>}
+          {!q && lowItems.length > 0 && <div className="stack" style={{ gap: 4 }}>
+            <div className="small muted">Hết hoặc sắp hết (tính tổng mọi kho), bấm để thêm:</div>
+            <div className="pick-list">{lowItems.map((r) => <div key={r.variant_id} className="pick" onClick={() => addLine({ id: r.variant_id, sku: r.sku, product_name: r.product_name, variant_name: r.variant_name, avg_cost: r.avg_cost })}><span>{itemName(r.product_name, r.variant_name)} <span className="muted small">{r.sku}</span></span><StockTag n={r.on_hand} min={r.min_stock} scope="Tồn tổng các kho" /></div>)}</div>
+          </div>}
           {!lines.length ? <div className="of-empty muted">Chưa có dòng hàng nào. Gõ SKU ở ô trên rồi chọn.</div> : (
             <div className="pl-lines">
               <div className="pl-head small muted"><span>Hàng</span><span>Số lượng</span><span>Giá nhập</span><span className="num">Thành tiền</span><span /></div>
               {lines.map((l) => (
                 <div key={l.id} className="pl-wrap">
                 <div className="pl-row">
-                  <div className="pl-name"><div>{l.name}</div><div className="small muted">{l.sku}</div></div>
+                  <div className="pl-name"><div>{l.name}</div><div className="small muted">{l.sku}{stock.data && <> · <StockTag n={stockOf.get(l.id)?.on_hand} min={stockOf.get(l.id)?.min_stock} never={!stockOf.has(l.id)} scope={whName ? `Tồn tại ${whName}` : undefined} /></>}</div></div>
                   <input type="number" min="1" value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} aria-label="Số lượng" />
                   <MoneyInput value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} aria-label="Giá nhập" />
                   <b className="num">{vnd((Number(l.qty) || 0) * (Number(l.unit_cost) || 0))}</b>
                   <button type="button" className="btn sm" aria-label={`Bỏ ${l.sku}`} onClick={() => { setTouched(true); setLines((ls) => ls.filter((x) => x.id !== l.id)); }}>✕</button>
                 </div>
-                <div className="pl-lot small muted">
-                  <label>Lô <input value={l.lot_no || ''} onChange={(e) => upd(l.id, { lot_no: e.target.value })} aria-label={`Số lô ${l.sku}`} placeholder="tuỳ chọn" /></label>
-                  <label>Hạn dùng <input type="date" value={l.expiry_date || ''} onChange={(e) => upd(l.id, { expiry_date: e.target.value })} aria-label={`Hạn dùng ${l.sku}`} /></label>
-                </div>
+                {(lotOpen.has(l.id) || l.lot_no || l.expiry_date) ? (
+                  <div className="pl-lot small muted">
+                    <label>Lô <input value={l.lot_no || ''} onChange={(e) => upd(l.id, { lot_no: e.target.value })} aria-label={`Số lô ${l.sku}`} placeholder="tuỳ chọn" /></label>
+                    <label>Hạn dùng <input type="date" value={l.expiry_date || ''} onChange={(e) => upd(l.id, { expiry_date: e.target.value })} aria-label={`Hạn dùng ${l.sku}`} /></label>
+                  </div>
+                ) : <div><button type="button" className="linkbtn small" onClick={() => setLotOpen((x) => new Set(x).add(l.id))}>+ Lô / hạn dùng</button></div>}
                 </div>
               ))}
             </div>
@@ -179,9 +208,12 @@ export function NewPurchasePage() {
 function PayLine({ x, ship, can, busy, onVoid }) {
   const voided = !!x.voided_at;
   return (
-    <div className="row between small muted" style={voided ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
-      <span>{fmtDate(x.paid_at)} · {METHODS[x.method]} · {vnd(x.amount)}{ship ? ' (ship)' : ''}{voided ? ' · đã huỷ' : ''}</span>
-      {can && !voided && <button type="button" className="btn sm" disabled={busy} onClick={() => onVoid(x)}>Huỷ khoản này</button>}
+    <div className="ledger-line pay-line" style={voided ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+      <span className="small muted">
+        {fmtDate(x.paid_at)} · {METHODS[x.method]}{ship ? ' · ship' : ''}{voided ? ' · đã huỷ' : ''}
+        {can && !voided && <> · <button type="button" className="linkbtn" disabled={busy} onClick={() => onVoid(x)}>Huỷ khoản này</button></>}
+      </span>
+      <span className="num">{vnd(x.amount)}</span>
     </div>
   );
 }
@@ -206,8 +238,8 @@ export function PurchasePage() {
   const nav = useNavigate();
   const s = useAsync(() => api.get(`/purchases/${id}`), [id]);
   const { busy, error, run } = useAction();
-  const [pay, setPay] = useState('');
-  const [shipPay, setShipPay] = useState('');
+  const [pay, setPay] = useState(null); // null = chưa gõ: tự điền số còn nợ
+  const [shipPay, setShipPay] = useState(null);
   const [refund, setRefund] = useState(null); // phương thức NCC hoàn tiền khi huỷ phiếu đã trả tiền
   const voidPay = (x) => confirm(`Huỷ khoản ${vnd(x.amount)} đã ghi ngày ${fmtDate(x.paid_at)}? Khoản này sẽ tính lại vào số còn nợ.`) && run(async () => { await api.post(`/payments/${x.id}/void`, {}); s.reload(); });
   return (
@@ -228,22 +260,22 @@ export function PurchasePage() {
                   <div>
                     <div className="ledger-line"><span>Tổng</span><b className="num">{vnd(p.total_amount)}</b></div>
                     <div className="ledger-line"><span>Đã trả</span><b className="num">{vnd(p.paid_amount)}</b></div>
+                    {p.payments?.map((x) => <PayLine key={x.id} x={x} can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                   </div>
-                  {p.payments?.map((x) => <PayLine key={x.id} x={x} can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                   {p.carrier_amount > 0 && (
                     <div className="stack" style={{ gap: 8 }}>
                       <div>
                         <div className="ledger-line"><span>Ship trả bên vận chuyển</span><b className="num">{vnd(p.carrier_amount)}</b></div>
                         <div className="ledger-line"><span>Đã trả ship</span><b className="num">{vnd(p.carrier_paid_amount)}</b></div>
+                        {p.carrier_payments?.map((x) => <PayLine key={x.id} x={x} ship can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                       </div>
-                      {p.carrier_payments?.map((x) => <PayLine key={x.id} x={x} ship can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                       {p.status === 'received' && p.carrier_debt > 0 && (
-                        <div className="row"><MoneyInput placeholder={`Trả ship (còn ${p.carrier_debt})`} value={shipPay} onChange={(e) => setShipPay(e.target.value)} /><button className="btn" disabled={busy || !shipPay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/carrier-payments`, { amount: Number(shipPay) }); setShipPay(''); s.reload(); })}>Ghi trả ship</button></div>
+                        <div className="row"><MoneyFill fill={p.carrier_debt} value={shipPay ?? String(p.carrier_debt)} onChange={(e) => setShipPay(e.target.value)} aria-label="Số tiền trả ship" /><button className="btn primary" disabled={busy || !Number(shipPay ?? p.carrier_debt)} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/carrier-payments`, { amount: Number(shipPay ?? p.carrier_debt) }); setShipPay(null); s.reload(); })}>Ghi trả ship</button></div>
                       )}
                     </div>
                   )}
                   {p.status === 'received' && p.debt > 0 && (
-                    <div className="row"><MoneyInput placeholder={`Trả nợ (còn ${p.debt})`} value={pay} onChange={(e) => setPay(e.target.value)} /><button className="btn" disabled={busy || !pay} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay) }); setPay(''); s.reload(); })}>Ghi trả</button></div>
+                    <div className="row"><MoneyFill fill={p.debt} value={pay ?? String(p.debt)} onChange={(e) => setPay(e.target.value)} aria-label="Số tiền trả nợ" /><button className="btn primary" disabled={busy || !Number(pay ?? p.debt)} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay ?? p.debt) }); setPay(null); s.reload(); })}>Ghi trả</button></div>
                   )}
                 </div>
               </Section>

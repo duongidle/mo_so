@@ -9,3 +9,11 @@ describe('"Tất cả shop" chỉ ở các trang cho phép', () => {
     for (const p of ['/products', '/products/new', '/purchases', '/purchases/pur_1', '/expenses', '/settings', '/more']) expect(allowsAllShops(p), p).toBe(false);
   });
 });
+
+describe('hidesShopSwitcher', () => {
+  it('ẩn bộ chọn shop ở trang Nhập hàng (không phụ thuộc shop), giữ ở các trang khác', async () => {
+    const { hidesShopSwitcher } = await import('../lib/routes.js');
+    for (const p of ['/purchases', '/purchases/new', '/purchases/pur_1']) expect(hidesShopSwitcher(p)).toBe(true);
+    for (const p of ['/', '/orders', '/stock', '/products', '/settings']) expect(hidesShopSwitcher(p)).toBe(false);
+  });
+});

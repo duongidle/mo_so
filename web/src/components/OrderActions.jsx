@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { Async, ErrorBox, Field, Modal, Section, useAction, useAsync } from './ui.jsx';
-import MoneyInput from './MoneyInput.jsx';
+import MoneyFill from './MoneyFill.jsx';
 import { vnd, fmtDate } from '../lib.js';
 
 const SHIP_STATUS = { in_transit: 'Đang giao', delivered: 'Đã giao', returned: 'Hoàn hàng', lost: 'Thất lạc' };
@@ -13,7 +14,6 @@ export function ShipModal({ order: o, onClose, onDone }) {
   const [carrierId, setCarrierId] = useState('');
   const [code, setCode] = useState('');
   const [cod, setCod] = useState(String(o.amount_due));
-  const [newName, setNewName] = useState('');
   return (
     <Modal title="Giao cho hãng vận chuyển" onClose={onClose} footer={<button className="btn primary" disabled={busy || !carrierId || !code.trim()} onClick={() => run(async () => { await api.post(`/orders/${o.id}/ship`, { carrier_id: carrierId, tracking_code: code, cod_amount: Number(cod) || 0 }); onDone(); })}>Giao hàng</button>}>
       <Async state={carriers}>
@@ -21,13 +21,12 @@ export function ShipModal({ order: o, onClose, onDone }) {
           <div className="stack">
             {data.length ? (
               <Field label="Hãng vận chuyển"><select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} aria-label="Hãng vận chuyển"><option value="">Chọn hãng…</option>{data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-            ) : <p className="muted small">Chưa có hãng nào. Thêm hãng đầu tiên:</p>}
-            <div className="row"><input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Thêm hãng mới (GHN, GHTK, Viettel Post…)" aria-label="Tên hãng mới" /><button className="btn sm" disabled={!newName.trim() || busy} onClick={() => run(async () => { const r = await api.post('/carriers', { name: newName }); setNewName(''); setCarrierId(r.data.id); carriers.reload(); })}>Thêm</button></div>
+            ) : <p className="muted small">Chưa có hãng nào. Thêm hãng ở <Link to="/settings?tab=shipping">Cài đặt → Vận chuyển</Link>.</p>}
           </div>
         )}
       </Async>
       <Field label="Mã vận đơn"><input value={code} onChange={(e) => setCode(e.target.value)} aria-label="Mã vận đơn" /></Field>
-      <Field label={`Tiền hãng thu hộ (COD). Khách còn nợ ${vnd(o.amount_due)}; đặt 0 nếu khách đã trả đủ`}><MoneyInput value={cod} onChange={(e) => setCod(e.target.value)} /></Field>
+      <Field label={`Tiền hãng thu hộ (COD). Khách còn nợ ${vnd(o.amount_due)}; đặt 0 nếu khách đã trả đủ`}><MoneyFill fill={o.amount_due} label="Thu hộ đủ" value={cod} onChange={(e) => setCod(e.target.value)} /></Field>
       <ErrorBox error={error} />
     </Modal>
   );

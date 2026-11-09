@@ -125,6 +125,8 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .9em; 
 .section > .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px var(--card-pad) 0; }
 .section > .section-body { padding: var(--card-pad); }
 .section.flush > .section-body { padding: 0; }
+/* Thẻ bảng không có tiêu đề: hàng tiêu đề cột là mép trên của thẻ, bo góc theo thẻ */
+.section.flush > .section-body:first-child { border-radius: inherit; overflow: hidden; }
 .section-head h3 { margin: 0; }
 .fold { border-top: 1px solid var(--hair); padding-top: 12px; }
 .fold > summary { cursor: pointer; font-weight: 500; font-size: var(--fs-sm); color: var(--ink-soft); list-style: none; min-height: 32px; display: flex; align-items: center; gap: 8px; }
@@ -859,3 +861,41 @@ b, strong { font-weight: 600; }
 .hb-full .tw td { padding: var(--sp-3); border-top: 1px solid var(--hair); vertical-align: top; }
 .hb-full .tw td:first-child { font-weight: 500; width: 36%; }
 @media (prefers-reduced-motion: reduce) { .hb-steps li { transition: none; } }
+
+/* Thanh tiến trình đơn: bước đã qua chốt bằng dấu ✓, bước đang chờ làm nổi bật, bước chưa tới mờ. Phẳng, không bóng. */
+.flow { list-style: none; margin: 0; padding: var(--sp-4) var(--sp-2); display: flex; background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius); }
+.flow-step { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.flow-step + .flow-step::before { content: ''; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px; background: var(--hair); }
+.flow-step.done::before, .flow-step.skipped::before, .flow-step.current::before, .flow-step.end::before { background: var(--seal); }
+.flow-step.skipped::before { background: repeating-linear-gradient(90deg, var(--seal) 0 4px, transparent 4px 8px); }
+.flow-dot { position: relative; z-index: 1; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: var(--fs-sm); font-weight: 600; background: var(--paper); border: 2px solid var(--field-border); color: var(--ink-soft); }
+.flow-step.done .flow-dot { background: var(--seal); border-color: var(--seal); color: var(--linen); }
+.flow-step.skipped .flow-dot { border-style: dashed; border-color: var(--seal); color: var(--seal); }
+.flow-step.current .flow-dot { border-color: var(--seal); color: var(--seal); background: color-mix(in srgb, var(--seal) 10%, var(--paper)); }
+.flow-step.end.bad .flow-dot { background: var(--st-cancelled); border-color: var(--st-cancelled); color: var(--linen); }
+.flow-step.end.warn .flow-dot { background: var(--st-returned); border-color: var(--st-returned); color: var(--linen); }
+.flow-step.end.bad::before { background: var(--st-cancelled); } .flow-step.end.warn::before { background: var(--st-returned); }
+.flow-label { font-size: var(--fs-sm); font-weight: 500; color: var(--ink-soft); }
+.flow-step.done .flow-label, .flow-step.current .flow-label, .flow-step.end .flow-label { color: var(--text); }
+.flow-step.current .flow-label { font-weight: 600; }
+.flow-sub { min-height: 16px; line-height: 16px; font-size: 12px; }
+@media (max-width: 599px) { .flow-sub { display: none; } .flow-label { font-size: 12px; } }
+
+.order-actions .order-more { margin-left: auto; }
+.order-menu { width: 240px !important; padding: var(--sp-1) !important; gap: 0 !important; }
+.order-menu-item { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: var(--control-radius); padding: 8px 12px; min-height: 40px; font: inherit; font-size: var(--fs-base); color: var(--text); cursor: pointer; }
+.order-menu-item:hover, .order-menu-item:focus-visible { background: var(--tint); text-decoration: none; outline: none; }
+.order-menu-item.danger { color: var(--st-cancelled); }
+
+/* Ô tiền kèm nút điền nhanh số đủ */
+.money-fill { display: flex; gap: var(--sp-2); align-items: center; }
+.money-fill > input, .money-fill > .money-input { flex: 1 1 auto; min-width: 0; }
+.money-fill > .btn { flex: 0 0 auto; white-space: nowrap; }
+
+.linkbtn { background: none; border: 0; padding: 0; min-height: 0; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font: inherit; }
+.linkbtn:hover { color: var(--seal); }
+.pick-list .pick { align-items: center; }
+
+.money-fill { flex: 1 1 auto; min-width: 0; }
+.pay-line { align-items: center; }
+.pay-line .num { white-space: nowrap; }

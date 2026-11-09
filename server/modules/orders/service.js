@@ -59,6 +59,7 @@ export function getOrder(id) {
   }
   o.history = db().prepare('SELECT * FROM order_status_history WHERE order_id = ? ORDER BY created_at').all(o.id);
   o.payments = listPaymentsFor('order', o.id);
+  o.packaged_at = db().prepare('SELECT created_at FROM packaging_runs WHERE order_id = ?').get(o.id)?.created_at ?? null;
   o.returns = db()
     .prepare('SELECT * FROM order_returns WHERE order_id = ? ORDER BY created_at')
     .all(o.id)
