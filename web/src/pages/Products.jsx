@@ -45,7 +45,7 @@ export default function Products() {
       <Toolbar>
         <Tabs options={[['products', 'Sản phẩm'], ['archived', 'Đã ngừng kinh doanh'], ['categories', 'Danh mục']]} value={tab} onChange={setTab} />
         {tab !== 'categories' && <>
-          <Chips options={[['', 'Hàng bán'], ['single', 'Đơn lẻ'], ['combo', 'Combo'], ['packaging', 'Đóng gói'], ['supply', 'Vận hành'], ['unlisted', 'Chưa gắn shop']]} value={itemType || type} onChange={(v) => { const material = v === 'packaging' || v === 'supply'; setItemType(material ? v : ''); setType(material ? '' : v); }} />
+          <Chips options={[['', 'Hàng bán'], ['single', 'Đơn lẻ'], ['combo', 'Combo'], ['service', 'Dịch vụ'], ['packaging', 'Đóng gói'], ['supply', 'Vận hành'], ['unlisted', 'Chưa gắn shop']]} value={itemType || type} onChange={(v) => { const material = v === 'packaging' || v === 'supply' || v === 'service'; setItemType(material ? v : ''); setType(material ? '' : v); }} />
           <SearchBox value={q} onChange={setQ} placeholder="Tìm tên, SKU, mã vạch…" />
           <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Danh mục">
             <option value="">Mọi danh mục</option>{catList.map((c) => <option key={c.id} value={c.id}>{indent(c)}</option>)}
@@ -61,18 +61,19 @@ export default function Products() {
               <tbody>{data.map((p) => {
                 const img = p.image_url || p.variants.find((v) => v.image_url)?.image_url;
                 const live = p.variants.filter((v) => !v.archived_at);
-                const prices = p.item_type === 'product' ? live.map((v) => v.listings.find((l) => l.shop_id === shopId)?.price ?? v.default_price) : [];
+                const sellType = p.item_type === 'product' || p.item_type === 'service';
+                const prices = sellType ? live.map((v) => v.listings.find((l) => l.shop_id === shopId)?.price ?? v.default_price) : [];
                 const isCombo = p.variants.some((v) => v.kind === 'bundle');
-                const selling = p.item_type === 'product' && (!isAll ? live.some((v) => v.listings.some((l) => l.shop_id === shopId && l.active !== 0 && l.active !== false)) : live.length > 0);
+                const selling = sellType && (!isAll ? live.some((v) => v.listings.some((l) => l.shop_id === shopId && l.active !== 0 && l.active !== false)) : live.length > 0);
                 const low = p.low_stock_count > 0;
                 return (
                   <tr key={p.id} className="click" tabIndex={0} onClick={() => nav(`/products/${p.id}`)} onKeyDown={(e) => e.key === 'Enter' && nav(`/products/${p.id}`)}>
-                    <td className="pcell"><div className="row" style={{ gap: 12 }}><ProductThumb src={img} name={p.name} size={40} /><div className="grow"><b>{p.name}</b>{p.item_type !== 'product' && <span className="badge plain" style={{ marginLeft: 8 }}>{p.item_type === 'packaging' ? 'Đóng gói' : 'Vận hành'}</span>}{isCombo && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<span className="sub">{[p.category_id && catName[p.category_id], live.slice(0, 2).map((v) => v.sku).join(', ') + (live.length > 2 ? '…' : '')].filter(Boolean).join(' · ')}</span></div></div></td>
+                    <td className="pcell"><div className="row" style={{ gap: 12 }}><ProductThumb src={img} name={p.name} size={40} /><div className="grow"><b>{p.name}</b>{p.item_type !== 'product' && <span className="badge plain" style={{ marginLeft: 8 }}>{p.item_type === 'service' ? 'Dịch vụ' : p.item_type === 'packaging' ? 'Đóng gói' : 'Vận hành'}</span>}{isCombo && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}<span className="sub">{[p.category_id && catName[p.category_id], live.slice(0, 2).map((v) => v.sku).join(', ') + (live.length > 2 ? '…' : '')].filter(Boolean).join(' · ')}</span></div></div></td>
                     <td className="hide-sm num">{live.length}</td>
-                    <td className="num">{p.item_type !== 'product' ? <span className="muted">—</span> : prices.length ? (Math.min(...prices) === Math.max(...prices) ? vnd(prices[0]) : `${vnd(Math.min(...prices))} – ${vnd(Math.max(...prices))}`) : ''}</td>
+                    <td className="num">{!sellType ? <span className="muted">—</span> : prices.length ? (Math.min(...prices) === Math.max(...prices) ? vnd(prices[0]) : `${vnd(Math.min(...prices))} – ${vnd(Math.max(...prices))}`) : ''}</td>
                     <td className={`num${low ? ' h-red' : ''}`}>{isCombo || p.stock_total === null || p.stock_total === undefined ? <span className="muted">—</span> : <b>{num(p.stock_total)}</b>}{low && <span className="sub h-red">dưới tối thiểu</span>}</td>
                     {fengShui && <td className="hide-sm"><div className="row wrap">{(p.elements || []).map((e) => <Element key={e} name={e} />)}</div></td>}
-                    <td className={archivedTab ? '' : 'hide-sm'}>{archivedTab ? <button type="button" className="btn sm" onClick={async (e) => { e.stopPropagation(); await api.post(`/products/${p.id}/restore`); setNotice(`Đã khôi phục ${p.name}.`); state.reload(); }}>Khôi phục</button> : p.item_type !== 'product' ? <span className="badge plain">Vật tư kho</span> : selling ? <span className="badge st-completed">Đang bán</span> : <span className="badge plain">Ngừng bán</span>}</td>
+                    <td className={archivedTab ? '' : 'hide-sm'}>{archivedTab ? <button type="button" className="btn sm" onClick={async (e) => { e.stopPropagation(); await api.post(`/products/${p.id}/restore`); setNotice(`Đã khôi phục ${p.name}.`); state.reload(); }}>Khôi phục</button> : !sellType ? <span className="badge plain">Vật tư kho</span> : selling ? <span className="badge st-completed">Đang bán</span> : <span className="badge plain">Ngừng bán</span>}</td>
                   </tr>);
               })}</tbody>
             </table></div></Card>

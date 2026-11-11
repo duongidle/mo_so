@@ -2,12 +2,13 @@ import { getDb } from '../../db/index.js';
 import { addLot } from '../inventory/lots.js';
 import { newId } from '../../lib/id.js';
 import { nowIso, toIso } from '../../lib/time.js';
-import { allocate } from '../../lib/money.js';
+import { allocate, lineAmount } from '../../lib/money.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { audit, emit } from '../../lib/events.js';
 import { dailyCode, runningCode } from '../../lib/codes.js';
 import { applyMovement, getLevel } from '../inventory/service.js';
 import { recordPayment, listPaymentsFor, voidPaymentRow } from '../payments/service.js';
+import { lineStates, supplierBalance } from './state.js';
 
 const db = () => getDb();
 
@@ -16,7 +17,7 @@ export function listSuppliers(q) {
   const rows = db()
     .prepare(
       `SELECT s.*,
-        COALESCE((SELECT SUM(total_amount - paid_amount) FROM purchases p WHERE p.supplier_id = s.id AND p.status = 'received'),0) AS debt
+        COALESCE((SELECT SUM(MAX(0, total_amount - returned_amount - allowance_amount - paid_amount)) FROM purchases p WHERE p.supplier_id = s.id AND p.status = 'received'),0) AS debt
        FROM suppliers s WHERE s.archived_at IS NULL ${q ? 'AND (s.name LIKE ? OR s.phone LIKE ?)' : ''} ORDER BY s.name`,
     )
     .all(...(q ? [`%${q}%`, `%${q}%`] : []));
@@ -63,7 +64,21 @@ export function getPurchase(id) {
     .all(id);
   p.payments = listPaymentsFor('purchase', id);
   p.carrier_payments = listPaymentsFor('purchase_carrier', id);
-  p.debt = p.status === 'received' ? p.total_amount - p.paid_amount : 0;
+  const bal = p.status === 'received' ? supplierBalance(p) : { debt: 0, supplier_owes: 0 };
+  p.debt = bal.debt;
+  p.supplier_owes = bal.supplier_owes; // NCC còn nợ shop (đã trả dư sau khi trừ hàng trả / giảm giá)
+  if (p.status === 'received') {
+    const st = lineStates(id, p.lines, p.discount_amount);
+    for (const l of p.lines) {
+      const x = st.get(l.id);
+      l.returned_qty = x.returned_qty;
+      l.returnable_qty = x.net_qty;
+      l.remaining_value = x.remaining_value;
+      l.allowance_amount = x.allowance_amount;
+    }
+  }
+  p.returns = db().prepare('SELECT * FROM purchase_returns WHERE purchase_id = ? ORDER BY returned_at, rowid').all(id);
+  p.allowances = db().prepare('SELECT * FROM purchase_allowances WHERE purchase_id = ? ORDER BY allowed_at, rowid').all(id);
   p.shipping_payee = p.carrier_amount > 0 ? 'carrier' : 'supplier';
   p.carrier_debt = p.status === 'received' ? p.carrier_amount - p.carrier_paid_amount : 0;
   return p;
@@ -89,16 +104,17 @@ export function listPurchases({ status, supplierId, shopId, limit = 50, cursor }
 }
 
 function computeTotals(lines, { discount_amount = 0, shipping_fee = 0, other_fee = 0, carrier_ship = false }) {
-  const subtotal = lines.reduce((a, l) => a + l.qty * l.unit_cost, 0);
+  const amounts = lines.map((l) => lineAmount(l.qty, l.unit_cost)); // làm tròn một lần ở cấp dòng, mọi tổng cộng từ các số nguyên này
+  const subtotal = amounts.reduce((a, b) => a + b, 0);
   if (discount_amount > subtotal) throw badRequest('INVALID_DISCOUNT', 'Chiết khấu lớn hơn tổng tiền hàng');
   // Ship trả bên vận chuyển: vào giá vốn (extra bên dưới) nhưng không phải nợ NCC
   const carrier = carrier_ship ? shipping_fee : 0;
   const total = subtotal - discount_amount + shipping_fee - carrier + other_fee;
   // Phân bổ (phí − chiết khấu) theo giá trị dòng để ra giá vốn thực
   const extra = shipping_fee + other_fee - discount_amount;
-  const alloc = allocate(Math.abs(extra), lines.map((l) => l.qty * l.unit_cost)).map((x) => (extra < 0 ? -x : x));
+  const alloc = allocate(Math.abs(extra), amounts).map((x) => (extra < 0 ? -x : x));
   const computed = lines.map((l, i) => {
-    const lineTotal = l.qty * l.unit_cost;
+    const lineTotal = amounts[i];
     const landedTotal = lineTotal + alloc[i];
     return { ...l, line_total: lineTotal, allocated_cost: alloc[i], landed_unit_cost: Math.round(landedTotal / l.qty) };
   });
@@ -189,6 +205,8 @@ export function receivePurchase(id, actor) {
 export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
   const p = getPurchase(id);
   if (p.status === 'cancelled') throw conflict('INVALID_STATUS', 'Phiếu nhập đã huỷ');
+  const used = db().prepare('SELECT (SELECT COUNT(*) FROM purchase_returns WHERE purchase_id = ? AND voided_at IS NULL) + (SELECT COUNT(*) FROM purchase_allowances WHERE purchase_id = ? AND voided_at IS NULL) AS n').get(id, id).n;
+  if (used > 0) throw conflict('PURCHASE_HAS_RETURNS', 'Phiếu đã có phiếu trả hàng nhập hoặc giảm giá sau nhận. Huỷ các phiếu đó trước rồi mới huỷ được phiếu nhập.', { count: used });
   // Đã trả tiền NCC thì huỷ phiếu phải kèm việc NCC hoàn lại tiền, nếu không tiền đã chi nằm đó mà không có hàng, không có công nợ
   if (p.paid_amount > 0 && !refundMethod) {
     throw conflict('PURCHASE_PAID', `Phiếu đã trả NCC ${p.paid_amount} ₫. Huỷ phiếu cần ghi nhận NCC hoàn lại số tiền này (chọn phương thức hoàn).`, { paid_amount: p.paid_amount });
@@ -201,7 +219,7 @@ export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
     for (const l of p.lines) {
       const level = getLevel(p.warehouse_id, l.variant_id);
       if (level.on_hand < l.qty) {
-        throw conflict('STOCK_NOT_ENOUGH', `Không thể huỷ: hàng ${l.sku} đã bán bớt (còn ${level.on_hand}, cần rút ${l.qty}). Vui lòng tạo phiếu điều chỉnh thay vì huỷ.`);
+        throw conflict('STOCK_NOT_ENOUGH', `Không thể huỷ: hàng ${l.sku} đã bán bớt (còn ${level.on_hand}, cần rút ${l.qty}). Dùng "Trả hàng NCC" cho phần còn lại (giảm nợ NCC đúng giá nhập) thay vì huỷ.`);
       }
     }
     for (const l of p.lines) {
@@ -226,7 +244,7 @@ export function cancelPurchase(id, reason, actor, { refundMethod } = {}) {
 export function addPurchasePayment(id, { amount, method, paidAt, note }, actor) {
   const p = getPurchase(id);
   if (p.status === 'cancelled') throw conflict('INVALID_STATUS', 'Phiếu nhập đã huỷ');
-  if (p.paid_amount + amount > p.total_amount) throw badRequest('OVERPAID', 'Số tiền trả vượt tổng phiếu nhập');
+  if (p.paid_amount + amount > p.total_amount - p.returned_amount - p.allowance_amount) throw badRequest('OVERPAID', 'Số tiền trả vượt số còn nợ của phiếu nhập (đã trừ hàng trả và giảm giá)');
   recordPayment({ direction: 'out', refType: 'purchase', refId: id, shopId: p.shop_id, amount, method, paidAt, note }, actor);
   db().prepare('UPDATE purchases SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?').run(amount, nowIso(), id);
   const after = getPurchase(id);
@@ -238,7 +256,16 @@ export function addPurchasePayment(id, { amount, method, paidAt, note }, actor) 
 export function voidPurchasePayment(p, reason, actor) {
   const pur = getPurchase(p.ref_id);
   if (pur.status === 'cancelled') throw conflict('INVALID_STATUS', 'Phiếu nhập đã huỷ, các khoản tiền của nó đã được cấn bằng khoản NCC hoàn tiền');
-  if (p.direction !== 'out') throw conflict('PAYMENT_NOT_VOIDABLE', 'Chỉ huỷ được khoản đã trả; khoản NCC hoàn tiền do huỷ phiếu tạo ra.');
+  if (p.direction !== 'out') {
+    // Khoản NCC hoàn tiền nhập tay (thu sau): huỷ được, nợ NCC quay lại. Khoản do phiếu trả / giảm giá tạo ra thì huỷ phiếu đó.
+    const linked = db().prepare('SELECT 1 FROM purchase_returns WHERE refund_payment_id = ? UNION SELECT 1 FROM purchase_allowances WHERE refund_payment_id = ?').get(p.id, p.id);
+    if (p.ref_type !== 'purchase' || linked) throw conflict('PAYMENT_FROM_RETURN', 'Khoản NCC hoàn tiền này do phiếu trả hàng nhập hoặc giảm giá sau nhận tạo ra. Huỷ phiếu đó thay vì huỷ riêng khoản này.');
+    voidPaymentRow(p);
+    db().prepare('UPDATE purchases SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?').run(p.amount, nowIso(), pur.id);
+    const back = getPurchase(pur.id);
+    audit(actor, 'payment.voided', 'purchase', pur.id, { payment: { id: p.id, amount: p.amount, method: p.method, ref_type: p.ref_type, direction: 'in' } }, { reason: reason ?? null, paid_amount: back.paid_amount });
+    return back;
+  }
   voidPaymentRow(p);
   const col = p.ref_type === 'purchase_carrier' ? 'carrier_paid_amount' : 'paid_amount';
   db().prepare(`UPDATE purchases SET ${col} = ${col} - ?, updated_at = ? WHERE id = ?`).run(p.amount, nowIso(), pur.id);

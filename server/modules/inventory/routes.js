@@ -8,8 +8,10 @@ import * as materials from './materials.js';
 import * as close from './close.js';
 import * as costing from './costing.js';
 import * as lots from './lots.js';
+import * as conv from './conversions.js';
 import { shopWarehouseIds } from '../orders/allocation.js';
 import { flushJournal } from '../accounting/journal.js';
+import { STOCK_REASON_CODES } from '../../lib/stockReasons.js';
 import { rowsToCsv } from '../system/export.js';
 
 const r = new Hono();
@@ -94,6 +96,7 @@ r.post('/stock-adjustments', async (c) => {
       warehouse_id: z.string(),
       kind: z.enum(['opening', 'count', 'adjust', 'damage']),
       reason: optionalText,
+      reason_code: z.enum(STOCK_REASON_CODES).nullish(),
       lines: z
         .array(
           z.object({
@@ -106,7 +109,7 @@ r.post('/stock-adjustments', async (c) => {
         .min(1),
     }),
   );
-  const res = tx(() => svc.createAdjustment({ warehouseId: input.warehouse_id, kind: input.kind, reason: input.reason, lines: input.lines }, c.get('actor')));
+  const res = tx(() => svc.createAdjustment({ warehouseId: input.warehouse_id, kind: input.kind, reason: input.reason, reasonCode: input.reason_code, lines: input.lines }, c.get('actor')));
   return c.json({ data: res }, 201);
 });
 
@@ -124,10 +127,48 @@ r.post('/transfers', async (c) => {
   return c.json({ data: res }, 201);
 });
 
+// Phiếu đóng gói / chuyển đổi hàng (DG-…)
+const convSource = z.object({ variant_id: z.string(), qty, lot_id: z.string().nullish() });
+const convOutput = z.object({ variant_id: z.string(), qty, weight: z.coerce.number().positive().nullish(), lot_no: z.string().trim().max(60).nullable().optional(), expiry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional() });
+const convBody = z.object({ warehouse_id: z.string(), shop_id: z.string().nullish(), note: optionalText, sources: z.array(convSource).min(1).max(50), outputs: z.array(convOutput).min(1).max(50) });
+const toConv = (i) => ({ warehouseId: i.warehouse_id, shopId: i.shop_id, note: i.note, sources: i.sources.map((s) => ({ ...s, lot_id: s.lot_id ?? undefined })), outputs: i.outputs.map((o) => ({ ...o, weight: o.weight ?? undefined })) });
+r.get('/conversions', (c) => {
+  const q = query(c, z.object({ warehouse_id: z.string().optional(), shop_id: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().optional() }));
+  return c.json(conv.listConversions({ warehouseId: q.warehouse_id, shopId: q.shop_id, limit: q.limit, cursor: q.cursor }));
+});
+r.post('/conversions/suggest', async (c) => {
+  const input = await body(c, z.object({ warehouse_id: z.string(), outputs: z.array(z.object({ variant_id: z.string(), qty })).min(1).max(50) }));
+  return c.json({ data: conv.suggest({ warehouseId: input.warehouse_id, outputs: input.outputs }) });
+});
+r.post('/conversions/preview', async (c) => {
+  const input = await body(c, convBody);
+  const i = toConv(input);
+  return c.json({ data: conv.preview({ warehouseId: i.warehouseId, sources: i.sources, outputs: i.outputs }) });
+});
+r.post('/conversions', async (c) => {
+  const input = await body(c, convBody);
+  return c.json({ data: tx(() => conv.createConversion(toConv(input), c.get('actor'))) }, 201);
+});
+r.get('/conversions/:id', (c) => c.json({ data: conv.getConversion(c.req.param('id')) }));
+r.post('/conversions/:id/void', async (c) => {
+  const input = await body(c, z.object({ reason: z.string().trim().min(1).max(500) }));
+  return c.json({ data: tx(() => conv.voidConversion(c.req.param('id'), input.reason, c.get('actor'))) });
+});
+r.get('/conversion-recipes', (c) => c.json({ data: conv.listRecipes(query(c, z.object({ product_id: z.string() })).product_id) }));
+r.put('/conversion-recipes/:variantId', async (c) => {
+  const input = await body(c, z.object({ source_variant_id: z.string(), qty_per_unit: qty }));
+  return c.json({ data: tx(() => conv.saveRecipe(c.req.param('variantId'), input, c.get('actor'))) });
+});
+r.delete('/conversion-recipes/:variantId', (c) => c.json({ data: tx(() => conv.deleteRecipe(c.req.param('variantId'), c.get('actor'))) }));
+
 // Lô và hạn dùng
 r.get('/stock-lots', (c) => {
   const q = query(c, z.object({ warehouse_id: z.string().optional(), variant_id: z.string().optional(), shop_id: z.string().optional(), within_days: z.coerce.number().int().min(0).max(3650).optional() }));
   return c.json({ data: lots.listLots({ warehouseId: q.warehouse_id, variantId: q.variant_id, withinDays: q.within_days, shopWarehouseIds: q.shop_id ? shopWarehouseIds(q.shop_id) : undefined }) });
+});
+r.post('/stock-lots/:id/write-off', async (c) => {
+  const input = await body(c, z.object({ reason: optionalText }));
+  return c.json({ data: tx(() => svc.writeOffExpiredLot(c.req.param('id'), { reason: input.reason }, c.get('actor'))) }, 201);
 });
 r.get('/stock-lots/summary', (c) => {
   const q = query(c, z.object({ shop_id: z.string().optional() }));

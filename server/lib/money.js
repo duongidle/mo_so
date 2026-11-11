@@ -27,6 +27,42 @@ export function allocate(total, weights) {
   return out;
 }
 
+/** Chuẩn hoá số lượng về tối đa 3 chữ số thập phân (tránh 10.042000000001 sau cộng trừ). */
+export function qty3(n) {
+  return Math.round(n * 1000) / 1000;
+}
+
+/** Số lượng dưới dạng số nguyên nghìn (milli-đơn vị), dùng cho phép tính chính xác. */
+const milli = (q) => Math.round(q * 1000);
+
+/**
+ * Thành tiền = số lượng × đơn giá, làm tròn về đồng MỘT lần (nửa đồng làm tròn ra xa số 0).
+ * Tính qua số nguyên nghìn nên 0,333 × 45.500 không bị sai do số thực. Đây là chỗ DUY NHẤT nhân SL × giá;
+ * mọi tổng cộng phải cộng các số nguyên đã làm tròn này, không nhân lại.
+ */
+export function lineAmount(qty, unitPrice) {
+  const num = BigInt(milli(qty)) * BigInt(Math.round(unitPrice));
+  return divRound(num, 1000n);
+}
+
+/**
+ * Phần của một số tiền nguyên ứng với `part` trên `whole` (cùng đơn vị số lượng): round(total × part / whole).
+ * Dùng cho luỹ kế khi trả/nhập lại một phần: giá trị luỹ kế sau lần này − tổng đã ghi trước đó.
+ */
+export function shareOf(total, part, whole) {
+  const w = milli(whole);
+  if (w === 0) return 0;
+  return divRound(BigInt(Math.round(total)) * BigInt(milli(part)), BigInt(w));
+}
+
+function divRound(num, den) {
+  const neg = num < 0n !== den < 0n;
+  const a = num < 0n ? -num : num;
+  const b = den < 0n ? -den : den;
+  const q = (2n * a + b) / (2n * b);
+  return Number(neg ? -q : q);
+}
+
 export function formatVnd(n) {
   return `${new Intl.NumberFormat('vi-VN').format(n)} ₫`;
 }

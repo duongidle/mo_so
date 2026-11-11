@@ -48,7 +48,7 @@ const imagesInput = z.array(z.object({ id: z.string(), variant_id: z.string().op
 
 const productInput = z.object({
   name: z.string().trim().min(1).max(200),
-  item_type: z.enum(['product', 'packaging', 'supply']).default('product'),
+  item_type: z.enum(['product', 'service', 'packaging', 'supply']).default('product'),
   default_supplier_id: z.string().nullish(),
   description: optionalText,
   category_id: z.string().nullish(),
@@ -78,7 +78,7 @@ r.get('/products', (c) => {
       q: z.string().optional(),
       category_id: z.string().optional(),
       type: z.enum(['single', 'combo']).optional(),
-      item_type: z.enum(['product', 'packaging', 'supply']).optional(),
+      item_type: z.enum(['product', 'service', 'packaging', 'supply']).optional(),
       archived: z.string().optional(),
       unlisted: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(200).default(50),

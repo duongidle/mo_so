@@ -40,7 +40,7 @@ async function world() {
   // Trả toàn phần đơn sàn
   await api.post(`/orders/${o6.id}/returns`, { lines: [{ order_line_id: o6.lines[0].id, qty: 2, restock: true }] });
   // Huỷ đơn đã hoàn thành
-  await api.post(`/orders/${o5.id}/status`, { status: 'cancelled' });
+  await api.post(`/orders/${o5.id}/status`, { status: 'cancelled', paid_action: 'refund' });
   // Sửa phí sàn sau khi chốt
   await api.patch(`/orders/${o2.id}`, { platform_fee_amount: 30000 });
   // Chi phí
@@ -121,7 +121,8 @@ test('Trả hàng: doanh thu thuần giảm đúng phần hàng trả; phí ship
   assert.equal(o6.status, 'returned');
   assert.equal(o6.net_revenue, 0);
   assert.equal(o6.cogs_amount, 0);
-  assert.equal(o6.gross_profit, -18000, 'đơn sàn trả toàn phần: còn lỗ phí sàn (giả định phí sàn không được sàn hoàn lại)');
+  assert.equal(o6.platform_fee_refunded_amount, 18000, 'đơn sàn trả toàn phần: sàn hoàn đủ phí sàn');
+  assert.equal(o6.gross_profit, 0, 'đơn sàn trả toàn phần: không lỗ phí sàn');
 });
 
 test('Dòng tiền khớp từng đơn và từng phiếu nhập', async () => {

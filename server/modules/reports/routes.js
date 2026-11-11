@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { query } from '../../lib/http.js';
 import * as svc from './service.js';
+import { shrinkageReport } from './shrinkage.js';
 import { evaluateMetrics } from '../custom/service.js';
 
 const r = new Hono();
@@ -43,6 +44,10 @@ r.get('/cashflow', (c) => {
   return c.json({ data, meta: { scope: { shop_filtered: shopFiltered(flt), shared_expenses_included: !shopFiltered(flt), shared_expenses_not_included: data.shared_expenses_not_included, supplier_payable: 'account', receivables: shopFiltered(flt) ? 'shop' : 'account', receivables_as_of: 'today' } } });
 });
 r.get('/return-reasons', (c) => c.json({ data: svc.returnReasons(f(c)) }));
+r.get('/shrinkage', (c) => {
+  const flt = f(c);
+  return c.json({ data: shrinkageReport(flt), meta: { scope: { shop_filtered: shopFiltered(flt), warehouse: 'shop_warehouses' } } });
+});
 r.get('/expenses', (c) => c.json({ data: svc.expenseReport(f(c)) }));
 r.get('/aging', (c) => {
   const flt = f(c);

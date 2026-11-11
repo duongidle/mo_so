@@ -5,7 +5,7 @@ import { vnd } from '../lib.js';
 import { codRefusedForm, computeReturn, returnSummary } from '../lib/returnForm.js';
 import { RETURN_REASONS } from '../lib/returnReasons.js';
 
-export const emptyReturnForm = (marketplace = false) => ({ lines: {}, reason: '', reasonCode: '', shipOn: false, shipRefund: '', fee: '', shipCost: '', refund: null, method: 'cash', toCredit: false, awaitingGoods: marketplace });
+export const emptyReturnForm = (marketplace = false) => ({ lines: {}, reason: '', reasonCode: '', shipOn: false, shipRefund: '', fee: '', shipCost: '', refund: null, feeRefund: null, method: 'cash', toCredit: false, awaitingGoods: marketplace });
 
 /** Form trả hàng: dòng hàng → khối tiền → cần trả khách → tiền trả ngay → giải thích kết quả */
 export default function ReturnModal({ order: o, form, setForm, act, methodList, onClose, onDone }) {
@@ -22,6 +22,7 @@ export default function ReturnModal({ order: o, form, setForm, act, methodList, 
       shipping_refund_amount: r.shipRefund,
       return_fee_amount: r.fee,
       return_shipping_cost: r.shipCost,
+      ...(mp ? { platform_fee_refund_amount: r.feeRefund } : {}),
       awaiting_goods: !!form.awaitingGoods,
       allow_late: !!form.allowLate,
       refund: r.refund > 0 ? { amount: r.refund, method: form.toCredit ? 'customer_credit' : form.method, to_credit: !!form.toCredit } : null,
@@ -62,6 +63,10 @@ export default function ReturnModal({ order: o, form, setForm, act, methodList, 
       <label className="check small"><input type="checkbox" checked={!!form.awaitingGoods} onChange={(e) => set({ awaitingGoods: e.target.checked })} />Hàng chưa về shop (đang trên đường hoàn, chờ nhận trước khi cộng tồn)</label>
       {mp ? (
         <>
+          <Field label={`Phí sàn được hoàn (tối đa ${vnd(r.feeRefundMax)})`}>
+            <MoneyInput value={form.feeRefund == null ? String(r.feeRefundDefault) : form.feeRefund} onChange={(e) => set({ feeRefund: e.target.value })} />
+          </Field>
+          <p className="muted small">Mặc định theo tỷ lệ hàng trả: trả hết thì sàn hoàn đủ phí. Sàn không thu phí với hàng Trả hàng &amp; Hoàn tiền, nhưng vẫn tính phí nếu chỉ hoàn tiền không trả hàng; khi đó sửa về 0.</p>
           <p className="muted small">Đơn sàn: sàn tự hoàn tiền cho người mua rồi trừ vào tiền trả shop, nên không có phần trả khách, hoàn ship hay phí trả hàng. Nếu hàng chưa về, tồn kho và giá vốn chỉ cập nhật khi nhấn “Đã nhận hàng”.</p>
         </>
       ) : (

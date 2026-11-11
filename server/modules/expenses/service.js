@@ -164,7 +164,8 @@ export function recordPayouts({ items, method, channelId, paidAt, note, shopId, 
     if (settleDifference && amount !== pending.pending_amount) {
       feeDelta = pending.pending_amount - amount; // trả thiếu → phí sàn tăng; trả dư → phí sàn giảm (không âm)
       const fee = o.platform_fee_amount ?? 0;
-      if (fee + feeDelta < 0) feeDelta = -fee;
+      const floor = o.platform_fee_refunded_amount ?? 0; // phí sàn không xuống dưới phần sàn đã hoàn
+      if (fee + feeDelta < floor) feeDelta = floor - fee;
       updateOrder(o.id, { platform_fee_amount: fee + feeDelta }, actor);
       db().prepare('INSERT INTO payout_adjustments (id, order_id, shop_id, channel_id, expected_amount, received_amount, fee_delta, note, business_date, actor_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
         .run(newId('pad'), o.id, o.shop_id, o.channel_id, pending.pending_amount, amount, feeDelta, note ?? null, businessDate(toIso(paidAt) || nowIso()), actor?.id ?? null, nowIso());

@@ -44,9 +44,9 @@ export function buildPayload(f, { customShopId } = {}) {
     ...(f.mode === 'list' ? { name: r.name || null } : {}),
     barcode: r.barcode || null,
     default_price: Number(r.default_price) || 0,
-    min_stock: Number(r.min_stock) || 0,
+    min_stock: f.item_type === 'service' ? 0 : Number(r.min_stock) || 0,
     ...(f.mode === 'matrix' ? { option_values: r.option_values, image_id: r.image_id || null, active: r.active !== false } : {}),
-    ...(!r.id && num(r.opening_qty) > 0 ? { opening_qty: num(r.opening_qty), opening_cost: num(r.opening_cost) ?? 0 } : {}),
+    ...(!r.id && f.item_type !== 'service' && num(r.opening_qty) > 0 ? { opening_qty: num(r.opening_qty), opening_cost: num(r.opening_cost) ?? 0 } : {}),
   });
   const rows = f.mode === 'single' ? f.rows.slice(0, 1) : f.rows;
   const payload = {
@@ -124,6 +124,8 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
     } else set({ mode: f.origMode, rows: f.origRows, options: f.origOptions, removed: [], renames: [] });
   };
   const setRow = (i, patch) => set({ rows: f.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+  const isSvc = f.item_type === 'service'; // dịch vụ: bán như hàng nhưng không có kho, giá vốn, tồn
+  const sellable = f.item_type === 'product' || isSvc;
   const hasWarehouseChoice = warehouses.length > 1;
   const needsWarehouse = !f.existing || f.rows.some((r) => !r.id);
 
@@ -163,7 +165,7 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
         <Section title="Ảnh"><ImageGallery images={f.images} onChange={(images) => set({ images })} /></Section>
         <Section title="Phân loại">
           <div className="stack">
-            <Field label="Loại mặt hàng"><select value={f.item_type || 'product'} onChange={(e) => set({ item_type: e.target.value, ...(e.target.value === 'product' ? {} : { shop_ids: [] }) })}><option value="product">Hàng hóa bán</option><option value="packaging">Vật liệu đóng gói</option><option value="supply">Vật tư vận hành</option></select></Field>
+            <Field label="Loại mặt hàng"><select value={f.item_type || 'product'} onChange={(e) => set({ item_type: e.target.value, ...(e.target.value === 'product' || e.target.value === 'service' ? {} : { shop_ids: [] }) })}><option value="product">Hàng hóa bán</option><option value="service">Dịch vụ (không tồn kho)</option><option value="packaging">Vật liệu đóng gói</option><option value="supply">Vật tư vận hành</option></select></Field>
             <Field label="Danh mục">
               <select value={f.category_id} onChange={(e) => set({ category_id: e.target.value })}>
                 <option value="">Chưa phân loại</option>
@@ -173,15 +175,16 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
             <Field label="Thương hiệu"><input value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></Field>
             <Field label="Đơn vị"><input value={f.unit} onChange={(e) => set({ unit: e.target.value })} /></Field>
             <Field label="Nhà cung cấp mặc định"><select value={f.default_supplier_id || ''} onChange={(e) => set({ default_supplier_id: e.target.value })}><option value="">Chưa chọn</option>{supplierRows.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
-            {f.item_type === 'product' && <Field label="Bảo hành (ngày)" hint="Tính từ ngày hoàn thành đơn. Bỏ trống nếu không bảo hành."><input type="number" min="1" value={f.warranty_days} onChange={(e) => set({ warranty_days: e.target.value })} /></Field>}
+            {sellable && <Field label="Bảo hành (ngày)" hint="Tính từ ngày hoàn thành đơn. Bỏ trống nếu không bảo hành."><input type="number" min="1" value={f.warranty_days} onChange={(e) => set({ warranty_days: e.target.value })} /></Field>}
             <Fold title="Nhắc mua lại">
               <Field label="Chu kỳ dùng hết (ngày)" hint="Để nhắc khách mua lại"><input type="number" min="1" value={f.consumption_days} onChange={(e) => set({ consumption_days: e.target.value })} /></Field>
             </Fold>
           </div>
         </Section>
-        {f.existing && f.item_type === 'product' && <ChannelPrices productId={f.id} variants={f.rows} />}
+        {f.existing && sellable && <ChannelPrices productId={f.id} variants={f.rows} />}
         {f.existing && f.item_type === 'product' && <PackagingSpec productId={f.id} />}
-        {!f.existing && f.item_type === 'product' && (
+        {f.existing && f.item_type === 'product' && <ConversionRecipes productId={f.id} variants={f.rows.filter((r) => r.id)} />}
+        {!f.existing && sellable && (
           <Section title="Bán ở shop">
             <div className="stack" style={{ gap: 8 }}>{shops.map((s) => <label key={s.id} className="check"><input type="checkbox" checked={f.shop_ids.includes(s.id)} onChange={() => set({ shop_ids: toggle(f.shop_ids, s.id) })} />{s.name}</label>)}</div>
           </Section>
@@ -197,7 +200,7 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
       </Section>
 
       {(f.mode === 'single' || f.mode === 'list') && (
-        <Section title={f.mode === 'list' ? 'Biến thể' : 'Giá & kho'} actions={(!f.existing || f.origMode !== 'matrix') && (
+        <Section title={f.mode === 'list' ? 'Biến thể' : isSvc ? 'Giá bán' : 'Giá & kho'} actions={!isSvc && (!f.existing || f.origMode !== 'matrix') && (
           <label className="check small"><input type="checkbox" checked={false} onChange={(e) => switchMode(e.target.checked)} />Có biến thể (mùi, size, màu…)</label>
         )}>
           {single && (
@@ -205,15 +208,16 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
               <div className="grid cols-2 collapse">
                 <Field label="SKU"><input value={f.rows[0].sku} onChange={(e) => setRow(0, { sku: e.target.value.toUpperCase(), skuEdited: true })} /></Field>
                 <Field label="Giá bán"><MoneyInput value={f.rows[0].default_price} onChange={(e) => setRow(0, { default_price: e.target.value })} /></Field>
-                {!f.rows[0].id && <>
+                {!f.rows[0].id && !isSvc && <>
                   <Field label="Giá vốn"><MoneyInput value={f.rows[0].opening_cost} onChange={(e) => setRow(0, { opening_cost: e.target.value })} /></Field>
                   <Field label="Tồn đầu kỳ"><input type="number" min="0" value={f.rows[0].opening_qty} onChange={(e) => setRow(0, { opening_qty: e.target.value })} /></Field>
                 </>}
               </div>
-              <Fold title="Thêm thông tin (mã vạch, tồn tối thiểu)">
+              {isSvc && <div className="small muted">Dịch vụ không trừ kho, không có giá vốn và tồn đầu kỳ. Giá vốn của dòng dịch vụ trên đơn là 0.</div>}
+              <Fold title={isSvc ? 'Thêm thông tin (mã vạch)' : 'Thêm thông tin (mã vạch, tồn tối thiểu)'}>
                 <div className="grid cols-2 collapse">
                   <Field label="Mã vạch"><input value={f.rows[0].barcode} onChange={(e) => setRow(0, { barcode: e.target.value })} /></Field>
-                  <Field label="Tồn tối thiểu"><input type="number" min="0" value={f.rows[0].min_stock} onChange={(e) => setRow(0, { min_stock: e.target.value })} /></Field>
+                  {!isSvc && <Field label="Tồn tối thiểu"><input type="number" min="0" value={f.rows[0].min_stock} onChange={(e) => setRow(0, { min_stock: e.target.value })} /></Field>}
                 </div>
               </Fold>
             </div>
@@ -225,8 +229,8 @@ export default function ProductForm({ init, onClose, onSaved, onDirty, onRemoved
                   <Field label="SKU"><input value={r.sku} onChange={(e) => setRow(i, { sku: e.target.value.toUpperCase() })} /></Field>
                   <Field label="Tên biến thể"><input value={r.name || ''} onChange={(e) => setRow(i, { name: e.target.value })} /></Field>
                   <Field label="Giá bán"><MoneyInput value={r.default_price} onChange={(e) => setRow(i, { default_price: e.target.value })} /></Field>
-                  <Field label="Tồn tối thiểu"><input type="number" min="0" value={r.min_stock} onChange={(e) => setRow(i, { min_stock: e.target.value })} /></Field>
-                  {!r.id && <>
+                  {!isSvc && <Field label="Tồn tối thiểu"><input type="number" min="0" value={r.min_stock} onChange={(e) => setRow(i, { min_stock: e.target.value })} /></Field>}
+                  {!r.id && !isSvc && <>
                     <Field label="Giá vốn"><MoneyInput value={r.opening_cost} onChange={(e) => setRow(i, { opening_cost: e.target.value })} /></Field>
                     <Field label="Tồn đầu kỳ"><input type="number" min="0" value={r.opening_qty} onChange={(e) => setRow(i, { opening_qty: e.target.value })} /></Field>
                   </>}
@@ -282,6 +286,54 @@ function PackagingSpec({ productId }) {
     <div className="row"><button type="button" className="btn sm" onClick={() => setLines((rows) => [...rows, { material_variant_id: materials[0]?.id || '', qty: 1 }])} disabled={!materials.length}>+ Thêm vật tư</button><button type="button" className="btn sm primary" disabled={busy} onClick={() => run(async () => { await api.put(`/packaging-specs/${productId}`, { lines: lines.filter((x) => x.material_variant_id).map((x) => ({ ...x, qty: Number(x.qty) })) }); state.reload(); })}>Lưu định mức</button></div>
     <div className="small muted">Định mức chỉ gợi ý lượng dự kiến; kho chỉ giảm khi xác nhận đóng gói đơn.</div><ErrorBox error={error} />
   </div></Section>;
+}
+
+/**
+ * Khối "Đóng từ" (trong Fold): mỗi biến thể thành phẩm khai 1 đơn vị cần bao nhiêu hàng nguồn (ví dụ hộp 500 g = 0,5 kg).
+ * Chỉ để phiếu đóng gói gợi ý số lượng (kèm bao bì theo định mức đóng gói); số thực tế vẫn nhập tay khi lập phiếu.
+ */
+export function ConversionRecipes({ productId, variants }) {
+  const available = useAsync(() => api.get('/products', { item_type: 'product', unlisted: '1', limit: 200 }), []);
+  const state = useAsync(() => api.get('/conversion-recipes', { product_id: productId }), [productId]);
+  const [rows, setRows] = useState({});
+  const { busy, error, run } = useAction();
+  useEffect(() => {
+    if (Array.isArray(state.data?.data)) setRows(Object.fromEntries(state.data.data.map((x) => [x.variant_id, { source_variant_id: x.source_variant_id, qty_per_unit: x.qty_per_unit }])));
+  }, [state.data]);
+  const own = new Set(variants.map((v) => v.id));
+  const sources = (Array.isArray(available.data?.data) ? available.data.data : []).flatMap((p) => (Array.isArray(p.variants) ? p.variants : []).filter((v) => v.kind !== 'bundle' && !v.archived_at && !own.has(v.id)).map((v) => ({ id: v.id, label: `${p.name}${v.name ? ` — ${v.name}` : ''} · ${v.sku} (${p.unit})` })));
+  const patch = (id, value) => setRows((r) => ({ ...r, [id]: { source_variant_id: '', qty_per_unit: '', ...r[id], ...value } }));
+  const save = () => run(async () => {
+    for (const v of variants) {
+      const r = rows[v.id];
+      if (r?.source_variant_id && Number(r.qty_per_unit) > 0) await api.put(`/conversion-recipes/${v.id}`, { source_variant_id: r.source_variant_id, qty_per_unit: Number(r.qty_per_unit) });
+      else if (state.data?.data?.some((x) => x.variant_id === v.id)) await api.delete(`/conversion-recipes/${v.id}`);
+    }
+    state.reload();
+  });
+  return (
+    <Section title="Đóng gói từ hàng khác">
+      <Fold title="Đóng từ (nhập theo kg, bán theo hộp)">
+        <div className="stack">
+          {variants.map((v) => (
+            <div key={v.id} className="stack" style={{ gap: 8 }}>
+              <b className="small">{v.sku}</b>
+              <div className="row">
+                <select aria-label={`Hàng nguồn của ${v.sku}`} value={rows[v.id]?.source_variant_id || ''} onChange={(e) => patch(v.id, { source_variant_id: e.target.value })}>
+                  <option value="">Không đóng từ hàng khác</option>
+                  {sources.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <input aria-label={`Lượng nguồn cho 1 đơn vị ${v.sku}`} type="number" min="0.001" step="0.001" placeholder="Lượng / 1 đơn vị" value={rows[v.id]?.qty_per_unit ?? ''} onChange={(e) => patch(v.id, { qty_per_unit: e.target.value })} style={{ width: 140 }} />
+              </div>
+            </div>
+          ))}
+          <div className="row"><button type="button" className="btn sm primary" disabled={busy} onClick={save}>Lưu công thức</button></div>
+          <div className="small muted">Chỉ để phiếu đóng gói gợi ý: đóng 40 hộp sẽ gợi ý xuất 20 kg và bao bì theo định mức đóng gói. Số thực tế nhập khi lập phiếu mới ghi sổ.</div>
+          <ErrorBox error={error} />
+        </div>
+      </Fold>
+    </Section>
+  );
 }
 
 /** Trường thông tin sản phẩm của shop (ví dụ Ngũ hành hợp của shop phong thuỷ). Chỉ gửi các trường đã đổi. */
@@ -365,6 +417,7 @@ function ImageCell({ sku, images, value, onChange }) {
 }
 
 function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, removeAttr, pickCombo }) {
+  const isSvc = f.item_type === 'service'; // dịch vụ không có giá vốn, tồn đầu kỳ
   const [all, setAll] = useState({ default_price: '', opening_cost: '', opening_qty: '' });
   const upd = (i, patch) => setOptions(f.options.map((o, j) => (j === i ? { ...o, ...patch } : o)));
   const choices = comboChoices(f.options);
@@ -393,15 +446,15 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
         <div className="matrix-box">
           <div className="applybar">
             <Field label="Giá bán cho tất cả"><MoneyInput value={all.default_price} onChange={(e) => setAll({ ...all, default_price: e.target.value })} /></Field>
-            <Field label="Giá vốn cho tất cả"><MoneyInput value={all.opening_cost} onChange={(e) => setAll({ ...all, opening_cost: e.target.value })} /></Field>
-            <Field label="Tồn đầu kỳ cho tất cả"><input type="number" min="0" value={all.opening_qty} onChange={(e) => setAll({ ...all, opening_qty: e.target.value })} /></Field>
+            {!isSvc && <Field label="Giá vốn cho tất cả"><MoneyInput value={all.opening_cost} onChange={(e) => setAll({ ...all, opening_cost: e.target.value })} /></Field>}
+            {!isSvc && <Field label="Tồn đầu kỳ cho tất cả"><input type="number" min="0" value={all.opening_qty} onChange={(e) => setAll({ ...all, opening_qty: e.target.value })} /></Field>}
             <button type="button" className="btn sm" onClick={() => {
               // Tồn đầu kỳ và giá vốn chỉ áp cho dòng mới (dòng đã có không ghi lại tồn đầu kỳ)
               set({ rows: f.rows.map((r) => (r.id ? { ...r, ...(all.default_price !== '' ? { default_price: all.default_price } : {}) } : applyToAll([r], all)[0])) });
             }}>Áp dụng</button>
           </div>
           <div className="table-wrap matrix-wrap"><table className="matrix">
-          <thead><tr><th className="sticky-col">Biến thể</th><th>Ảnh</th><th>SKU</th><th className="num">Giá bán</th><th className="num">Giá vốn</th><th className="num">Tồn đầu kỳ</th><th>Mã vạch</th><th>Bán</th></tr></thead>
+          <thead><tr><th className="sticky-col">Biến thể</th><th>Ảnh</th><th>SKU</th><th className="num">Giá bán</th>{!isSvc && <th className="num">Giá vốn</th>}{!isSvc && <th className="num">Tồn đầu kỳ</th>}<th>Mã vạch</th><th>Bán</th></tr></thead>
           <tbody>
             {f.rows.map((r, i) => (
               <tr key={r.id || r.sku + i} className={r.active === false ? 'off' : ''}>
@@ -413,8 +466,8 @@ function Matrix({ f, set, setOptions, setRow, images, renameAttr, renameValue, r
                 <td className="mx-img"><ImageCell sku={r.sku} images={images} value={r.image_id} onChange={(id) => setRow(i, { image_id: id })} /></td>
                 <td data-label="SKU" className="mx-full"><input className="sku" aria-label={`SKU ${Object.values(r.option_values).join(' ')}`} value={r.sku} onChange={(e) => setRow(i, { sku: e.target.value.toUpperCase(), autoSku: false })} /></td>
                 <td data-label="Giá bán"><MoneyInput aria-label={`Giá bán ${r.sku}`} value={r.default_price} onChange={(e) => setRow(i, { default_price: e.target.value })} /></td>
-                <td data-label="Giá vốn">{r.id ? <span className="muted small">đã có</span> : <MoneyInput aria-label={`Giá vốn ${r.sku}`} value={r.opening_cost} onChange={(e) => setRow(i, { opening_cost: e.target.value })} />}</td>
-                <td data-label="Tồn đầu kỳ">{r.id ? <span className="muted small">đã có</span> : <input type="number" min="0" aria-label={`Tồn đầu kỳ ${r.sku}`} value={r.opening_qty} onChange={(e) => setRow(i, { opening_qty: e.target.value })} />}</td>
+                {!isSvc && <td data-label="Giá vốn">{r.id ? <span className="muted small">đã có</span> : <MoneyInput aria-label={`Giá vốn ${r.sku}`} value={r.opening_cost} onChange={(e) => setRow(i, { opening_cost: e.target.value })} />}</td>}
+                {!isSvc && <td data-label="Tồn đầu kỳ">{r.id ? <span className="muted small">đã có</span> : <input type="number" min="0" aria-label={`Tồn đầu kỳ ${r.sku}`} value={r.opening_qty} onChange={(e) => setRow(i, { opening_qty: e.target.value })} />}</td>}
                 <td data-label="Mã vạch"><input aria-label={`Mã vạch ${r.sku}`} value={r.barcode} onChange={(e) => setRow(i, { barcode: e.target.value })} /></td>
                 <td className="mx-full"><label className="check"><input type="checkbox" checked={r.active !== false} onChange={(e) => setRow(i, { active: e.target.checked })} aria-label={`Đang bán ${r.sku}`} /> <span className="small">Đang bán</span></label></td>
               </tr>

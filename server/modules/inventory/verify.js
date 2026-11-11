@@ -1,4 +1,5 @@
 import { getDb } from '../../db/index.js';
+import { lineAmount } from '../../lib/money.js';
 import { verifyLayers } from './costing.js';
 import { verifyLots } from './lots.js';
 
@@ -18,25 +19,24 @@ export function verifyStock() {
   for (const r of db()
     .prepare(
       `SELECT l.warehouse_id, l.variant_id, l.on_hand, COALESCE(m.q,0) AS ledger FROM stock_levels l
-       LEFT JOIN (SELECT warehouse_id, variant_id, SUM(qty) AS q FROM stock_movements GROUP BY 1,2) m ON m.warehouse_id = l.warehouse_id AND m.variant_id = l.variant_id
-       WHERE l.on_hand != COALESCE(m.q,0)`,
+       LEFT JOIN (SELECT warehouse_id, variant_id, ROUND(SUM(qty), 3) AS q FROM stock_movements GROUP BY 1,2) m ON m.warehouse_id = l.warehouse_id AND m.variant_id = l.variant_id
+       WHERE ROUND(l.on_hand, 3) != COALESCE(m.q,0)`,
     )
     .all()) out.push({ kind: 'stock_level', ...r });
   for (const r of db()
     .prepare(
       `SELECT m.warehouse_id, m.variant_id, SUM(m.qty) AS ledger FROM stock_movements m
-       LEFT JOIN stock_levels l ON l.warehouse_id = m.warehouse_id AND l.variant_id = m.variant_id WHERE l.variant_id IS NULL GROUP BY 1,2 HAVING ledger != 0`,
+       LEFT JOIN stock_levels l ON l.warehouse_id = m.warehouse_id AND l.variant_id = m.variant_id WHERE l.variant_id IS NULL GROUP BY 1,2 HAVING ABS(ledger) > 0.0005`,
     )
     .all()) out.push({ kind: 'stock_level_missing', ...r });
 
+  const allocsOf = db().prepare('SELECT qty, restocked_qty, unit_cost FROM order_line_allocations WHERE order_line_id = ?');
   for (const r of db()
-    .prepare(
-      `SELECT l.id AS line_id, l.cogs_amount, o.status,
-              COALESCE((SELECT SUM((a.qty - a.restocked_qty) * a.unit_cost) FROM order_line_allocations a WHERE a.order_line_id = l.id),0) AS expected
-       FROM order_lines l JOIN orders o ON o.id = l.order_id`,
-    )
+    .prepare('SELECT l.id AS line_id, l.cogs_amount, o.status FROM order_lines l JOIN orders o ON o.id = l.order_id')
     .all()) {
-    const want = ['confirmed', 'shipping', 'completed', 'returned'].includes(r.status) ? r.expected : 0;
+    // Giá vốn dòng = Σ phân bổ còn lại, mỗi phân bổ: làm tròn (SL × giá vốn) − làm tròn (SL đã nhập lại × giá vốn)
+    const expected = allocsOf.all(r.line_id).reduce((a, x) => a + lineAmount(x.qty, x.unit_cost) - lineAmount(x.restocked_qty, x.unit_cost), 0);
+    const want = ['confirmed', 'shipping', 'completed', 'returned'].includes(r.status) ? expected : 0;
     if (r.cogs_amount !== want) out.push({ kind: 'line_cogs', line_id: r.line_id, status: r.status, cogs_amount: r.cogs_amount, expected: want });
   }
   for (const r of db()
@@ -51,9 +51,9 @@ export function verifyStock() {
 
   for (const r of db()
     .prepare(
-      `SELECT a.order_line_id AS line_id, a.variant_id, SUM(a.qty) AS qty, SUM(a.restocked_qty) AS restocked,
-              (SELECT COALESCE(-SUM(m.qty),0) FROM stock_movements m WHERE m.ref_line_id = a.order_line_id AND m.variant_id = a.variant_id AND m.type = 'sale_out') AS out_q,
-              (SELECT COALESCE(SUM(m.qty),0) FROM stock_movements m WHERE m.ref_line_id = a.order_line_id AND m.variant_id = a.variant_id AND m.type IN ('sale_cancel_in','sale_return_in')) AS in_q,
+      `SELECT a.order_line_id AS line_id, a.variant_id, ROUND(SUM(a.qty), 3) AS qty, ROUND(SUM(a.restocked_qty), 3) AS restocked,
+              (SELECT COALESCE(ROUND(-SUM(m.qty), 3),0) FROM stock_movements m WHERE m.ref_line_id = a.order_line_id AND m.variant_id = a.variant_id AND m.type = 'sale_out') AS out_q,
+              (SELECT COALESCE(ROUND(SUM(m.qty), 3),0) FROM stock_movements m WHERE m.ref_line_id = a.order_line_id AND m.variant_id = a.variant_id AND m.type IN ('sale_cancel_in','sale_return_in')) AS in_q,
               (SELECT COUNT(*) FROM stock_movements m WHERE m.ref_line_id = a.order_line_id) AS n
        FROM order_line_allocations a GROUP BY 1,2`,
     )

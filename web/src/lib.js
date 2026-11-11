@@ -22,6 +22,22 @@ export const addDays = (s, n) => {
 
 export const STATUS = { draft: 'Nháp', confirmed: 'Đã xác nhận', shipping: 'Đang giao', completed: 'Hoàn thành', cancelled: 'Đã huỷ', returned: 'Đã trả hàng' };
 export const PAY_STATUS = { unpaid: 'Chưa thu', partial: 'Thu một phần', paid: 'Đã thu', refunded: 'Đã hoàn' };
+/**
+ * Huy hiệu thanh toán của một đơn. Đơn đã huỷ mà còn tiền khách đã thu: trạng thái lưu vẫn là 'paid' (không thêm giá trị mới),
+ * nên giao diện nói đúng nghĩa dựa trên refund_owed_amount / forfeited_amount: "Còn phải hoàn khách" và/hoặc "Giữ cọc".
+ * Đã hoàn hết thì trạng thái là 'refunded' ("Đã hoàn").
+ */
+export function payBadges(o) {
+  if (o.status === 'cancelled' && (o.paid_amount ?? 0) > 0) {
+    const out = [];
+    if (o.refund_owed_amount > 0) out.push({ label: 'Còn phải hoàn khách', cls: 'st-returned' });
+    if (o.forfeited_amount > 0) out.push({ label: 'Giữ cọc', cls: 'st-completed' });
+    if (out.length) return out;
+  }
+  return [{ label: PAY_STATUS[o.payment_status], cls: null }];
+}
+/** Lý do giảm kho có mã (khớp server/lib/stockReasons.js): để báo cáo hao hụt thống kê */
+export const STOCK_REASONS = [['damaged', 'Hỏng, vỡ'], ['expired', 'Hết hạn'], ['weight_loss', 'Hao hụt cân'], ['lost', 'Mất'], ['other', 'Khác']];
 export const METHODS = { cash: 'Tiền mặt', bank: 'Chuyển khoản', shopee_payout: 'Shopee payout', tiktok_payout: 'TikTok payout', cod: 'COD (tiền mặt)', carrier_payout: 'Hãng vận chuyển chuyển về', card: 'Thẻ', ewallet: 'Ví điện tử', other: 'Khác' };
 /** Nhãn phương thức thanh toán, thêm nhãn payout của các nền tảng server báo (nền tảng mới tự có nhãn) */
 export const methodLabels = (platforms = []) => ({ ...METHODS, ...Object.fromEntries(platforms.filter((p) => p.payout_method && p.payout_label).map((p) => [p.payout_method, p.payout_label])) });
@@ -32,6 +48,8 @@ export const MOVE_TYPES = {
   purchase_in: 'Nhập hàng', sale_out: 'Bán hàng', sale_cancel_in: 'Huỷ đơn', sale_return_in: 'Khách trả', adjust_in: 'Điều chỉnh +',
   adjust_out: 'Điều chỉnh −', transfer_out: 'Chuyển đi', transfer_in: 'Chuyển đến', opening: 'Tồn đầu', damage_out: 'Hư hỏng',
 };
+/** Nhãn một dòng sổ kho: phiếu đóng gói dùng loại chuyển đi/đến nhưng gọi là Đóng gói */
+export const moveLabel = (m) => (String(m.ref_type || '').startsWith('conversion') ? (m.qty < 0 ? 'Đóng gói: xuất nguồn' : 'Đóng gói: nhập thành phẩm') : MOVE_TYPES[m.type] || m.type);
 
 export function download(name, text, type = 'text/csv;charset=utf-8') {
   const url = URL.createObjectURL(new Blob([text], { type }));

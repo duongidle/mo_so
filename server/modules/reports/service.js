@@ -1,6 +1,6 @@
 import { getDb } from '../../db/index.js';
 import { addDays, daysBetween, businessDate } from '../../lib/time.js';
-import { allocate } from '../../lib/money.js';
+import { allocate, lineAmount } from '../../lib/money.js';
 import { getSettings } from '../settings/service.js';
 import { listStock } from '../inventory/service.js';
 import { COUNTED, readStats } from './stats.js';
@@ -56,6 +56,7 @@ export const REPORT_VARIABLES = [
   { key: 'net_revenue', label: 'Doanh thu thuần', type: 'money', group: 'Doanh thu' },
   { key: 'shipping_fee', label: 'Phí ship khách trả (đã trừ ship hoàn)', type: 'money', group: 'Doanh thu' },
   { key: 'return_fee', label: 'Phí trả hàng thu được', type: 'money', group: 'Doanh thu' },
+  { key: 'forfeit', label: 'Cọc giữ lại (đơn huỷ)', type: 'money', group: 'Doanh thu' },
   { key: 'return_shipping_cost', label: 'Phí ship chiều về (trả hàng)', type: 'money', group: 'Chi phí' },
   { key: 'platform_fee', label: 'Phí sàn', type: 'money', group: 'Chi phí' },
   { key: 'seller_shipping', label: 'Phí ship shop chịu', type: 'money', group: 'Chi phí' },
@@ -71,7 +72,7 @@ export const REPORT_VARIABLES = [
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
 
 const finish = (r) => {
-  const gross_profit = r.net_revenue + r.shipping_fee + r.return_fee - r.platform_fee - r.seller_shipping - r.return_shipping_cost - r.cogs;
+  const gross_profit = r.net_revenue + r.shipping_fee + r.return_fee + r.forfeit - r.platform_fee - r.seller_shipping - r.return_shipping_cost - r.cogs;
   return {
     ...r,
     gross_revenue: r.subtotal,
@@ -199,7 +200,7 @@ function withProfit(s, expenses, otherProfit = 0) {
   return { ...s, expenses_amount: expenses, other_profit_adjustment: otherProfit, net_profit_estimate: s.gross_profit - expenses + otherProfit };
 }
 
-const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả + phí trả hàng thu được', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
+const TAX_BASE_LABELS = { net_revenue: 'Doanh thu thuần (hàng sau khi trừ hàng trả)', revenue_with_shipping: 'Doanh thu thuần + phí ship khách trả + phí trả hàng thu được + cọc giữ lại', net_profit: 'Lợi nhuận ròng ước tính (trước thuế)' };
 
 /** Cơ sở tính thuế cộng dồn từ `from` đến `to` (toàn bộ shop, mọi kênh) */
 function taxBase(base, from, to) {
@@ -207,7 +208,7 @@ function taxBase(base, from, to) {
   const all = { from, to, shopIds: null, channel: null };
   const s = sumOrders(all);
   if (base === 'net_revenue') return s.net_revenue;
-  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee + s.return_fee;
+  if (base === 'revenue_with_shipping') return s.net_revenue + s.shipping_fee + s.return_fee + s.forfeit;
   return s.gross_profit - expensesFor(all).total + unassignedOtherProfit(all);
 }
 
@@ -292,7 +293,7 @@ export function byShop(filter) {
 }
 
 function sumOrdersEmpty() {
-  return { order_count: 0, cancelled_count: 0, returned_count: 0, subtotal: 0, discount_amount: 0, goods_revenue: 0, returned_amount: 0, net_revenue: 0, shipping_fee: 0, platform_fee: 0, seller_shipping: 0, cogs: 0, return_fee: 0, return_shipping_cost: 0, gross_revenue: 0, gross_profit: 0, gross_margin_pct: null, aov: 0, cancel_rate_pct: null, return_rate_pct: null };
+  return { order_count: 0, cancelled_count: 0, returned_count: 0, subtotal: 0, discount_amount: 0, goods_revenue: 0, returned_amount: 0, net_revenue: 0, shipping_fee: 0, platform_fee: 0, seller_shipping: 0, cogs: 0, return_fee: 0, forfeit: 0, return_shipping_cost: 0, gross_revenue: 0, gross_profit: 0, gross_margin_pct: null, aov: 0, cancel_rate_pct: null, return_rate_pct: null };
 }
 
 export function byChannel(filter) {
@@ -427,8 +428,9 @@ export function inventoryMetrics({ shopId, warehouseId } = {}) {
   // Theo kho: giá vốn của đúng những phần đã xuất từ kho đó (một đơn có thể lấy từ nhiều kho); không lọc kho: cogs_amount của dòng
   const cogs30 = warehouseId
     ? db()
-        .prepare(`SELECT COALESCE(SUM((a.qty - a.restocked_qty) * a.unit_cost),0) AS v FROM order_line_allocations a JOIN order_lines l ON l.id = a.order_line_id JOIN orders o ON o.id = l.order_id WHERE a.warehouse_id = ? AND ${where.join(' AND ')}`)
-        .get(warehouseId, ...params).v
+        .prepare(`SELECT a.qty, a.restocked_qty, a.unit_cost FROM order_line_allocations a JOIN order_lines l ON l.id = a.order_line_id JOIN orders o ON o.id = l.order_id WHERE a.warehouse_id = ? AND ${where.join(' AND ')}`)
+        .all(warehouseId, ...params)
+        .reduce((v, a) => v + lineAmount(a.qty, a.unit_cost) - lineAmount(a.restocked_qty, a.unit_cost), 0)
     : db()
         .prepare(`SELECT COALESCE(SUM(l.cogs_amount),0) AS v FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE ${where.join(' AND ')}`)
         .get(...params).v;
@@ -500,11 +502,11 @@ export function cashflow(filter) {
   const owedToCustomers = db()
     .prepare(
       `SELECT COALESCE(SUM(o.refund_owed_amount),0) AS v, COUNT(*) AS n FROM orders o JOIN channels ch ON ch.id = o.channel_id
-       WHERE ch.is_marketplace = 0 AND o.status IN ('confirmed','shipping','completed','returned') AND o.refund_owed_amount > 0 ${shopFilter}`,
+       WHERE ch.is_marketplace = 0 AND o.status IN ('confirmed','shipping','completed','returned','cancelled') AND o.refund_owed_amount > 0 ${shopFilter}`,
     )
     .get(...(f.shopIds || []));
   const payable = db()
-    .prepare(`SELECT COALESCE(SUM(total_amount - paid_amount),0) AS v, COUNT(*) AS n FROM purchases WHERE status = 'received' AND total_amount - paid_amount > 0`)
+    .prepare(`SELECT COALESCE(SUM(total_amount - returned_amount - allowance_amount - paid_amount),0) AS v, COUNT(*) AS n FROM purchases WHERE status = 'received' AND total_amount - returned_amount - allowance_amount - paid_amount > 0`)
     .get();
   return {
     filter: f,
@@ -631,8 +633,8 @@ export function aging(filter) {
     .map((r) => ({ ...r, age_days: Math.max(0, daysBetween(r.date, today)) }));
   const supplier = db()
     .prepare(
-      `SELECT p.id, p.code, COALESCE(s.name, 'Không rõ NCC') AS party, COALESCE(p.received_at, p.ordered_at) AS at, p.total_amount - p.paid_amount AS owed
-       FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id WHERE p.status = 'received' AND p.total_amount - p.paid_amount > 0`,
+      `SELECT p.id, p.code, COALESCE(s.name, 'Không rõ NCC') AS party, COALESCE(p.received_at, p.ordered_at) AS at, p.total_amount - p.returned_amount - p.allowance_amount - p.paid_amount AS owed
+       FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id WHERE p.status = 'received' AND p.total_amount - p.returned_amount - p.allowance_amount - p.paid_amount > 0`,
     )
     .all()
     .map((r) => ({ id: r.id, code: r.code, party: r.party, owed: r.owed, date: businessDate(r.at), age_days: Math.max(0, daysBetween(businessDate(r.at), today)) }));

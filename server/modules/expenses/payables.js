@@ -10,6 +10,7 @@ export const PAYABLE_KINDS = {
   purchase_ship: 'Ship nhập (hãng vận chuyển)',
   order_ship: 'Ship đơn (hãng vận chuyển)',
   refund: 'Hoàn tiền khách',
+  supplier_refund: 'NCC còn nợ shop (phải thu)',
   recurring: 'Chi phí định kỳ sắp tới',
 };
 
@@ -41,9 +42,9 @@ export function payables({ shopId, lookahead = 7, today = businessDate(nowIso())
 
   for (const p of db()
     .prepare(
-      `SELECT p.id, p.code, p.shop_id, su.name AS party, p.due_date, (p.total_amount - p.paid_amount) AS amount, p.total_amount
+      `SELECT p.id, p.code, p.shop_id, su.name AS party, p.due_date, (p.total_amount - p.returned_amount - p.allowance_amount - p.paid_amount) AS amount, p.total_amount
        FROM purchases p LEFT JOIN suppliers su ON su.id = p.supplier_id
-       WHERE p.status = 'received' AND (p.total_amount - p.paid_amount) > 0${sfp('p.shop_id')}`,
+       WHERE p.status = 'received' AND (p.total_amount - p.returned_amount - p.allowance_amount - p.paid_amount) > 0${sfp('p.shop_id')}`,
     )
     .all(...sp)) out.push({ kind: 'supplier', ref_id: p.id, code: p.code, shop_id: p.shop_id, party: p.party || 'Không có nhà cung cấp', due_date: p.due_date, amount: p.amount, total: p.total_amount, link: `/purchases/${p.id}` });
 
@@ -67,9 +68,18 @@ export function payables({ shopId, lookahead = 7, today = businessDate(nowIso())
     .prepare(
       `SELECT o.id, o.code, o.shop_id, COALESCE(NULLIF(o.customer_name,''), 'Khách lẻ') AS party, o.refund_owed_amount AS amount, o.paid_amount AS total
        FROM orders o JOIN channels ch ON ch.id = o.channel_id
-       WHERE ch.is_marketplace = 0 AND o.status <> 'draft' AND o.status <> 'cancelled' AND o.refund_owed_amount > 0${sf('o.shop_id')}`,
+       WHERE ch.is_marketplace = 0 AND o.status <> 'draft' AND o.refund_owed_amount > 0${sf('o.shop_id')}`,
     )
     .all(...sp)) out.push({ kind: 'refund', ref_id: o.id, code: o.code, shop_id: o.shop_id, party: o.party, due_date: null, amount: o.amount, total: o.total, link: `/orders/${o.id}` });
+
+  // NCC còn nợ shop: đã trả nhiều hơn số phải trả sau khi trừ hàng trả / giảm giá. Là khoản phải thu, không cộng vào tổng phải trả.
+  for (const p of db()
+    .prepare(
+      `SELECT p.id, p.code, p.shop_id, su.name AS party, (p.paid_amount - (p.total_amount - p.returned_amount - p.allowance_amount)) AS amount, p.paid_amount AS total
+       FROM purchases p LEFT JOIN suppliers su ON su.id = p.supplier_id
+       WHERE p.status = 'received' AND p.paid_amount > (p.total_amount - p.returned_amount - p.allowance_amount)${sfp('p.shop_id')}`,
+    )
+    .all(...sp)) out.push({ kind: 'supplier_refund', ref_id: p.id, code: p.code, shop_id: p.shop_id, party: p.party || 'Không có nhà cung cấp', due_date: null, amount: p.amount, total: p.total, link: `/purchases/${p.id}` });
 
   const horizon = addDays(today, lookahead);
   for (const r of listRecurring()) {
@@ -82,7 +92,7 @@ export function payables({ shopId, lookahead = 7, today = businessDate(nowIso())
   data.sort((a, b) => rank[a.bucket] - rank[b.bucket] || (a.due_date || '9999').localeCompare(b.due_date || '9999') || b.amount - a.amount);
 
   // chi phí định kỳ chưa phải nợ nên không cộng vào tổng phải trả
-  const debts = data.filter((r) => r.kind !== 'recurring');
+  const debts = data.filter((r) => r.kind !== 'recurring' && r.kind !== 'supplier_refund');
   const sum = (rows) => rows.reduce((a, r) => a + r.amount, 0);
   return {
     data,
@@ -91,6 +101,7 @@ export function payables({ shopId, lookahead = 7, today = businessDate(nowIso())
     due_soon: { count: data.filter((r) => r.bucket === 'due_soon').length, amount: sum(data.filter((r) => r.bucket === 'due_soon')) },
     by_kind: Object.fromEntries(Object.keys(PAYABLE_KINDS).map((k) => [k, sum(data.filter((r) => r.kind === k))])),
     kinds: PAYABLE_KINDS,
+    receivable_total: data.filter((r) => r.kind === 'supplier_refund').reduce((a, r) => a + r.amount, 0), // NCC còn nợ shop
     lookahead,
   };
 }

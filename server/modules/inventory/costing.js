@@ -4,6 +4,7 @@ import { nowIso } from '../../lib/time.js';
 import { badRequest } from '../../lib/errors.js';
 import { audit } from '../../lib/events.js';
 import { getSetting, writeSetting } from '../settings/service.js';
+import { lineAmount } from '../../lib/money.js';
 
 const db = () => getDb();
 const r3 = (n) => Math.round(n * 1000) / 1000;
@@ -46,21 +47,22 @@ export function consumeLayers(warehouseId, variantId, qty, firstRef) {
 
 /** Giá vốn bình quân của các lớp còn lại (làm tròn đồng), null nếu không còn lớp nào. */
 export function layerAverage(warehouseId, variantId) {
-  const r = db().prepare('SELECT SUM(qty) AS q, SUM(qty * unit_cost) AS v FROM stock_layers WHERE warehouse_id = ? AND variant_id = ?').get(warehouseId, variantId);
-  return r.q > EPS ? Math.round(r.v / r.q) : null;
+  const rows = db().prepare('SELECT qty, unit_cost FROM stock_layers WHERE warehouse_id = ? AND variant_id = ?').all(warehouseId, variantId);
+  const q = rows.reduce((a, l) => a + l.qty, 0);
+  return q > EPS ? Math.round(rows.reduce((a, l) => a + lineAmount(l.qty, l.unit_cost), 0) / q) : null;
 }
 
 /** Gộp các phần cùng đơn giá liền nhau thành tổng chi phí và đơn giá hiển thị (làm tròn). */
 export function summarize(slices) {
   const qty = slices.reduce((a, s) => a + s.qty, 0);
-  const total = slices.reduce((a, s) => a + Math.round(s.qty * s.unitCost), 0);
+  const total = slices.reduce((a, s) => a + lineAmount(s.qty, s.unitCost), 0);
   return { qty, total, unitCost: qty > 0 ? Math.round(total / qty) : 0 };
 }
 
 export function costingStatus() {
   const method = costingMethod();
-  const lv = db().prepare('SELECT COUNT(*) AS n, COALESCE(SUM(MAX(on_hand,0) * avg_cost),0) AS v FROM stock_levels WHERE on_hand > 0').get();
-  const ly = db().prepare('SELECT COUNT(*) AS n, COALESCE(SUM(qty * unit_cost),0) AS v FROM stock_layers').get();
+  const lv = db().prepare('SELECT COUNT(*) AS n, COALESCE(SUM(ROUND(MAX(on_hand,0) * 1000) * avg_cost / 1000.0),0) AS v FROM stock_levels WHERE on_hand > 0').get();
+  const ly = db().prepare('SELECT COUNT(*) AS n, COALESCE(SUM(ROUND(qty * 1000) * unit_cost / 1000.0),0) AS v FROM stock_layers').get();
   // FIFO: giá trị đúng là tổng các lớp giá; bình quân: tồn × giá bình quân từng dòng
   return { method, methods: METHODS, stocked_lines: lv.n, stock_value: Math.round(method === 'fifo' ? ly.v : lv.v), layer_count: ly.n };
 }

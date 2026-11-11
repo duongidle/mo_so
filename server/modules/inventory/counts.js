@@ -1,3 +1,4 @@
+import { qty3 } from '../../lib/money.js';
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
@@ -11,8 +12,9 @@ const db = () => getDb();
 function addLines(countId, warehouseId, variantIds) {
   const ins = db().prepare('INSERT OR IGNORE INTO stock_count_lines (id, count_id, variant_id, system_qty) VALUES (?,?,?,?)');
   for (const vid of variantIds) {
-    const v = db().prepare('SELECT kind FROM variants WHERE id = ?').get(vid);
+    const v = db().prepare('SELECT v.kind, p.is_service FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(vid);
     if (!v) throw notFound('Biến thể');
+    if (v.is_service) throw badRequest('SERVICE_NO_STOCK', 'Dịch vụ không có tồn kho nên không kiểm kê.');
     if (v.kind === 'bundle') throw badRequest('BUNDLE_NO_STOCK', 'Combo không có tồn riêng nên không kiểm kê. Kiểm kê từng thành phần.');
     ins.run(newId('scl'), countId, vid, getLevel(warehouseId, vid).on_hand);
   }
@@ -57,7 +59,7 @@ export function getCount(id) {
         current_on_hand: current,
         // Có bán/nhập sau khi chụp tồn hệ thống: cảnh báo, nhưng chênh lệch vẫn tính theo số đã chụp
         moved_since: c.status === 'draft' && current !== l.system_qty,
-        variance: l.counted_qty === null ? null : l.counted_qty - l.system_qty,
+        variance: l.counted_qty === null ? null : qty3(l.counted_qty - l.system_qty),
       };
     });
   const counted = lines.filter((l) => l.counted_qty !== null);
@@ -133,7 +135,7 @@ export function completeCount(id, { uncounted = 'skip' } = {}, actor) {
   for (const l of lines) {
     const counted = l.counted_qty ?? (uncounted === 'zero' ? 0 : null);
     if (counted === null) continue;
-    const change = counted - l.system_qty;
+    const change = qty3(counted - l.system_qty);
     const level = getLevel(c.warehouse_id, l.variant_id);
     if (change === 0) {
       db().prepare('UPDATE stock_count_lines SET applied_change = 0 WHERE id = ?').run(l.id);

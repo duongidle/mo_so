@@ -61,6 +61,7 @@ export const orderInput = z.object({
   status: z.enum(['draft', 'confirmed', 'shipping', 'completed']).default('draft'),
   payments: z.array(paymentInput).default([]),
   allow_negative_stock: z.boolean().default(false),
+  allow_expired: z.boolean().default(false), // vẫn bán dù phần xuất chạm lô đã hết hạn (mặc định bị chặn: LOT_EXPIRED)
   due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(), // hạn khách thanh toán nốt phần còn nợ
   auto_promotions: z.boolean().default(false), // tự áp khuyến mãi đủ điều kiện (máy chủ tính lại)
   promotion_code: z.string().trim().max(40).nullish(),
@@ -153,13 +154,27 @@ r.patch('/:id', async (c) => {
 r.post('/:id/status', async (c) => {
   const input = await body(
     c,
-    z.object({ status: z.enum(['confirmed', 'shipping', 'completed', 'cancelled']), note: optionalText, allow_negative_stock: z.boolean().default(false) }),
+    z.object({
+      status: z.enum(['confirmed', 'shipping', 'completed', 'cancelled']),
+      note: optionalText,
+      allow_negative_stock: z.boolean().default(false),
+      allow_expired: z.boolean().default(false),
+      // Huỷ đơn còn tiền khách đã thu (đơn ngoài sàn) bắt buộc chọn: hoàn lại khách hay giữ cọc
+      paid_action: z.enum(['refund', 'forfeit']).optional(),
+      forfeit_amount: money.optional(),
+      refund: z.object({ method: orderPaymentMethod.default('cash'), to_credit: z.boolean().default(false) }).nullish(), // hoàn ngay phần không giữ; bỏ trống = hoàn sau
+    }),
   );
   // Hàng đang trên đường giao thì không "huỷ" được: hàng chưa về kho nên cộng tồn ngay là sai. Giao không thành xử lý bằng phiếu trả hàng chờ hàng về
   if (input.status === 'cancelled' && svc.getOrder(c.req.param('id')).status === 'shipping') {
     throw conflict('CANCEL_SHIPPING', 'Đơn đang giao không huỷ được. Nếu khách không nhận hoặc giao không thành, dùng “Giao không thành” (Trả hàng, chờ hàng về).');
   }
-  return c.json({ data: tx(() => svc.transitionOrder(c.req.param('id'), input.status, { note: input.note, actor: c.get('actor'), allowNegative: input.allow_negative_stock })) });
+  return c.json({
+    data: tx(() => {
+      const cancelPayment = input.status === 'cancelled' ? svc.planCancelPayment(c.req.param('id'), input) : null;
+      return svc.transitionOrder(c.req.param('id'), input.status, { note: input.note, actor: c.get('actor'), allowNegative: input.allow_negative_stock, allowExpired: input.allow_expired, cancelPayment });
+    }),
+  });
 });
 
 r.post('/:id/payments', async (c) => {
@@ -178,12 +193,32 @@ r.post('/:id/returns', async (c) => {
       shipping_refund_amount: money.default(0),
       return_fee_amount: money.default(0),
       return_shipping_cost: money.default(0),
+      platform_fee_refund_amount: money.nullish(),
       returned_at: z.string().nullish(),
       awaiting_goods: z.boolean().default(false),
       allow_late: z.boolean().default(false),
     }),
   );
-  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at, shippingRefund: input.shipping_refund_amount, returnFee: input.return_fee_amount, returnShippingCost: input.return_shipping_cost, awaitingGoods: input.awaiting_goods, reasonCode: input.reason_code, allowLate: input.allow_late }, c.get('actor'))) });
+  return c.json({ data: tx(() => svc.createReturn(c.req.param('id'), { lines: input.lines, reason: input.reason, refund: input.refund, returnedAt: input.returned_at, shippingRefund: input.shipping_refund_amount, returnFee: input.return_fee_amount, returnShippingCost: input.return_shipping_cost, awaitingGoods: input.awaiting_goods, reasonCode: input.reason_code, allowLate: input.allow_late, platformFeeRefund: input.platform_fee_refund_amount }, c.get('actor'))) });
+});
+
+r.post('/:id/returns/preview', async (c) => {
+  const input = await body(c, z.object({ lines: z.array(z.object({ order_line_id: z.string(), qty })).max(200) }));
+  return c.json({ data: svc.previewReturn(c.req.param('id'), input) });
+});
+
+r.post('/:id/allowances', async (c) => {
+  const input = await body(
+    c,
+    z.object({
+      amount: money.refine((v) => v > 0, 'Số tiền phải > 0'),
+      reason: optionalText,
+      reason_code: z.enum(RETURN_REASON_CODES).nullish(),
+      refund: z.object({ amount: money, method: orderPaymentMethod.default('cash'), to_credit: z.boolean().default(false) }).nullish(),
+      at: z.string().nullish(),
+    }),
+  );
+  return c.json({ data: tx(() => svc.createAllowance(c.req.param('id'), { amount: input.amount, reason: input.reason, reasonCode: input.reason_code, refund: input.refund, at: input.at }, c.get('actor'))) }, 201);
 });
 
 r.post('/:id/returns/:returnId/receive', async (c) => {

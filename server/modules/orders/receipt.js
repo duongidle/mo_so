@@ -9,6 +9,8 @@ const fmtDate = (iso) =>
 export function renderReceipt(o, size = 'a5') {
   const shop = getShop(o.shop_id);
   const width = size === '80mm' ? '72mm' : '138mm';
+  // Giảm giá sau bán (phiếu không có hàng quay về) tách khỏi hàng trả lại
+  const allowance = (o.returns ?? []).filter((r) => r.kind === 'allowance').reduce((a, r) => a + r.goods_amount, 0);
   const rows = o.lines
     .map(
       (l) => `<tr><td>${esc(l.name)}<div class="sku">${esc(l.sku)}</div></td><td class="r">${l.qty}</td><td class="r">${vnd(l.unit_price)}</td><td class="r">${vnd(l.line_total)}</td></tr>${
@@ -47,7 +49,8 @@ export function renderReceipt(o, size = 'a5') {
     ${o.discount_amount ? `<div><span>Giảm giá</span><span>-${vnd(o.discount_amount)}</span></div>` : ''}
     ${o.shipping_fee ? `<div><span>Phí vận chuyển</span><span>${vnd(o.shipping_fee)}</span></div>` : ''}
     <div class="big"><span>Tổng cộng</span><span>${vnd(o.total_amount)} ₫</span></div>
-    ${o.returned_goods_amount ? `<div><span>Hàng trả lại</span><span>-${vnd(o.returned_goods_amount)}</span></div>` : ''}
+    ${o.returned_goods_amount - allowance ? `<div><span>Hàng trả lại</span><span>-${vnd(o.returned_goods_amount - allowance)}</span></div>` : ''}
+    ${allowance ? `<div><span>Giảm giá sau bán</span><span>-${vnd(allowance)}</span></div>` : ''}
     ${o.returned_shipping_amount ? `<div><span>Hoàn phí vận chuyển</span><span>-${vnd(o.returned_shipping_amount)}</span></div>` : ''}
     ${o.return_fee_amount ? `<div><span>Phí trả hàng</span><span>${vnd(o.return_fee_amount)}</span></div>` : ''}
     <div><span>Đã thanh toán</span><span>${vnd(o.paid_amount)}</span></div>

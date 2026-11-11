@@ -5,7 +5,7 @@ import { useSession } from '../session.jsx';
 import { Card, Chips, Tabs, DateRange, Empty, ErrorBox, LoadMore, PageHeader, SearchBox, Toolbar, useDebounced } from '../components/ui.jsx';
 import { fmtDate, vnd } from '../lib.js';
 
-const TYPES = [['', 'Tất cả'], ['order', 'Đơn bán'], ['purchase', 'Phiếu nhập'], ['return', 'Trả hàng'], ['write_off', 'Hàng huỷ'], ['transfer', 'Chuyển kho'], ['adjustment', 'Điều chỉnh'], ['count', 'Kiểm kê']];
+const TYPES = [['', 'Tất cả'], ['order', 'Đơn bán'], ['purchase', 'Phiếu nhập'], ['purchase_return', 'Trả hàng nhập'], ['purchase_allowance', 'NCC giảm giá'], ['return', 'Trả hàng'], ['write_off', 'Hàng huỷ'], ['transfer', 'Chuyển kho'], ['adjustment', 'Điều chỉnh'], ['count', 'Kiểm kê']];
 const TYPE_NAME = Object.fromEntries(TYPES.filter(([k]) => k).map(([k, v]) => [k, v]));
 const STATUS = {
   draft: 'Nháp', confirmed: 'Đã xác nhận', shipping: 'Đang giao', completed: 'Hoàn thành', cancelled: 'Đã huỷ', returned: 'Đã trả hàng', received: 'Đã nhận',
@@ -14,7 +14,7 @@ const STATUS = {
 const PAGE = 50;
 
 /** Nơi mở một chứng từ: đơn và các phiếu của đơn → chi tiết đơn; phiếu nhập → trang phiếu; phiếu kho → trang Kho */
-export const documentPath = (d) => (d.type === 'order' ? `/orders/${d.id}` : d.type === 'return' || d.type === 'write_off' ? `/orders/${d.order_id}` : d.type === 'purchase' ? `/purchases/${d.id}` : '/stock');
+export const documentPath = (d) => (d.type === 'order' ? `/orders/${d.id}` : d.type === 'return' || d.type === 'write_off' ? `/orders/${d.order_id}` : d.type === 'purchase' ? `/purchases/${d.id}` : d.type === 'purchase_return' || d.type === 'purchase_allowance' ? `/purchases/${d.order_id}` : '/stock');
 
 /** Danh sách gộp mọi chứng từ để tra cứu: một chỗ thay vì đi từng trang */
 function Warranty() {

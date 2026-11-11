@@ -1,4 +1,5 @@
 // Hàm thuần cho form tạo/sửa đơn: tính tiền, kiểm phân bổ kho, dựng payload. Không đụng React hay API để test được.
+import { lineAmount } from './money.js';
 
 export const toMoney = (v) => Math.max(0, Math.round(Number(v) || 0));
 export const toQty = (v) => Math.max(0, Math.floor(Number(v) || 0));
@@ -19,8 +20,9 @@ export function lineFromVariant(v) {
     price: toMoney(v.price),
     discount: 0,
     avg_cost: v.avg_cost ?? null,
-    on_hand_total: v.on_hand_total ?? v.on_hand ?? null,
-    stock_by_warehouse: v.stock_by_warehouse || [],
+    is_service: !!v.is_service,
+    on_hand_total: v.is_service ? null : v.on_hand_total ?? v.on_hand ?? null,
+    stock_by_warehouse: v.is_service ? [] : v.stock_by_warehouse || [],
   };
 }
 
@@ -31,7 +33,7 @@ export function addVariant(lines, v) {
   return lines.map((l, j) => (j === i ? { ...l, qty: l.qty + 1 } : l));
 }
 
-const grossOf = (l) => l.qty * l.price;
+const grossOf = (l) => lineAmount(l.qty, l.price);
 export const lineTotal = (l) => Math.max(0, grossOf(l) - l.discount);
 
 /**
@@ -48,12 +50,12 @@ export function computeTotals({ lines, discount = 0, shipping = 0, platformFee =
   const afterLines = subtotal - lineDiscount;
   const orderDiscount = Math.min(toMoney(discount), afterLines);
   const goods = afterLines - orderDiscount;
-  const total = goods + toMoney(shipping);
+  const total = goods + (marketplace ? 0 : toMoney(shipping)); // đơn sàn: ship người mua trả đi qua sàn, không về shop
   const fee = marketplace ? toMoney(platformFee) : 0;
   const ship = toMoney(sellerShipping); // ship shop chịu: mọi kênh (sàn trừ vào tiền sàn trả, kênh khác shop trả hãng vận chuyển)
   const net = total - fee - ship;
   const known = lines.length > 0 && lines.every((l) => l.avg_cost !== null && l.avg_cost !== undefined);
-  const cogs = known ? lines.reduce((a, l) => a + l.qty * l.avg_cost, 0) : null;
+  const cogs = known ? lines.reduce((a, l) => a + lineAmount(l.qty, l.avg_cost), 0) : null;
   return { subtotal, lineDiscount, afterLines, orderDiscount, goods, total, fee, ship, net, cogs, profit: known ? net - cogs : null, amountDue: marketplace ? net : total };
 }
 
@@ -162,7 +164,7 @@ export function buildPayload({ shopId, channelId, externalId, customerId, addres
     shipping_address: address?.trim() || null,
     lines: serverLines(lines, edits),
     discount_amount: toMoney(discount),
-    shipping_fee: toMoney(shipping),
+    shipping_fee: marketplace ? 0 : toMoney(shipping),
     platform_fee_amount: marketplace ? toMoney(platformFee) : 0,
     seller_shipping_amount: toMoney(sellerShipping),
     note: note?.trim() || null,

@@ -10,6 +10,7 @@ export const IMPORT_FIELDS = [
   ['sku', 'SKU (bắt buộc)', false], ['sku_fallback', 'SKU dự phòng khi cột SKU trống', false], ['qty', 'Số lượng', false], ['unit_price', 'Đơn giá', false],
   ['line_discount', 'Giảm giá dòng', true], ['order_discount', 'Giảm giá cả đơn', true], ['shipping_fee', 'Phí ship khách trả', true],
   ['platform_fee', 'Phí sàn (cộng nhiều cột)', true], ['seller_shipping', 'Phí ship shop chịu', true],
+  ['return_status', 'Trạng thái trả hàng/hoàn tiền', false], ['returned_qty', 'Số lượng đã hoàn trả', false],
   ['note', 'Ghi chú của khách', false], ['tracking_code', 'Mã vận đơn', false], ['carrier', 'Đơn vị vận chuyển', false], ['paid_amount', 'Đã thanh toán', true],
 ];
 
@@ -33,7 +34,7 @@ function ColumnPicker({ value, onChange, columns, multi, id }) {
       <div className="row wrap">
         {value.map((c) => (
           <span key={c} className="chip on" style={{ cursor: 'default', minHeight: 30, padding: '2px 8px 2px 12px' }}>
-            {c}{!columns.includes(c) && columns.length > 0 && <span title="Không thấy cột này trong file đang mở" style={{ color: 'var(--champagne)' }}> ⚠</span>}
+            {c}{!columns.some((x) => x.normalize('NFC').trim() === c.normalize('NFC').trim()) && columns.length > 0 && <span title="Không thấy cột này trong file đang mở" style={{ color: 'var(--champagne)' }}> ⚠</span>}
             <button type="button" aria-label={`Bỏ cột ${c}`} onClick={() => onChange(value.filter((x) => x !== c))} style={{ background: 'none', border: 0, color: 'inherit', cursor: 'pointer', marginLeft: 4 }}>✕</button>
           </span>
         ))}
@@ -68,7 +69,7 @@ export default function ProfileEditor({ profile, channels, columns = [], rows = 
   const save = () => run(async () => {
     const column_map = Object.fromEntries(Object.entries(map).filter(([, v]) => v.length).map(([k, v]) => [k, v.length === 1 ? v[0] : v]));
     const status_map = Object.fromEntries(statusMap.filter(([k]) => k.trim()));
-    const body = { name, channel_id: channel, column_map, status_map, options: note ? { note } : {} };
+    const body = { name, channel_id: channel, column_map, status_map, options: { ...Object.fromEntries(Object.entries(profile?.options || {}).filter(([k]) => k !== 'note')), ...(note ? { note } : {}) } };
     const r = isNew ? await api.post('/imports/profiles', body) : await api.put(`/imports/profiles/${profile.id}`, body);
     onSaved(r.data);
   });
@@ -89,7 +90,7 @@ export default function ProfileEditor({ profile, channels, columns = [], rows = 
       {missingRequired.length > 0 && <div className="alert err small">Cần chọn cột cho: {missingRequired.map((k) => IMPORT_FIELDS.find((f) => f[0] === k)[1]).join(', ')}.</div>}
 
       <h3>Trạng thái đơn: chữ trong file → trạng thái của Mở Sổ</h3>
-      <p className="small muted" style={{ margin: 0 }}>Chữ nào không có ở đây và hệ thống không đoán được sẽ báo lỗi dòng đó, không bỏ qua im lặng.</p>
+      <p className="small muted" style={{ margin: 0 }}>Chữ nào không có ở đây sẽ báo lỗi dòng đó, không bỏ qua im lặng. Chữ kết thúc bằng dấu * khớp theo phần đầu (vd “Người mua xác nhận*” khớp cả khi phần đuôi là ngày thay đổi).</p>
       {statusMap.map(([k, v], i) => (
         <div className="row" key={i}>
           <input value={k} onChange={(e) => setStatusMap(statusMap.map((x, j) => (j === i ? [e.target.value, x[1]] : x)))} aria-label="Chữ trong file" />

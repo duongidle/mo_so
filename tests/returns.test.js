@@ -213,19 +213,22 @@ test('Chặn: tiền trả khách > cần trả khách; ship hoàn > ship còn l
 
 test('Kênh sàn: hàng trả giảm phải thu sàn (1388); không có hoàn ship, phí trả hàng, tiền trả khách; vẫn nhập được ship chiều về', async () => {
   const { api, nh, sell, ret, view } = await world();
-  const o = await sell({ channel_id: 'shopee', external_id: 'SP-R1', lines: [{ sku: 'A1', qty: 2, unit_price: 150000 }], shipping_fee: 20000, platform_fee_amount: 30000 });
-  assert.equal(o.net_amount, 320000 - 30000);
+  const o = await sell({ channel_id: 'shopee', external_id: 'SP-R1', lines: [{ sku: 'A1', qty: 2, unit_price: 150000 }], platform_fee_amount: 30000 });
+  assert.equal(o.net_amount, 300000 - 30000); // ship người mua trả đi qua sàn: không có trong số shop nhận (xem MARKETPLACE_SHIPPING_FEE ở orders_v4)
   const code = async (body) => (await ret(o, body, null)).body.error?.code;
   assert.equal(await code({ shipping_refund_amount: 1 }), 'MARKETPLACE_RETURN');
   assert.equal(await code({ return_fee_amount: 1 }), 'MARKETPLACE_RETURN');
   assert.equal(await code({ refund: { amount: 1, method: 'cash' } }), 'MARKETPLACE_RETURN');
   await ret(o, { return_shipping_cost: 12000 });
   const { order, ov, cf } = await view(o);
-  assert.equal(order.returned_amount, 150000);
+  // Trả 1/2: hàng 150.000, sàn hoàn 1/2 phí sàn = 15.000 → giảm phải thu sàn 135.000
+  assert.equal(order.returned_goods_amount, 150000);
+  assert.equal(order.platform_fee_refunded_amount, 15000);
+  assert.equal(order.returned_amount, 135000);
   assert.equal(order.refund_owed_amount, 0);
   assert.equal(order.returns[0].amount_due_to_customer, 0);
-  assert.equal(cf.marketplace_pending, 290000 - 150000);
-  assert.equal(bal('1388'), 290000 - 150000);
+  assert.equal(cf.marketplace_pending, 270000 - 135000);
+  assert.equal(bal('1388'), 270000 - 135000);
   assert.equal(ov.return_shipping_cost, 12000);
   assert.equal(bal('6412'), 12000);
   void nh;

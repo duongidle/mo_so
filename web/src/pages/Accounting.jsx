@@ -33,7 +33,7 @@ const INTRO = {
   accounts: 'Danh sách tài khoản. Tài khoản hệ thống không đổi được; bạn thêm được tài khoản con.',
 };
 const signed = (n) => (n < 0 ? `− ${vnd(-n)}` : vnd(n));
-const SRC = { order: 'Đơn bán', return: 'Trả hàng', payment: 'Thanh toán', purchase: 'Nhập hàng', expense: 'Chi phí', stock: 'Kho', cash_open: 'Số dư đầu quỹ', cash_entry: 'Quỹ', manual: 'Chứng từ tay', asset: 'Tài sản' };
+const SRC = { order: 'Đơn bán', return: 'Trả hàng', payment: 'Thanh toán', purchase: 'Nhập hàng', purchase_return: 'Trả hàng nhập', purchase_allowance: 'NCC giảm giá sau nhận', expense: 'Chi phí', stock: 'Kho', cash_open: 'Số dư đầu quỹ', cash_entry: 'Quỹ', manual: 'Chứng từ tay', asset: 'Tài sản' };
 
 export default function Accounting() {
   const { shopId, isAll, shop } = useSession();
@@ -223,6 +223,7 @@ function Income({ range, shopParam, report }) {
             <Line l="Doanh thu phí vận chuyển (5113)" v={d.revenue_shipping} indent />
             <Line l="Hàng bán bị trả lại (5212)" v={-d.returns} indent />
             {d.revenue_return_fee !== 0 && <Line l="Doanh thu khác: phí trả hàng (5118)" v={d.revenue_return_fee} indent />}
+            {d.revenue_forfeit !== 0 && d.revenue_forfeit !== undefined && <Line l="Doanh thu khác: cọc giữ lại (5119)" v={d.revenue_forfeit} indent />}
             <Line l="Doanh thu thuần" v={d.net_revenue} bold m="acc_net_revenue" />
             <Line l="Giá vốn hàng bán (632)" v={-d.cogs} m="acc_cogs" />
             <Line l="Lãi gộp" v={d.gross_profit} bold m="acc_gross_profit" />

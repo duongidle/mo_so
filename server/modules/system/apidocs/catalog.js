@@ -63,8 +63,17 @@ POST /orders/:orderId/packaging-confirm | Xác nhận vật tư thực tế dùn
 GET /stock | Tồn từng biến thể (số lượng, giá vốn bình quân, giá trị, ngày còn bán) | warehouse_id, shop_id, q, category_id, filter, limit
 GET /stock-movements | Sổ biến động kho | variant_id, warehouse_id, ref_type, ref_id, limit, cursor
 GET /stock-adjustments | Danh sách phiếu điều chỉnh kho
-POST /stock-adjustments | Điều chỉnh tồn (kiểm đếm, hàng hỏng, tồn đầu kỳ)
+POST /stock-adjustments | Điều chỉnh tồn (kiểm đếm, hàng hỏng, tồn đầu kỳ); reason_code = hỏng/vỡ, hết hạn, hao hụt cân, mất, khác
 POST /transfers | Chuyển hàng giữa hai kho, giữ nguyên giá vốn
+GET /conversions | Danh sách phiếu đóng gói (DG-…) | warehouse_id, shop_id, limit, cursor
+POST /conversions | Lập phiếu đóng gói trong một giao dịch: xuất hàng nguồn (kg, bao bì; chọn lô hoặc theo hạn dùng sớm nhất), nhập thành phẩm; tổng giá vốn xuất chia cho thành phẩm, Σ giá trị nhập = Σ giá trị xuất đúng từng đồng; không lãi lỗ
+POST /conversions/suggest | Gợi ý hàng nguồn và bao bì cho "đóng N thành phẩm" theo công thức đóng từ và định mức đóng gói (chỉ gợi ý)
+POST /conversions/preview | Xem trước giá vốn thành phẩm của một phiếu đóng gói, không ghi gì
+GET /conversions/:id | Chi tiết phiếu đóng gói: nguồn, lô đã rút, thành phẩm, giá vốn, định mức so với thực tế
+POST /conversions/:id/void | Huỷ phiếu đóng gói (cần lý do): chỉ khi thành phẩm còn đủ trong kho; nhập lại nguồn đúng giá và đúng lô
+GET /conversion-recipes | Công thức "đóng từ" của các biến thể một sản phẩm | product_id
+PUT /conversion-recipes/:variantId | Đặt công thức đóng từ: 1 đơn vị thành phẩm cần bao nhiêu hàng nguồn
+DELETE /conversion-recipes/:variantId | Xoá công thức đóng từ
 GET /stock-integrity | Đối chiếu tồn với sổ kho, báo lệch nếu có
 GET /stock-counts | Danh sách phiếu kiểm kê
 GET /stock-counts/:id | Chi tiết phiếu kiểm kê
@@ -79,6 +88,7 @@ GET /material-consumption/export | Xuất tiêu hao vật tư ra CSV
 POST /material-issues | Xuất vật tư dùng cho vận hành (hạch toán chi phí)` },
   { id: 'costing', title: 'Phương pháp giá vốn', intro: 'Mặc định bình quân gia quyền di động theo kho. Chọn FIFO thì hàng nhập trước xuất trước, mỗi lần nhập là một lớp giá. Đổi phương pháp không làm đổi giá trị tồn hiện tại và không đổi giá vốn đã chụp trên đơn cũ, chỉ áp cho lần xuất sau đó. Không hỗ trợ LIFO.', routes: `
 GET /stock-lots | Các lô còn hàng kèm hạn dùng, số ngày còn lại, trạng thái (hết hạn, sắp hết hạn) | warehouse_id, variant_id, shop_id, within_days
+POST /stock-lots/:id/write-off | Xuất huỷ một lô đã hết hạn: lập phiếu hàng hỏng đúng số còn lại của lô và trừ đúng lô đó (LOT_NOT_EXPIRED nếu lô chưa hết hạn) | reason
 GET /stock-lots/summary | Số lô đã hết hạn và sắp hết hạn, số lượng và giá trị | shop_id
 GET /costing-method | Phương pháp đang dùng, các lựa chọn, số dòng tồn và giá trị tồn hiện tại
 PUT /costing-method | Đổi phương pháp (average | fifo), ghi nhật ký` },
@@ -122,7 +132,15 @@ PATCH /purchases/:id | Sửa phiếu nháp
 POST /purchases/:id/receive | Nhận hàng, cộng kho theo giá vốn đã phân bổ phí
 POST /purchases/:id/cancel | Huỷ phiếu (đã trả tiền thì cần phương thức hoàn)
 POST /purchases/:id/payments | Ghi trả tiền nhà cung cấp
-POST /purchases/:id/carrier-payments | Ghi trả tiền ship cho bên vận chuyển` },
+POST /purchases/:id/carrier-payments | Ghi trả tiền ship cho bên vận chuyển
+POST /purchases/:id/returns | Lập phiếu trả hàng cho nhà cung cấp (TN-…): xuất kho, giảm nợ NCC; refund.now để NCC hoàn tiền ngay
+GET /purchase-returns | Danh sách phiếu trả hàng nhập | purchase_id, supplier_id, shop_id, limit, cursor
+GET /purchase-returns/:id | Chi tiết phiếu trả hàng nhập
+POST /purchase-returns/:id/void | Huỷ phiếu trả hàng nhập (nhập lại kho đúng giá, khôi phục nợ NCC)
+POST /purchases/:id/allowances | NCC giảm giá sau khi đã nhận (GG-…): giảm nợ NCC, giảm giá vốn hàng còn tồn
+GET /purchase-allowances | Danh sách phiếu giảm giá sau nhận | purchase_id
+POST /purchase-allowances/:id/void | Huỷ phiếu giảm giá sau nhận
+POST /purchases/:id/supplier-refunds | Ghi nhận NCC hoàn tiền sau (khoản NCC còn nợ shop)` },
   { id: 'customers', title: 'Khách hàng', intro: 'Hồ sơ khách dùng chung cả tài khoản, danh sách và thông tin riêng theo từng shop.', routes: `
 GET /customers/export | Xuất danh sách khách (CSV/JSON) theo đúng bộ lọc danh sách | q, shop_id, tag, element, sort, format
 GET /customers | Danh sách khách | q, shop_id, tag, element, sort, limit, cursor
@@ -141,21 +159,23 @@ POST /customers/:id/notes | Thêm ghi chú về khách` },
 GET /orders | Danh sách đơn | shop_id, status, channel, payment_status, customer_id, from, to, q, limit, cursor
 GET /orders/status-counts | Số đơn theo từng trạng thái (dùng cùng bộ lọc danh sách)
 GET /orders/export | Xuất đơn CSV/JSON theo đúng bộ lọc danh sách (layout=orders: mỗi đơn một dòng, layout=lines: mỗi sản phẩm một dòng, format=count để đếm trước) | layout, format, và các bộ lọc như danh sách
-POST /orders/allocation-preview | Xem trước đơn sẽ lấy hàng từ kho nào, không ghi gì
+POST /orders/allocation-preview | Xem trước đơn sẽ lấy hàng từ kho nào, không ghi gì. Trả thêm cảnh báo lô quá hạn (LOT_EXPIRED) và sắp hết hạn (LOT_EXPIRING); dòng dịch vụ không lấy kho
 GET /orders/:id | Chi tiết đơn: dòng hàng, thanh toán, phân bổ kho, phiếu trả
 GET /orders/labels | Trang in nhiều nhãn giao hàng 100×150 mm (mã vạch mã vận đơn, người nhận, thu hộ) | ids (danh sách mã đơn, cách nhau bằng dấu phẩy)
 GET /orders/:id/label | Trang in nhãn giao hàng của một đơn
 GET /orders/:id/receipt | Dữ liệu in phiếu bán hàng
-POST /orders | Tạo đơn (nháp, xác nhận hoặc hoàn thành ngay)
+POST /orders | Tạo đơn (nháp, xác nhận hoặc hoàn thành ngay). Chạm lô quá hạn thì 409 LOT_EXPIRED trừ khi allow_expired=true. Đơn sàn nhập tay không nhận shipping_fee lớn hơn seller_shipping_amount (MARKETPLACE_SHIPPING_FEE): ship người mua trả đi qua sàn
 PATCH /orders/:id | Sửa đơn nháp, hoặc các trường được phép sửa sau khi chốt
-POST /orders/:id/status | Đổi trạng thái: xác nhận, giao, hoàn thành, huỷ (huỷ thì hoàn kho đúng giá vốn đã chụp). Đơn đang giao không huỷ được: dùng phiếu trả hàng chờ hàng về
+POST /orders/:id/status | Đổi trạng thái: xác nhận, giao, hoàn thành, huỷ (huỷ thì hoàn kho đúng giá vốn đã chụp). Đơn đang giao không huỷ được: dùng phiếu trả hàng chờ hàng về. Huỷ đơn ngoài sàn còn tiền khách đã thu BẮT BUỘC paid_action = refund (hoàn lại khách, refund={method,to_credit} để hoàn ngay) hoặc forfeit (giữ cọc, forfeit_amount mặc định toàn bộ, thành thu nhập khác của shop); thiếu thì 409 CANCEL_PAYMENT_CHOICE_REQUIRED. Chạm lô quá hạn: 409 LOT_EXPIRED trừ khi allow_expired=true
 POST /orders/:id/payments | Ghi nhận thanh toán, nhiều lần được
 GET /orders/warranty | Tra cứu bảo hành: dòng hàng đã bán của sản phẩm có bảo hành, còn hạn hay hết | q (mã đơn, SĐT, tên, SKU), shop_id, limit
 POST /orders/:id/split | Tách đơn (giao từng phần): chuyển một phần số lượng sang đơn nháp mới
 POST /orders/:id/reserve | Giữ hàng cho đơn nháp tới một ngày, hoặc bỏ giữ
 POST /orders/:id/ship | Giao đơn cho hãng vận chuyển: tạo vận đơn, đưa đơn sang đang giao, COD mặc định = số khách còn nợ
 GET /orders/return-reasons | Danh sách lý do trả hàng có mã
-POST /orders/:id/returns | Tạo phiếu trả hàng (một phần hoặc toàn phần, hoàn ship, phí trả hàng, reason_code, awaiting_goods=true nếu hàng chưa về kho). Dòng không nhập lại kho tự lập phiếu hàng huỷ
+POST /orders/:id/returns | Tạo phiếu trả hàng (một phần hoặc toàn phần, hoàn ship, phí trả hàng, reason_code, awaiting_goods=true nếu hàng chưa về kho). Dòng không nhập lại kho tự lập phiếu hàng huỷ. Đơn sàn: platform_fee_refund_amount = phí sàn sàn hoàn lại (bỏ trống = theo tỷ lệ hàng trả, 0 = không hoàn)
+POST /orders/:id/returns/preview | Xem trước phiếu trả (không ghi): giá trị hàng trả, phí sàn được hoàn mặc định và tối đa của đơn sàn
+POST /orders/:id/allowances | Giảm giá sau bán / bồi thường: giảm một khoản tiền hàng, khách giữ hàng, không đụng kho; tuỳ chọn trả tiền ngay (kênh thường). Đơn sàn chỉ ghi khoản giảm
 POST /orders/:id/returns/:returnId/receive | Xác nhận hàng trả đã về (đơn sàn hoặc giao không thành); damaged_line_ids = dòng hàng về bị hỏng, lập phiếu hàng huỷ thay vì nhập kho
 POST /orders/:id/seller-shipping-payments | Ghi việc shop đã trả tiền ship cho hãng vận chuyển (đơn ngoài sàn có ship shop chịu)
 POST /orders/:id/exchange | Đổi hàng
@@ -209,6 +229,7 @@ GET /reports/customers | Khách mới, khách quay lại, top khách
 GET /reports/inventory | Giá trị tồn, số ngày tồn, hàng bán chậm, sắp hết
 GET /reports/cashflow | Dòng tiền, tiền sàn treo, công nợ
 GET /reports/return-reasons | Trả hàng theo lý do trong kỳ và giá vốn hàng hỏng không nhập lại
+GET /reports/shrinkage | Hao hụt theo sản phẩm và lý do (hỏng/vỡ, hết hạn, hao hụt cân, mất, khác, hàng trả hỏng): lượng, giá trị, lượng nhập trong kỳ, tỷ lệ hao hụt | from, to, shop_id, category_id
 GET /reports/expenses | Chi phí theo danh mục
 GET /reports/aging | Tuổi nợ khách, sàn, nhà cung cấp
 GET /reports/health | Sức khoẻ kinh doanh theo ngưỡng đã đặt
@@ -308,10 +329,14 @@ export const EXAMPLES = {
   'POST /orders/:id/status': { body: { status: 'cancelled', note: 'Khách đổi ý' } },
   'POST /purchases': { note: 'Nhận hàng luôn, ship trả bên vận chuyển (không cộng vào nợ nhà cung cấp)', body: { supplier_id: 'sup_…', warehouse_id: 'whs_…', receive: true, shipping_fee: 1000000, shipping_payee: 'carrier', lines: [{ variant_id: 'var_…', qty: 100, unit_cost: 200000 }] } },
   'POST /purchases/:id/payments': { body: { amount: 20000000, method: 'bank' } },
+  'POST /purchases/:id/returns': { note: 'Trả 3 kg của dòng đã nhập, NCC hoàn tiền ngay bằng chuyển khoản', body: { lines: [{ purchase_line_id: 'pul_…', qty: 3 }], reason: 'Hàng lỗi', refund: { now: true, method: 'bank' } } },
+  'POST /purchases/:id/allowances': { body: { amount: 500000, reason: 'Cân thiếu', refund: { now: false } } },
+  'POST /purchases/:id/supplier-refunds': { body: { amount: 500000, method: 'bank' } },
   'POST /purchases/:id/carrier-payments': { body: { amount: 1000000, method: 'cash' } },
   'POST /payments/:id/void': { note: 'Huỷ khoản trả hoặc thu ghi nhầm', body: { reason: 'Nhập nhầm số tiền' } },
   'POST /products': { body: { name: 'Nước hoa ô tô Gỗ Đàn', variants: [{ sku: 'NH-001', default_price: 150000, opening_qty: 20, opening_cost: 60000 }], shop_ids: ['shp_…'] } },
   'POST /stock-adjustments': { body: { warehouse_id: 'whs_…', kind: 'adjust', reason: 'Đếm lại cuối tháng', lines: [{ variant_id: 'var_…', change: -2 }] } },
+  'POST /conversions': { note: 'Nhập 20 kg, đóng 39 hộp 500 g. Giá vốn hộp = giá trị 20 kg + bao bì chia cho 39 hộp', body: { warehouse_id: 'whs_…', sources: [{ variant_id: 'var_kg', qty: 20 }, { variant_id: 'var_hop_rong', qty: 40 }], outputs: [{ variant_id: 'var_hop_500g', qty: 39 }] } },
   'POST /transfers': { body: { from_warehouse_id: 'whs_…', to_warehouse_id: 'whs_…', lines: [{ variant_id: 'var_…', qty: 10 }] } },
   'POST /warehouses/:id/remove': { note: 'Gọi GET /warehouses/:id/impact trước. Kho còn hàng thì bắt buộc transfer_to. Kho đã có lịch sử chỉ được đóng, không xoá cứng', body: { transfer_to: 'whs_…', confirm: true } },
   'POST /products/:id/remove': { note: 'Gọi GET /products/:id/removal-impact trước. Còn hàng trong kho thì cần write_off: true (hệ thống lập phiếu hàng hỏng). Đã có lịch sử thì chỉ ngừng kinh doanh, không xoá', body: { confirm: true, write_off: false } },

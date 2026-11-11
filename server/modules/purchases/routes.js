@@ -4,6 +4,7 @@ import { tx } from '../../db/index.js';
 import { body, money, qty, query, optionalText, idempotent, patchOf } from '../../lib/http.js';
 import { PAYMENT_METHODS } from '../payments/service.js';
 import * as svc from './service.js';
+import * as ret from './returns.js';
 
 const r = new Hono();
 
@@ -74,6 +75,38 @@ r.post('/purchases/:id/payments', async (c) => {
 r.post('/purchases/:id/carrier-payments', async (c) => {
   const input = await body(c, z.object({ amount: money.refine((v) => v > 0), method: z.enum(PAYMENT_METHODS).default('cash'), paid_at: z.string().nullish(), note: optionalText }));
   return c.json({ data: tx(() => svc.addCarrierPayment(c.req.param('id'), { amount: input.amount, method: input.method, paidAt: input.paid_at, note: input.note }, c.get('actor'))) });
+});
+
+// ---------- Trả hàng nhập, giảm giá sau nhận ----------
+const refundInput = z.object({ now: z.boolean().default(false), method: z.enum(PAYMENT_METHODS).default('cash'), amount: money.optional() }).optional();
+r.post('/purchases/:id/returns', async (c) => {
+  const input = await body(c, z.object({ lines: z.array(z.object({ purchase_line_id: z.string(), qty })).min(1), reason: optionalText, note: optionalText, refund: refundInput }));
+  return c.json({ data: tx(() => ret.createPurchaseReturn(c.req.param('id'), input, c.get('actor'))) }, 201);
+});
+r.get('/purchase-returns', (c) => {
+  const q = query(c, z.object({ purchase_id: z.string().optional(), supplier_id: z.string().optional(), shop_id: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().optional() }));
+  return c.json(ret.listPurchaseReturns({ purchaseId: q.purchase_id, supplierId: q.supplier_id, shopId: q.shop_id, limit: q.limit, cursor: q.cursor }));
+});
+r.get('/purchase-returns/:id', (c) => c.json({ data: ret.getPurchaseReturn(c.req.param('id')) }));
+r.post('/purchase-returns/:id/void', async (c) => {
+  const { reason } = await body(c, z.object({ reason: optionalText }));
+  return c.json({ data: tx(() => ret.voidPurchaseReturn(c.req.param('id'), reason, c.get('actor'))) });
+});
+r.post('/purchases/:id/allowances', async (c) => {
+  const input = await body(c, z.object({ amount: money.refine((v) => v > 0), reason: optionalText, refund: refundInput }));
+  return c.json({ data: tx(() => ret.createPurchaseAllowance(c.req.param('id'), input, c.get('actor'))) }, 201);
+});
+r.get('/purchase-allowances', (c) => {
+  const q = query(c, z.object({ purchase_id: z.string().optional() }));
+  return c.json({ data: ret.listPurchaseAllowances({ purchaseId: q.purchase_id }) });
+});
+r.post('/purchase-allowances/:id/void', async (c) => {
+  const { reason } = await body(c, z.object({ reason: optionalText }));
+  return c.json({ data: tx(() => ret.voidPurchaseAllowance(c.req.param('id'), reason, c.get('actor'))) });
+});
+r.post('/purchases/:id/supplier-refunds', async (c) => {
+  const input = await body(c, z.object({ amount: money.refine((v) => v > 0), method: z.enum(PAYMENT_METHODS).default('cash'), paid_at: z.string().nullish(), note: optionalText }));
+  return c.json({ data: tx(() => ret.addSupplierRefund(c.req.param('id'), { amount: input.amount, method: input.method, paidAt: input.paid_at, note: input.note }, c.get('actor'))) });
 });
 
 export default r;

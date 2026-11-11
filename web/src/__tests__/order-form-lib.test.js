@@ -24,11 +24,12 @@ describe('computeTotals', () => {
     expect(t.profit).toBe(t.total - 25000 - 120000);
   });
   it('kênh sàn: shop thực nhận trừ phí sàn và ship shop chịu, cần thu = net', () => {
+    // Ship người mua trả đi qua sàn, không về shop: bị bỏ qua dù state còn giá trị
     const t = computeTotals({ lines: [line()], shipping: 20000, platformFee: 30000, sellerShipping: 10000, marketplace: true });
-    expect(t.total).toBe(320000);
-    expect(t.net).toBe(280000);
-    expect(t.amountDue).toBe(280000);
-    expect(t.profit).toBe(280000 - 120000);
+    expect(t.total).toBe(300000);
+    expect(t.net).toBe(260000);
+    expect(t.amountDue).toBe(260000);
+    expect(t.profit).toBe(260000 - 120000);
   });
   it('thiếu giá vốn thì không bịa lãi; giảm giá đơn không vượt tiền hàng', () => {
     const t = computeTotals({ lines: [line({ avg_cost: null })], discount: 9999999 });

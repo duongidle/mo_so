@@ -12,6 +12,7 @@ import { OrderList, OrderDetail } from './pages/Orders.jsx';
 import Products from './pages/Products.jsx';
 import ProductPage from './pages/products/ProductPage.jsx';
 import Stock from './pages/Stock.jsx';
+import { NewConversionPage, ConversionPage } from './pages/Conversions.jsx';
 import NotificationBell from './components/NotificationBell.jsx';
 import Documents from './pages/Documents.jsx';
 import Purchases, { NewPurchasePage, PurchasePage, EditPurchasePage } from './pages/Purchases.jsx';
@@ -33,7 +34,7 @@ const NAV = [
   { group: 'Sổ sách', items: [['/reports', 'Báo cáo', 'chart'], ['/guide', 'Hướng dẫn', 'book'], ['/settings', 'Cài đặt', 'cog']] },
 ];
 /** Trang form đầy đủ có thanh lưu dính đáy: không hiện nút nổi "+ Đơn" */
-const FORM_PAGE = /^\/(products\/(new|combo|[^/]+)|purchases\/(new|[^/]+(\/edit)?))$/;
+const FORM_PAGE = /^\/(products\/(new|combo|[^/]+)|purchases\/(new|[^/]+(\/edit)?)|stock\/conversions\/(new|[^/]+))$/;
 const PRIMARY = ['/', '/orders/new', '/orders', '/stock'];
 
 /** Bộ chọn shop: nút hiện shop đang làm việc, bấm ra danh sách (thay cho thẻ select mặc định) */
@@ -125,6 +126,8 @@ function Shell({ progress, reopenGuide }) {
           <Route path="/products/combo/new" element={<ProductPage combo />} />
           <Route path="/products/:id" element={<ProductPage />} />
           <Route path="/stock" element={<Stock />} />
+          <Route path="/stock/conversions/new" element={<NewConversionPage />} />
+          <Route path="/stock/conversions/:id" element={<ConversionPage />} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/purchases" element={<Purchases />} />
           <Route path="/purchases/new" element={<NewPurchasePage />} />

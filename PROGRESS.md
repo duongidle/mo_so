@@ -1,5 +1,58 @@
 # Nhật ký thực hiện
 
+### 2026-11-11 — Phiếu đóng gói (kg → hộp), lý do giảm kho có mã + báo cáo hao hụt, dọn việc dở
+
+- Migration 050: `stock_conversions`, `stock_conversion_lines`, `conversion_recipes`, `stock_adjustments.reason_code`.
+- Phiếu đóng gói `DG-…` (`server/modules/inventory/conversions.js`): xuất nguồn (kg, bao bì; lô chọn hoặc FEFO) và nhập thành phẩm trong một transaction bằng `transfer_out/in` (`ref_type='conversion'`), không bút toán. Giá vốn thành phẩm = Σ giá trị xuất thật chia theo trọng số bằng `allocate()`; phần lẻ ghi hai mức giá cách nhau 1 đồng (Σ vào = Σ ra đúng từng đồng). Lô/hạn mặc định lấy từ lô nguồn. Huỷ phiếu chỉ khi thành phẩm còn đủ. Công thức "đóng từ" + định mức đóng gói gợi ý nguồn. API `/conversions*`, `/conversion-recipes*`, loại `conversion` ở `/documents`, sự kiện `conversion.created|voided`.
+- Giao diện: Kho → Đóng gói (danh sách), trang lập phiếu `/stock/conversions/new`, chi tiết/huỷ `/stock/conversions/:id`, khối "Đóng từ" trong form sản phẩm, sổ kho gọi biến động đóng gói là "Đóng gói". Bài hướng dẫn "Đóng gói: nhập theo kg, bán theo hộp" và mục Hỏi đáp (ba cách).
+- Lý do giảm kho có mã (`server/lib/stockReasons.js`), chọn ở Điều chỉnh nhanh; `GET /reports/shrinkage` và tab Báo cáo → Hao hụt (xuất Excel, ⓘ ở `metrics.js`). Không có cột theo nhà cung cấp (không suy được).
+- Dọn: (a) nhãn sổ kế toán cho `purchase_return`/`purchase_allowance`; (b) form sửa đơn đã xác nhận hỏi lại `LOT_EXPIRED` rồi gửi `allow_expired`; (c) test import đơn sàn chạm lô hết hạn; (d) test trả hàng nhập hai dòng cùng biến thể; (e) đơn huỷ còn tiền: giữ `payment_status='paid'`, danh sách đơn hiện "Còn phải hoàn khách"/"Giữ cọc"; (f) form dịch vụ ở ma trận ẩn giá vốn, tồn đầu kỳ; (g) CLAUDE.md 5.3B, 5.8, 5.16, mục 6, rủi ro, nhật ký quyết định.
+- Test: `tests/conversions.test.js` (10), `tests/shrinkage.test.js` (3), `tests/cleanup_v5.test.js` (5), `web/src/__tests__/conversions.test.jsx` (9).
+- Chưa làm: phiếu đóng gói chưa tạo lô cho thành phẩm theo từng lô nguồn riêng (một dòng thành phẩm nhận một lô gộp); chưa thử bằng trình duyệt thật.
+
+### 2026-11-11 — Đơn bán v4: giữ cọc khi huỷ, lô hết hạn, dịch vụ, ship đơn sàn
+
+- Migration 049: `orders.forfeited_amount`, `orders.expired_lot_warning`, `products.is_service`, `daily_stats.forfeit`, tài khoản 5119.
+- Huỷ đơn còn tiền đã thu bắt chọn `paid_action` refund/forfeit (409 `CANCEL_PAYMENT_CHOICE_REQUIRED`); cọc giữ lại thành dòng “Cọc giữ lại” ở báo cáo, lãi gộp và sổ kế toán (5119); phần nợ khách hiện ở Công nợ phải trả.
+- Lô quá hạn: `LOT_EXPIRED` khi xác nhận (vượt bằng `allow_expired`), cảnh báo ở allocation-preview, nút “Xuất huỷ lô” (`POST /stock-lots/:id/write-off`).
+- Dịch vụ không tồn kho (`is_service`), `SERVICE_NO_STOCK` ở `applyMovement`, form sản phẩm/đơn/danh sách/nhập hàng loạt.
+- Đơn sàn: `MARKETPLACE_SHIPPING_FEE`; trả toàn bộ đơn sàn cũ tự hoàn ship.
+- Test: `tests/orders_v4.test.js` (11), `web/src/__tests__/cancel-form.test.js`. Đổi kỳ vọng test cũ: các test huỷ đơn đã thu thêm `paid_action: 'refund'`; `returns.test.js` (đơn sàn không còn shipping_fee), `returns_docs.test.js` (lô hết hạn cần `allow_expired`), `order-form-lib.test.js` (kênh sàn bỏ ship khách trả).
+
+### 2026-11-11 — Trả hàng nhập và NCC giảm giá sau nhận
+
+- Migration 048: `purchases.returned_amount/allowance_amount`, bảng `purchase_returns(+_lines)`, `purchase_allowances(+_lines)`, trigger đánh dấu sổ kế toán.
+- `server/modules/purchases/returns.js`, `state.js`: trả hàng nhập (TN-), huỷ phiếu trả, giảm giá sau nhận (GG-), huỷ, NCC hoàn tiền sau. Nợ NCC = total − returned − allowance − paid ở danh sách NCC, Công nợ phải trả (thêm loại `supplier_refund`, phải thu), báo cáo tuổi nợ và dòng tiền.
+- `applyMovement` nhận `preferRef`; sổ kế toán thêm `purchase_return` và `purchase_allowance`; `GET /documents` thêm hai loại.
+- Giao diện: chi tiết phiếu nhập có “Trả hàng NCC”, “NCC giảm giá”, lịch sử, ghi NCC hoàn tiền; Chứng từ, Công nợ phải trả.
+- Test: `tests/purchase_returns.test.js` (14), `web/src/__tests__/purchase-returns.test.jsx` (3). Tài liệu: CLAUDE.md 5.4, mục 6, nhật ký quyết định; Hướng dẫn nhập hàng + Hỏi đáp; catalog API; metrics.
+
+### 2026-11-11 — Phí sàn được hoàn, giảm giá sau bán, hàng trả về đúng lô
+
+- Migration 047: `order_returns.platform_fee_refund_amount`, `order_returns.kind` (`return`|`allowance`), `orders.platform_fee_refunded_amount`, bảng `order_line_lots`; đánh dấu dựng lại `daily_stats`.
+- A. Đơn sàn trả hàng: phiếu có `platform_fee_refund_amount` (mặc định tỷ lệ luỹ kế, sửa được, tối đa phí còn lại). `returned_amount` đơn sàn trừ cả phần hoàn nên phải thu/tiền treo/tuổi nợ/1388 tự đúng; lãi gộp cộng phần hoàn; báo cáo dùng phí sàn thuần; sổ cái Có 6411. `POST /orders/:id/returns/preview`. Form trả hàng đơn sàn có ô “Phí sàn được hoàn”.
+- B. `POST /orders/:id/allowances` (phiếu `GG-…`, kind `allowance`, không có hàng): giảm doanh thu và phải thu, không đụng kho/giá vốn/trạng thái; trả tiền ngay hoặc thành khoản còn nợ khách; đơn sàn chỉ giảm phải thu sàn. Hộp thoại ở chi tiết đơn → Khác.
+- C. Bán ghi lô đã lấy; huỷ đơn, trả hàng, nhận hàng chờ về, sửa đơn cộng lại đúng lô (lô lấy sau cùng trả trước).
+- Test: `tests/returns_v3.test.js` (12), `web/src/__tests__/returns-v3.test.jsx` (9); sửa kỳ vọng 3 test cũ (đơn sàn không còn lỗ phí khi trả hết) và thêm assert vào `import_shopee.test.js`.
+- Tài liệu: CLAUDE.md 5.3, 5.6, 5.9, 5.16 + nhật ký quyết định; `metrics.js`; Hỏi đáp và bài Trả hàng ở `guides/content.js`; catalog API.
+
+### 2026-11-11 — Số lượng lẻ không còn tạo tiền lẻ
+
+- `server/lib/money.js`: `lineAmount(qty, giá)` (làm tròn một lần, tính qua số nguyên nghìn), `shareOf(tổng, phần, cả)` (luỹ kế), `qty3()` (chuẩn hoá tồn 3 chữ số). `web/src/lib/money.js` có bản tương đương cho xem trước.
+- Dùng ở: thành tiền dòng đơn và phiếu nhập; giá vốn từng phần xuất kho (bình quân, FIFO nhiều lớp, nhiều kho); hoàn giá vốn khi huỷ/trả một phần (luỹ kế theo từng phân bổ); giá trị hàng trả luỹ kế; tách đơn; khuyến mãi; giá trị tồn, lô, chốt kho, bút toán kho, báo cáo ngày tồn. `verify.js` đối chiếu giá vốn dòng theo cùng công thức và so tồn sau khi làm tròn 3 chữ số.
+- Tồn cộng trừ số lẻ chuẩn hoá về 3 chữ số (hết 10.042000000001); phân bổ kho tay nhận số lẻ.
+- Đơn tổng 0 đồng đã xác nhận trở đi có `payment_status = 'paid'`.
+- Form phiếu nhập nhập được số lượng lẻ; xem trước tiền ở form đơn, phiếu nhập, đổi hàng, trả hàng làm tròn giống máy chủ.
+- Test: `tests/money_rounding.test.js` (9) quét mọi cột tiền của 12 bảng, `verifyStock` và `verifyJournal` sạch.
+
+### 2026-11-11 — Nhập đơn Shopee đúng với file thật
+
+- Migration 046: cập nhật mẫu `imp_shopee` (có điều kiện, giữ cột người dùng thêm): thêm Phí xử lý giao dịch, Giảm giá từ Combo của Shop, cột trả hàng, trạng thái theo tiền tố; bỏ gán phí ship người mua trả.
+- Hàm thuần mới `web/src/lib/importRows.js`: `toMoney`/`toQty` (hết lỗi "18000.00" thành 1.800.000), chuẩn hoá NFC tên cột, `missingColumns` có nhóm tên thay nhau, giảm giá đơn không âm. `Import.jsx` dùng lại và hiện cảnh báo từng đơn.
+- Server: `normalizeStatus` bỏ đoán chuỗi con, thêm tiền tố `*`; trả hàng từ file thành phiếu chờ hàng về (không trùng khi import lại); import lại đơn đã có so cả dòng hàng và giảm giá, sửa được thì sửa, không thì `warning`.
+- Test: `tests/import_shopee.test.js` (6), `tests/import_shopee_real.test.js` (chạy trên file thật, tự bỏ qua nếu thiếu), `web/src/__tests__/import-rows.test.js` mở rộng.
+- Chưa làm: chưa import thật vào app (SKU trong file không phải sản phẩm của shop này); chưa thử bằng trình duyệt.
+
 ### 2026-11-08 — Cẩm nang từng bước trong trang Hướng dẫn
 
 - Đưa cẩm nang (trước đó là trang web riêng) vào Hướng dẫn, đứng đầu danh sách (`/guide/cam-nang`): 28 trang, màn hình mô phỏng chạy trong Shadow DOM, phát lại liên tục, có Tạm dừng. Thêm hai tình huống: nhập hàng trả nhà cung cấp nhiều đợt, khách trả tiền nhiều lần. Chỉnh văn phong theo quy tắc chung ("hệ thống", "nhấn", "Vui lòng", xưng "bạn").

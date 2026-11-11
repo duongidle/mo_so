@@ -1,3 +1,4 @@
+import { qty3 } from '../../lib/money.js';
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso } from '../../lib/time.js';
@@ -49,7 +50,7 @@ export function packagingPlan(orderId) {
   const agg = new Map();
   for (const line of lines) for (const spec of getPackagingSpec(line.product_id)) {
     const x = agg.get(spec.material_variant_id) || { variant_id: spec.material_variant_id, sku: spec.sku, name: spec.material_name, unit: spec.unit, qty: 0 };
-    x.qty += spec.qty * line.qty;
+    x.qty = qty3(x.qty + spec.qty * line.qty);
     agg.set(spec.material_variant_id, x);
   }
   const confirmed = db().prepare('SELECT id, created_at FROM packaging_runs WHERE order_id=?').get(orderId) || null;
