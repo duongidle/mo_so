@@ -29,6 +29,24 @@ describe('dữ liệu cẩm nang', () => {
     expect(titles).toContain('Nhập hàng, trả nhà cung cấp nhiều đợt');
     expect(titles).toContain('Khách trả tiền nhiều lần');
   });
+  it('có các tình huống mới: kg sang hộp, trả hàng NCC, cọc, hàng lỗi, Shopee trả hàng, nhập file Shopee', () => {
+    const titles = scenes.map((s) => s.title);
+    for (const t of [
+      'Nhập theo kg, bán theo hộp',
+      'Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền',
+      'Khách đặt cọc rồi không lấy: hoàn hay giữ',
+      'Khách nhận hàng bị lỗi, hoàn một phần',
+      'Đơn Shopee bị trả hàng: phí sàn được hoàn',
+      'Nhập file Shopee: cảnh báo, trạng thái và trả hàng',
+    ]) expect(titles, t).toContain(t);
+  });
+  it('số liệu ví dụ của phiếu đóng gói cộng đúng', () => {
+    const s = scenes.find((x) => x.title === 'Nhập theo kg, bán theo hộp');
+    expect((20.5 * 180000 + 205000) / 20.5).toBe(190000);
+    expect(20 * 190000 + 80000 + 20000).toBe(3900000);
+    expect(3900000 / 40).toBe(97500);
+    expect(JSON.stringify(s.script)).toContain('97.500 ₫');
+  });
   it('không còn lối viết thân mật hay từ "app" trong lời hướng dẫn', () => {
     const text = JSON.stringify(scenes.map((s) => [s.title, s.lead, s.steps, s.tip, s.warn]));
     expect(text).not.toMatch(/(?<![\p{L}])(?:[Aa]pp|[Bb]ấm|[Hh]ãy|tớ|cậu)(?![\p{L}])/u);
@@ -49,6 +67,23 @@ describe('Cẩm nang trong trang Hướng dẫn', () => {
     expect(await screen.findByRole('heading', { name: /Đơn có giao hàng/ })).toBeTruthy();
     fireEvent.click(screen.getByText('← Trước'));
     expect(screen.getByRole('heading', { name: 'Bán trực tiếp trong 30 giây' })).toBeTruthy();
+  });
+
+  it.each([
+    ['Nhập theo kg, bán theo hộp', 'C', 's2', '40 (lô L1126, hạn 30/06/2027)'],
+    ['Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền', 'A', 'db', '0 ₫'],
+    ['Khách đặt cọc rồi không lấy: hoàn hay giữ', 'B', 'ps', 'Đã huỷ'],
+    ['Khách nhận hàng bị lỗi, hoàn một phần', 'B', 'dt', '350.000 ₫'],
+    ['Đơn Shopee bị trả hàng: phí sàn được hoàn', 'B', 'tv', '864.000 ₫'],
+    ['Nhập file Shopee: cảnh báo, trạng thái và trả hàng', 'B', 't1', 'Đã ghi 11 đơn. Bỏ qua 1 đơn lỗi.'],
+  ])('trang mới "%s" phát hết kịch bản không lỗi', async (title, ch, id, expected) => {
+    render(<Handbook />);
+    fireEvent.click(screen.getByRole('tab', { name: { A: 'Bắt đầu', B: 'Bán hàng', C: 'Kho' }[ch] }));
+    for (let i = 0; i < 40 && !screen.queryByRole('heading', { name: title }); i++) fireEvent.click(screen.getByText('Sau →'));
+    await screen.findByRole('heading', { name: title });
+    const host = document.querySelector('.hb-host');
+    await waitFor(() => expect(host.shadowRoot.getElementById(id).textContent).toBe(expected));
+    expect(screen.getByText('Đã phát xong. Nhấn “Xem lại” để phát lại.')).toBeTruthy();
   });
 
   it('chạy kịch bản trong màn hình mô phỏng tới trạng thái cuối', async () => {

@@ -1,5 +1,11 @@
 # Nhật ký thực hiện
 
+### 2026-11-11 — Bù Cẩm nang và Hướng dẫn cho bốn đợt sửa nghiệp vụ
+
+- Cẩm nang (`web/src/guides/handbook/data.js`) thêm 6 trang, từ 28 lên 34: "Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền" (chương Bắt đầu), "Khách đặt cọc rồi không lấy: hoàn hay giữ", "Khách nhận hàng bị lỗi, hoàn một phần", "Nhập file Shopee: cảnh báo, trạng thái và trả hàng", "Đơn Shopee bị trả hàng: phí sàn được hoàn" (chương Bán hàng), "Nhập theo kg, bán theo hộp" (chương Kho, kèm mẹo chiết nước hoa ml sang chai 10 ml). Số liệu ví dụ cộng đúng (giá vốn kg 190.000, giá vốn hộp 3.900.000 / 40 = 97.500, phải thu sàn 1.728.000 − 960.000 + 96.000 = 864.000). Sửa tên nút ở các trang cũ cho khớp giao diện (Ghi nhận trả hàng, Xác nhận huỷ, Xem trước (chưa ghi gì), Ghi vào hệ thống). Bìa và Tình huống hay gặp thêm mục.
+- Hướng dẫn (`content.js`) sửa: Tạo đơn (huỷ đơn đã thu tiền, đơn sàn không nhập ship khách trả, lô hết hạn, dịch vụ; sửa câu hỏi sai về sửa đơn đã xác nhận), Trả hàng, Nhập đơn từ sàn (định dạng tiền, cột thiếu, phí, trạng thái, trả hàng từ file), Sản phẩm (Dịch vụ, Đóng từ), Nhập hàng (trả hàng NCC, giảm giá, NCC còn nợ shop), Quản lý kho và Lô hàng (xuất huỷ lô, cảnh báo, hàng trả vào lại lô), Đóng gói (ví dụ chiết nước hoa), Đọc báo cáo (Hàng trả, Cọc giữ lại, phí sàn thuần, Hao hụt), Sổ kế toán (nguồn bút toán mới), Hỏi đáp (chiết nước hoa). Thêm `/stock?tab=lots` vào danh sách route hợp lệ của test.
+- Test: `handbook.test.jsx` thêm kiểm tiêu đề bắt buộc, số liệu đóng gói, và phát hết kịch bản từng trang mới trong Shadow DOM tới trạng thái cuối. Chưa xem bằng trình duyệt thật (máy không có Playwright), chưa xem trên khổ điện thoại.
+
 ### 2026-11-11 — Phiếu đóng gói (kg → hộp), lý do giảm kho có mã + báo cáo hao hụt, dọn việc dở
 
 - Migration 050: `stock_conversions`, `stock_conversion_lines`, `conversion_recipes`, `stock_adjustments.reason_code`.
