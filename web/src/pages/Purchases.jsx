@@ -9,6 +9,8 @@ import { vnd, num, fmtDate, METHODS } from '../lib.js';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 import MoneyFill from '../components/MoneyFill.jsx';
+import { lineAmount } from '../lib/money.js';
+import { PurchaseReturnModal, PurchaseAllowanceModal } from './PurchaseReturnModal.jsx';
 
 const ST = { draft: 'Nháp', received: 'Đã nhận', cancelled: 'Đã huỷ' };
 const ST_CLASS = { draft: 'st-draft', received: 'st-completed', cancelled: 'st-cancelled' };
@@ -98,7 +100,7 @@ export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
   const allRows = Array.isArray(stockAll.data?.data) ? stockAll.data.data : [];
   const lowItems = allRows.filter((r) => r.kind !== 'bundle' && r.item_type === 'product' && r.on_hand <= (r.min_stock || 0) && !lines.some((x) => x.id === r.variant_id)).sort((a, b) => a.on_hand - b.on_hand).slice(0, 8);
   const { busy, error, run } = useAction();
-  const sub = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.unit_cost) || 0), 0);
+  const sub = lines.reduce((a, l) => a + lineAmount(Number(l.qty) || 0, Number(l.unit_cost) || 0), 0);
   const carrier = shipTo === 'carrier' ? Number(fees.shipping_fee) || 0 : 0;
   const total = sub - (Number(fees.discount_amount) || 0) + (Number(fees.shipping_fee) || 0) - carrier + (Number(fees.other_fee) || 0);
   const upd = (id, p) => { setTouched(true); setLines((l) => l.map((x) => (x.id === id ? { ...x, ...p } : x))); };
@@ -176,9 +178,9 @@ export function PurchaseForm({ onClose, onSaved, onDirty, initial }) {
                 <div key={l.id} className="pl-wrap">
                 <div className="pl-row">
                   <div className="pl-name"><div>{l.name}</div><div className="small muted">{l.sku}{stock.data && <> · <StockTag n={stockOf.get(l.id)?.on_hand} min={stockOf.get(l.id)?.min_stock} never={!stockOf.has(l.id)} scope={whName ? `Tồn tại ${whName}` : undefined} /></>}</div></div>
-                  <input type="number" min="1" value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} aria-label="Số lượng" />
+                  <input type="number" min="0.001" step="any" inputMode="decimal" value={l.qty} onChange={(e) => upd(l.id, { qty: e.target.value })} aria-label="Số lượng" />
                   <MoneyInput value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} aria-label="Giá nhập" />
-                  <b className="num">{vnd((Number(l.qty) || 0) * (Number(l.unit_cost) || 0))}</b>
+                  <b className="num">{vnd(lineAmount(Number(l.qty) || 0, Number(l.unit_cost) || 0))}</b>
                   <button type="button" className="btn sm" aria-label={`Bỏ ${l.sku}`} onClick={() => { setTouched(true); setLines((ls) => ls.filter((x) => x.id !== l.id)); }}>✕</button>
                 </div>
                 {(lotOpen.has(l.id) || l.lot_no || l.expiry_date) ? (
@@ -241,6 +243,8 @@ export function PurchasePage() {
   const [pay, setPay] = useState(null); // null = chưa gõ: tự điền số còn nợ
   const [shipPay, setShipPay] = useState(null);
   const [refund, setRefund] = useState(null); // phương thức NCC hoàn tiền khi huỷ phiếu đã trả tiền
+  const [modal, setModal] = useState(null); // 'return' | 'allowance'
+  const [supRefund, setSupRefund] = useState(null);
   const voidPay = (x) => confirm(`Huỷ khoản ${vnd(x.amount)} đã ghi ngày ${fmtDate(x.paid_at)}? Khoản này sẽ tính lại vào số còn nợ.`) && run(async () => { await api.post(`/payments/${x.id}/void`, {}); s.reload(); });
   return (
     <div className="page stack">
@@ -252,6 +256,22 @@ export function PurchasePage() {
               <Section title="Hàng nhập" flush>
                 <div className="table-wrap"><table><tbody>{p.lines.map((l) => <tr key={l.id}><td>{l.name || l.sku}<span className="sub">{num(l.qty)} × {vnd(l.unit_cost)}</span></td><td className="num small">giá vốn thực<br /><b>{vnd(l.landed_unit_cost)}</b></td></tr>)}</tbody></table></div>
               </Section>
+              {(p.returns?.length > 0 || p.allowances?.length > 0) && (
+                <Section title="Trả hàng và giảm giá sau nhận">
+                  {p.returns.map((x) => (
+                    <div key={x.id} className="ledger-line" style={x.voided_at ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                      <span className="small">{x.code} · trả hàng · {fmtDate(x.returned_at)}{x.reason ? ` · ${x.reason}` : ''}{x.voided_at ? ' · đã huỷ' : ''}{!x.voided_at && <> · <button type="button" className="linkbtn" disabled={busy} onClick={() => confirm(`Huỷ phiếu trả ${x.code}? Hàng nhập lại kho, nợ NCC tăng lại.`) && run(async () => { await api.post(`/purchase-returns/${x.id}/void`, {}); s.reload(); })}>Huỷ phiếu</button></>}</span>
+                      <span className="num">−{vnd(x.goods_amount)}</span>
+                    </div>
+                  ))}
+                  {p.allowances.map((x) => (
+                    <div key={x.id} className="ledger-line" style={x.voided_at ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                      <span className="small">{x.code} · NCC giảm giá · {fmtDate(x.allowed_at)}{x.reason ? ` · ${x.reason}` : ''}{x.voided_at ? ' · đã huỷ' : ''}{!x.voided_at && <> · <button type="button" className="linkbtn" disabled={busy} onClick={() => confirm(`Huỷ phiếu giảm giá ${x.code}?`) && run(async () => { await api.post(`/purchase-allowances/${x.id}/void`, {}); s.reload(); })}>Huỷ phiếu</button></>}</span>
+                      <span className="num">−{vnd(x.amount)}</span>
+                    </div>
+                  ))}
+                </Section>
+              )}
               <CustomFieldsPanel bare entity="purchase" id={p.id} shopId={p.shop_id} />
             </div>
             <div className="stack">
@@ -259,6 +279,8 @@ export function PurchasePage() {
                 <div className="stack">
                   <div>
                     <div className="ledger-line"><span>Tổng</span><b className="num">{vnd(p.total_amount)}</b></div>
+                    {p.returned_amount > 0 && <div className="ledger-line"><span>Hàng đã trả NCC</span><b className="num">−{vnd(p.returned_amount)}</b></div>}
+                    {p.allowance_amount > 0 && <div className="ledger-line"><span>NCC giảm giá</span><b className="num">−{vnd(p.allowance_amount)}</b></div>}
                     <div className="ledger-line"><span>Đã trả</span><b className="num">{vnd(p.paid_amount)}</b></div>
                     {p.payments?.map((x) => <PayLine key={x.id} x={x} can={p.status !== 'cancelled' && x.direction === 'out'} busy={busy} onVoid={voidPay} />)}
                   </div>
@@ -274,6 +296,12 @@ export function PurchasePage() {
                       )}
                     </div>
                   )}
+                  {p.status === 'received' && p.supplier_owes > 0 && (
+                    <div className="stack" style={{ gap: 8 }}>
+                      <div className="ledger-line"><span>NCC còn nợ shop</span><b className="num">{vnd(p.supplier_owes)}</b></div>
+                      <div className="row"><MoneyFill fill={p.supplier_owes} value={supRefund ?? String(p.supplier_owes)} onChange={(e) => setSupRefund(e.target.value)} aria-label="Số tiền NCC hoàn" /><button className="btn primary" disabled={busy || !Number(supRefund ?? p.supplier_owes)} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/supplier-refunds`, { amount: Number(supRefund ?? p.supplier_owes) }); setSupRefund(null); s.reload(); })}>Ghi NCC hoàn tiền</button></div>
+                    </div>
+                  )}
                   {p.status === 'received' && p.debt > 0 && (
                     <div className="row"><MoneyFill fill={p.debt} value={pay ?? String(p.debt)} onChange={(e) => setPay(e.target.value)} aria-label="Số tiền trả nợ" /><button className="btn primary" disabled={busy || !Number(pay ?? p.debt)} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/payments`, { amount: Number(pay ?? p.debt) }); setPay(null); s.reload(); })}>Ghi trả</button></div>
                   )}
@@ -285,6 +313,8 @@ export function PurchasePage() {
                   <div className="row wrap">
                     {p.status === 'draft' && <button className="btn primary" disabled={busy} onClick={() => run(async () => { await api.post(`/purchases/${p.id}/receive`); s.reload(); })}>Nhận hàng</button>}
                     {p.status === 'draft' && <Link className="btn" to={`/purchases/${p.id}/edit`}>Sửa phiếu</Link>}
+                    {p.status === 'received' && <button className="btn" disabled={busy} onClick={() => setModal('return')}>Trả hàng NCC</button>}
+                    {p.status === 'received' && <button className="btn" disabled={busy} onClick={() => setModal('allowance')}>NCC giảm giá</button>}
                     {p.status !== 'cancelled' && p.paid_amount === 0 && !(p.carrier_paid_amount > 0) && <button className="btn danger" disabled={busy} onClick={() => confirm('Huỷ phiếu? Nếu đã nhận, kho sẽ bị trừ lại.') && run(async () => { await api.post(`/purchases/${p.id}/cancel`, {}); s.reload(); })}>Huỷ phiếu</button>}
                     {p.status !== 'cancelled' && (p.paid_amount > 0 || p.carrier_paid_amount > 0) && <button className="btn danger" disabled={busy} onClick={() => setRefund('bank')}>Huỷ phiếu</button>}
                   </div>
@@ -302,6 +332,8 @@ export function PurchasePage() {
               </Section>
             </div>
           </div>
+          {modal === 'return' && <PurchaseReturnModal purchase={p} onClose={() => setModal(null)} onDone={() => { setModal(null); s.reload(); }} />}
+          {modal === 'allowance' && <PurchaseAllowanceModal purchase={p} onClose={() => setModal(null)} onDone={() => { setModal(null); s.reload(); }} />}
         </>
       )}</Async>
     </div>

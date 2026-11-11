@@ -1,12 +1,13 @@
 import { getDb } from '../../db/index.js';
 import { newId } from '../../lib/id.js';
 import { nowIso, businessDate, toIso, addDays } from '../../lib/time.js';
-import { allocate } from '../../lib/money.js';
+import { allocate, lineAmount, shareOf, qty3 } from '../../lib/money.js';
 import { audit, emit } from '../../lib/events.js';
 import { badRequest, conflict, notFound } from '../../lib/errors.js';
 import { dailyCode } from '../../lib/codes.js';
 import { RETURN_REASON_CODES } from '../../lib/returnReasons.js';
 import { applyMovement } from '../inventory/service.js';
+import { recordOrderLots, restoreOrderLots, forgetOrderLots, fefoPreview } from '../inventory/lots.js';
 import { recordPayment, netPaid, listPaymentsFor, voidPaymentRow } from '../payments/service.js';
 import { getSetting } from '../settings/service.js';
 import { reservedByVariant } from './reservation.js';
@@ -43,7 +44,7 @@ export function getOrder(id) {
   if (!o) throw notFound('Đơn hàng');
   o.tags = JSON.parse(o.tags || '[]');
   o.lines = db()
-    .prepare(`SELECT l.*, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url FROM order_lines l
+    .prepare(`SELECT l.*, p.is_service, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url FROM order_lines l
               LEFT JOIN variants v ON v.id = l.variant_id LEFT JOIN products p ON p.id = v.product_id WHERE l.order_id = ? ORDER BY l.sort_order`)
     .all(o.id);
   const allocs = db()
@@ -75,7 +76,7 @@ export function getOrder(id) {
   o.seller_shipping_due = !o.is_marketplace && ['confirmed', 'shipping', 'completed', 'returned'].includes(o.status) ? Math.max(0, o.seller_shipping_amount - o.seller_shipping_paid_amount) : 0;
   o.customer_credit_balance = customerCreditBalance(o.customer_id, o.shop_id);
   o.amount_due = Math.max(0, dueAmount(o) - o.paid_amount);
-  o.needs_refund = o.paid_amount > dueAmount(o);
+  o.needs_refund = o.status === 'cancelled' ? o.refund_owed_amount > 0 : o.paid_amount > dueAmount(o);
   o.gross_profit = orderGrossProfit(o);
   return o;
 }
@@ -89,10 +90,11 @@ function isMarketplace(channelId) {
   return !!db().prepare('SELECT is_marketplace FROM channels WHERE id = ?').get(channelId)?.is_marketplace;
 }
 
-/** Lãi gộp một đơn: shop thực nhận − ship hoàn − hàng trả + phí trả hàng thu được − giá vốn − ship chiều về. Khớp báo cáo (finish) và sổ cái. */
+/** Lãi gộp một đơn: shop thực nhận − ship hoàn − hàng trả + phí trả hàng thu được + phí sàn được hoàn − giá vốn − ship chiều về. Khớp báo cáo (finish) và sổ cái. */
 export function orderGrossProfit(o) {
-  if (o.status === 'cancelled' || o.status === 'draft') return 0;
-  return o.net_amount - o.returned_shipping_amount - o.returned_goods_amount + o.return_fee_amount - o.cogs_amount - o.return_shipping_cost;
+  if (o.status === 'draft') return 0;
+  if (o.status === 'cancelled') return o.forfeited_amount ?? 0; // đơn huỷ: chỉ còn cọc shop giữ lại (thu nhập khác)
+  return o.net_amount - o.returned_shipping_amount - o.returned_goods_amount + o.return_fee_amount + (o.platform_fee_refunded_amount ?? 0) - o.cogs_amount - o.return_shipping_cost;
 }
 
 /** Cần trả khách của một phiếu trả: hàng + ship hoàn − phí trả hàng. Đơn sàn: sàn tự hoàn tiền cho người mua nên shop không trả khách. */
@@ -142,7 +144,7 @@ export function listOrders(f) {
     .prepare(
       `SELECT o.id, o.code, o.shop_id, s.name AS shop_name, s.color AS shop_color, o.channel_id, o.external_id, o.customer_id,
               o.customer_name, o.customer_phone, o.status, o.payment_status, o.total_amount, o.net_amount, o.net_revenue,
-              o.paid_amount, o.cogs_amount, o.returned_amount, o.stock_warning, o.ordered_at, o.business_date, o.source,
+              o.paid_amount, o.cogs_amount, o.returned_amount, o.refund_owed_amount, o.forfeited_amount, o.stock_warning, o.ordered_at, o.business_date, o.source,
               (SELECT COUNT(*) FROM order_lines l WHERE l.order_id = o.id) AS line_count,
               (SELECT SUM(qty) FROM order_lines l WHERE l.order_id = o.id) AS item_count
        FROM orders o JOIN shops s ON s.id = o.shop_id
@@ -158,8 +160,8 @@ export function listOrders(f) {
 function resolveLines(shopId, lines, channelId = null) {
   return lines.map((l, i) => {
     let v;
-    if (l.variant_id) v = db().prepare('SELECT v.*, p.name AS product_name, p.item_type FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(l.variant_id);
-    else if (l.sku) v = db().prepare('SELECT v.*, p.name AS product_name, p.item_type FROM variants v JOIN products p ON p.id = v.product_id WHERE v.sku = ?').get(String(l.sku).trim().toUpperCase());
+    if (l.variant_id) v = db().prepare('SELECT v.*, p.name AS product_name, p.item_type, p.is_service FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(l.variant_id);
+    else if (l.sku) v = db().prepare('SELECT v.*, p.name AS product_name, p.item_type, p.is_service FROM variants v JOIN products p ON p.id = v.product_id WHERE v.sku = ?').get(String(l.sku).trim().toUpperCase());
     if (!v) throw badRequest('VARIANT_NOT_FOUND', `Không tìm thấy sản phẩm ${l.sku || l.variant_id}`, { line: i, sku: l.sku, variant_id: l.variant_id });
     if (v.item_type !== 'product') throw badRequest('MATERIAL_NOT_SELLABLE', `Mặt hàng ${v.sku} là vật tư kho, không thể thêm vào đơn bán`, { line: i, variant_id: v.id });
     let price = l.unit_price;
@@ -170,7 +172,8 @@ function resolveLines(shopId, lines, channelId = null) {
       price = cp?.price ?? listing?.price ?? v.default_price;
     }
     const discount = l.discount_amount ?? 0;
-    if (discount > price * l.qty) throw badRequest('INVALID_DISCOUNT', `Giảm giá dòng ${v.sku} lớn hơn thành tiền`);
+    const gross = lineAmount(l.qty, price);
+    if (discount > gross) throw badRequest('INVALID_DISCOUNT', `Giảm giá dòng ${v.sku} lớn hơn thành tiền`);
     return {
       variant_id: v.id,
       sku: v.sku,
@@ -178,15 +181,16 @@ function resolveLines(shopId, lines, channelId = null) {
       qty: l.qty,
       unit_price: price,
       discount_amount: discount,
-      line_total: price * l.qty - discount,
+      line_total: gross - discount,
       is_gift: l.is_gift ? 1 : 0,
-      allocations: l.allocations?.length ? l.allocations : null,
+      is_service: v.is_service ? 1 : 0,
+      allocations: l.allocations?.length && !v.is_service ? l.allocations : null,
     };
   });
 }
 
 function computeHeader(lines, f) {
-  const subtotal = lines.reduce((a, l) => a + l.qty * l.unit_price, 0);
+  const subtotal = lines.reduce((a, l) => a + lineAmount(l.qty, l.unit_price), 0);
   const lineDiscount = lines.reduce((a, l) => a + l.discount_amount, 0);
   const afterLines = subtotal - lineDiscount;
   const discount = f.discount_amount ?? 0;
@@ -213,30 +217,33 @@ function refreshDerived(orderId) {
   const rt = db()
     .prepare(
       `SELECT COALESCE(SUM(goods_amount),0) AS goods, COALESCE(SUM(shipping_refund_amount),0) AS ship, COALESCE(SUM(return_fee_amount),0) AS fee,
-              COALESCE(SUM(return_shipping_cost),0) AS cost FROM order_returns WHERE order_id = ?`,
+              COALESCE(SUM(return_shipping_cost),0) AS cost, COALESCE(SUM(platform_fee_refund_amount),0) AS pfr FROM order_returns WHERE order_id = ?`,
     )
     .get(orderId);
-  // returned_amount = giảm số phải thu = hàng trả + ship hoàn − phí trả hàng (mọi công thức công nợ `total − returned_amount − paid` dùng số này)
-  const returned = rt.goods + rt.ship - rt.fee;
+  // returned_amount = giảm số phải thu = hàng trả + ship hoàn − phí trả hàng − phí sàn được hoàn
+  // (mọi công thức công nợ `total − returned_amount − paid` và tiền treo sàn `net − returned_amount − paid` dùng số này)
+  const returned = rt.goods + rt.ship - rt.fee - rt.pfr;
   const active = STOCK_OUT_STATUSES.has(o.status);
   const cogs = active ? lines.reduce((a, l) => a + l.cogs_amount, 0) : 0; // cogs_amount của dòng đã trừ phần nhập lại kho
   const netRevenue = active ? o.goods_revenue - rt.goods : 0;
   const paid = netPaid('order', orderId);
   const due = dueAmount({ ...o, returned_amount: returned });
   // Còn nợ khách: đã thu nhiều hơn phải thu. Chỉ đơn ngoài sàn đã xác nhận trở đi (đơn huỷ hoàn tiền theo luồng huỷ; đơn sàn: sàn hoàn người mua)
-  const refundOwed = !isMarketplace(o.channel_id) && ['confirmed', 'shipping', 'completed', 'returned'].includes(o.status) ? Math.max(0, paid - due) : 0;
+  // Đơn đã huỷ: phần tiền đã thu mà shop KHÔNG giữ lại (forfeited_amount) là khoản còn nợ khách, hoàn ngay hoặc hoàn sau
+  const mp = isMarketplace(o.channel_id);
+  const refundOwed = mp ? 0 : o.status === 'cancelled' ? Math.max(0, paid - o.forfeited_amount) : ['confirmed', 'shipping', 'completed', 'returned'].includes(o.status) ? Math.max(0, paid - due) : 0;
   let paymentStatus = 'unpaid';
-  if (paid > 0 && paid >= due) paymentStatus = 'paid';
+  if (paid >= due && (paid > 0 || (due === 0 && ['confirmed', 'shipping', 'completed'].includes(o.status) && o.total_amount === 0 && !(o.returned_amount > 0)))) paymentStatus = 'paid';
   else if (paid > 0) paymentStatus = 'partial';
   const hadPayments = db().prepare("SELECT 1 FROM payments WHERE ref_type='order' AND ref_id=? AND voided_at IS NULL LIMIT 1").get(orderId);
   if ((o.status === 'cancelled' || o.status === 'returned') && hadPayments && paid <= 0) paymentStatus = 'refunded';
   if (o.status !== 'cancelled' && due === 0 && paid === 0 && o.status !== 'draft' && hadPayments) paymentStatus = 'refunded';
   db()
     .prepare(
-      `UPDATE orders SET returned_amount=?, returned_goods_amount=?, returned_shipping_amount=?, return_fee_amount=?, return_shipping_cost=?, refund_owed_amount=?,
+      `UPDATE orders SET returned_amount=?, returned_goods_amount=?, returned_shipping_amount=?, return_fee_amount=?, return_shipping_cost=?, refund_owed_amount=?, platform_fee_refunded_amount=?,
               net_revenue=?, cogs_amount=?, paid_amount=?, payment_status=?, updated_at=? WHERE id=?`,
     )
-    .run(returned, rt.goods, rt.ship, rt.fee, rt.cost, refundOwed, netRevenue, cogs, paid, paymentStatus, nowIso(), orderId);
+    .run(returned, rt.goods, rt.ship, rt.fee, rt.cost, refundOwed, rt.pfr, netRevenue, cogs, paid, paymentStatus, nowIso(), orderId);
 }
 
 // ---------- Tồn kho theo trạng thái ----------
@@ -245,24 +252,30 @@ function assertNotReserved(o) {
   const reserved = reservedByVariant(o.id);
   if (!reserved.size) return;
   const need = new Map();
-  for (const l of db().prepare('SELECT variant_id, qty FROM order_lines WHERE order_id = ?').all(o.id)) need.set(l.variant_id, (need.get(l.variant_id) ?? 0) + l.qty);
+  for (const l of db().prepare('SELECT variant_id, qty FROM order_lines WHERE order_id = ?').all(o.id)) need.set(l.variant_id, qty3((need.get(l.variant_id) ?? 0) + l.qty));
   const whs = shopWarehouseIds(o.shop_id);
   for (const [vid, q] of need) {
     const held = reserved.get(vid) ?? 0;
     if (!held) continue;
     const have = db().prepare(`SELECT COALESCE(SUM(on_hand),0) AS n FROM stock_levels WHERE variant_id = ? AND warehouse_id IN (${whs.map(() => '?').join(',')})`).get(vid, ...whs).n;
-    if (have - held < q) {
+    if (qty3(have - held) < q) {
       const sku = db().prepare('SELECT sku FROM variants WHERE id = ?').get(vid)?.sku;
       throw conflict('STOCK_RESERVED', `${sku}: còn ${have} nhưng ${held} đang giữ cho đơn khác, đơn này cần ${q}. Bỏ giữ hàng ở đơn kia hoặc nhập thêm hàng.`, { variant_id: vid, on_hand: have, reserved: held, required: q });
     }
   }
 }
+/** Các lô quá hạn (hạn < hôm nay giờ VN) mà kế hoạch xuất kho sẽ chạm vào theo FEFO. Không ghi gì. */
+function expiredLotHits(plan) {
+  const items = plan.lines.flatMap((l) => l.items.map((it) => ({ warehouse_id: it.warehouse_id, variant_id: it.variant_id, sku: it.sku, qty: it.qty })));
+  return fefoPreview(items).filter((x) => x.status === 'expired');
+}
+
 /**
  * Xuất kho khi xác nhận đơn. Mỗi dòng có thể lấy từ nhiều kho (planAllocation). Mỗi phần ghi một biến động kho riêng,
  * giá vốn của phần đó là giá bình quân của CHÍNH kho đó lúc xuất, chụp vào allocation và không tính lại.
  * Giá vốn dòng (cogs_amount) = Σ SL × giá vốn từng phần: cộng số nguyên nên đúng từng đồng; unit_cost chỉ để hiển thị.
  */
-function deductStock(o, actor, allowNegative) {
+function deductStock(o, actor, allowNegative, allowExpired = false) {
   let warning = false;
   if (!allowNegative) assertNotReserved(o);
   // Đơn import từ sàn đã xảy ra ở quá khứ: ghi biến động kho theo ngày đặt, không phải lúc bấm import
@@ -273,16 +286,27 @@ function deductStock(o, actor, allowNegative) {
     lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty, allocations: l.planned_allocations ? JSON.parse(l.planned_allocations) : null })),
     { allowNegative, primaryWarehouseId: o.warehouse_id },
   );
+  // Lô quá hạn: kiểm TRƯỚC khi ghi bất cứ biến động nào (FEFO lấy lô hết hạn sớm nhất, nên lô quá hạn luôn bị lấy trước nếu còn)
+  const expired = expiredLotHits(plan);
+  if (expired.length) {
+    // Đơn import từ sàn đã xảy ra rồi nên không chặn, chỉ gắn cảnh báo
+    if (!allowExpired && o.source !== 'import') {
+      const e = expired[0];
+      throw conflict('LOT_EXPIRED', `${e.sku}: lô ${e.lot_no ?? '(không số lô)'} đã hết hạn ${e.expiry_date}. Xuất huỷ lô đó ở Kho → Lô & hạn dùng, hoặc xác nhận vẫn bán.`, { lots: expired });
+    }
+    db().prepare('UPDATE orders SET expired_lot_warning = 1 WHERE id = ?').run(o.id);
+  }
   const insAlloc = db().prepare('INSERT INTO order_line_allocations (id, order_line_id, variant_id, warehouse_id, qty, unit_cost, restocked_qty, created_at) VALUES (?,?,?,?,?,?,0,?)');
   lines.forEach((l, i) => {
     const done = [];
     for (const it of plan.lines[i].items) {
       const res = applyMovement({ warehouseId: it.warehouse_id, variantId: it.variant_id, type: 'sale_out', qty: it.qty, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, actorId: actor?.id, allowNegative, at, clampIfClosed: true });
+      recordOrderLots({ orderLineId: l.id, variantId: it.variant_id, warehouseId: it.warehouse_id, lots: res.lots }); // nhớ lô đã lấy để nhập lại đúng lô
       if (res.negative || it.short_qty > 0) warning = true;
       // Mỗi phần giá vốn một phân bổ: bình quân luôn một phần; FIFO xuất qua nhiều lớp giá thì nhiều phần, đơn giá nguyên
       for (const sl of res.slices) {
         insAlloc.run(newId('ola'), l.id, it.variant_id, it.warehouse_id, sl.qty, sl.unitCost, nowIso());
-        done.push({ variant_id: it.variant_id, qty: sl.qty, cost: sl.qty * sl.unitCost });
+        done.push({ variant_id: it.variant_id, qty: sl.qty, cost: lineAmount(sl.qty, sl.unitCost) }); // làm tròn một lần cho mỗi phần xuất
       }
     }
     const cogs = done.reduce((a, d) => a + d.cost, 0);
@@ -296,7 +320,7 @@ function deductStock(o, actor, allowNegative) {
         comps.set(d.variant_id, c);
       }
       for (const [vid, c] of comps) {
-        db().prepare('INSERT INTO order_line_components (id, order_line_id, variant_id, per_bundle_qty, unit_cost) VALUES (?,?,?,?,?)').run(newId('olc'), l.id, vid, c.qty / l.qty, Math.round(c.cost / c.qty));
+        db().prepare('INSERT INTO order_line_components (id, order_line_id, variant_id, per_bundle_qty, unit_cost) VALUES (?,?,?,?,?)').run(newId('olc'), l.id, vid, qty3(c.qty / l.qty), Math.round(c.cost / c.qty));
       }
     }
     db().prepare('UPDATE order_lines SET unit_cost = ?, cogs_amount = ? WHERE id = ?').run(Math.round(cogs / l.qty), cogs, l.id);
@@ -315,16 +339,19 @@ function putBackLine(o, l, qty, { type, note, actor, at, warehouseId }) {
     .all(l.id);
   // Combo: mỗi thành phần cần per_bundle × qty; biến thể đơn: qty. per_bundle suy từ tổng phân bổ / SL dòng.
   const all = db().prepare('SELECT variant_id, SUM(qty) AS q FROM order_line_allocations WHERE order_line_id = ? GROUP BY variant_id').all(l.id);
-  const need = new Map(all.map((r) => [r.variant_id, (r.q / l.qty) * qty]));
+  const need = new Map(all.map((r) => [r.variant_id, qty3((r.q / l.qty) * qty)]));
   let restored = 0;
   for (const a of allocs) {
     let n = need.get(a.variant_id) ?? 0;
     if (n <= 0) continue;
-    const take = Math.min(n, a.qty - a.restocked_qty);
-    need.set(a.variant_id, n - take);
+    const take = qty3(Math.min(n, a.qty - a.restocked_qty));
+    need.set(a.variant_id, qty3(n - take));
     applyMovement({ warehouseId: warehouseId ?? a.warehouse_id, variantId: a.variant_id, type, qty: take, unitCost: a.unit_cost, refType: 'order', refId: o.id, refLineId: l.id, shopId: o.shop_id, note, actorId: actor?.id, at, clampIfClosed: true });
-    db().prepare('UPDATE order_line_allocations SET restocked_qty = restocked_qty + ? WHERE id = ?').run(take, a.id);
-    restored += take * a.unit_cost;
+    restoreOrderLots({ orderLineId: l.id, variantId: a.variant_id, srcWarehouseId: a.warehouse_id, destWarehouseId: warehouseId ?? a.warehouse_id, qty: take });
+    const restockedAfter = qty3(a.restocked_qty + take);
+    db().prepare('UPDATE order_line_allocations SET restocked_qty = ? WHERE id = ?').run(restockedAfter, a.id);
+    // Giá vốn hoàn theo luỹ kế: hoàn hết phần xuất thì tổng đúng bằng giá vốn đã ghi (không làm tròn riêng từng lần)
+    restored += lineAmount(restockedAfter, a.unit_cost) - lineAmount(a.restocked_qty, a.unit_cost);
   }
   for (const [vid, n] of need) if (n > 0) throw conflict('RESTOCK_EXCEEDS', 'Số lượng nhập lại lớn hơn số đã xuất của dòng đơn', { variant_id: vid, missing: n });
   db().prepare('UPDATE order_lines SET cogs_amount = cogs_amount - ? WHERE id = ?').run(restored, l.id);
@@ -334,7 +361,7 @@ function putBackLine(o, l, qty, { type, note, actor, at, warehouseId }) {
 function restoreStock(o, actor, note) {
   const lines = db().prepare('SELECT * FROM order_lines WHERE order_id = ?').all(o.id);
   for (const l of lines) {
-    const qty = l.qty - l.restocked_qty;
+    const qty = qty3(l.qty - l.restocked_qty);
     if (qty > 0) putBackLine(o, l, qty, { type: 'sale_cancel_in', note, actor });
     // Đơn huỷ không còn giá vốn nào. Phân bổ vẫn giữ lại làm lịch sử, đã hoàn hết.
     db().prepare('UPDATE order_lines SET cogs_amount = 0 WHERE id = ?').run(l.id);
@@ -348,10 +375,10 @@ function logStatus(orderId, from, to, note, actor) {
 }
 
 /** Chuyển một bước trạng thái, áp dụng tác động kho */
-function step(o, to, { note, actor, allowNegative, at }) {
+function step(o, to, { note, actor, allowNegative, allowExpired, at }) {
   if (!NEXT[o.status].includes(to)) throw conflict('INVALID_TRANSITION', `Không thể chuyển đơn từ "${o.status}" sang "${to}"`);
   const time = at || nowIso();
-  if (to === 'confirmed') deductStock(o, actor, allowNegative);
+  if (to === 'confirmed') deductStock(o, actor, allowNegative, allowExpired);
   if (to === 'cancelled' && -netPaid('order_seller_shipping', o.id) > 0) throw conflict('SELLER_SHIPPING_PAID', 'Đơn đã trả ship cho hãng vận chuyển nên không huỷ được. Dùng Trả hàng để ghi nhận hàng quay về.');
   if (to === 'cancelled' && STOCK_OUT_STATUSES.has(o.status)) {
     const hasReturns = db().prepare('SELECT 1 FROM order_returns WHERE order_id = ? LIMIT 1').get(o.id);
@@ -367,19 +394,20 @@ function step(o, to, { note, actor, allowNegative, at }) {
 }
 
 /** Chuyển đơn tới trạng thái đích, tự đi qua các bước trung gian */
-export function transitionOrder(orderId, target, { note, actor, allowNegative = false, at } = {}) {
+export function transitionOrder(orderId, target, { note, actor, allowNegative = false, allowExpired = false, cancelPayment = null, at } = {}) {
   let o = db().prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   if (!o) throw notFound('Đơn hàng');
   if (o.status === target) return getOrder(orderId);
   const before = o.status;
   if (target === 'cancelled') {
-    o = step(o, 'cancelled', { note, actor, allowNegative, at });
+    o = step(o, 'cancelled', { note, actor, allowNegative, allowExpired, at });
+    if (cancelPayment) applyCancelPayment(orderId, cancelPayment, actor);
   } else if (PATH[target] !== undefined && PATH[o.status] !== undefined && PATH[target] > PATH[o.status]) {
     const order = ['draft', 'confirmed', 'shipping', 'completed'];
     for (let i = PATH[o.status] + 1; i <= PATH[target]; i++) {
       // bỏ qua bước shipping nếu đích là completed và đơn chưa từng giao (bán trực tiếp)
       if (order[i] === 'shipping' && target === 'completed') continue;
-      o = step(o, order[i], { note, actor, allowNegative, at });
+      o = step(o, order[i], { note, actor, allowNegative, allowExpired, at });
     }
   } else {
     throw conflict('INVALID_TRANSITION', `Không thể chuyển đơn từ "${o.status}" sang "${target}"`);
@@ -391,6 +419,50 @@ export function transitionOrder(orderId, target, { note, actor, allowNegative = 
   emit('order.status_changed', { entityType: 'order', entityId: orderId, shopId: after.shop_id, data: { from: before, to: after.status, order: after } });
   if (after.status === 'cancelled') emit('order.cancelled', { entityType: 'order', entityId: orderId, shopId: after.shop_id, data: after });
   return after;
+}
+
+/**
+ * Huỷ đơn còn tiền khách đã thu (đơn ngoài sàn): người dùng PHẢI chọn một trong hai.
+ *  - paid_action = 'refund': hoàn lại khách. Shop nợ khách đúng số đã thu; `refund` ({ method, to_credit }) hoàn ngay, bỏ trống = hoàn sau.
+ *  - paid_action = 'forfeit': giữ cọc. `forfeit_amount` (mặc định toàn bộ số đã thu) thành thu nhập của shop; phần còn lại xử lý như hoàn lại.
+ * Trả về kế hoạch { forfeit, refund } đã kiểm, hoặc null nếu không cần chọn (đơn sàn, hoặc không còn tiền đã thu).
+ * Thiếu lựa chọn → 409 CANCEL_PAYMENT_CHOICE_REQUIRED kèm số tiền. Import huỷ đơn gọi thẳng transitionOrder nên không qua đây.
+ */
+export function planCancelPayment(orderId, { paid_action, forfeit_amount, refund } = {}) {
+  const o = db().prepare('SELECT id, code, channel_id, status FROM orders WHERE id = ?').get(orderId);
+  if (!o) throw notFound('Đơn hàng');
+  if (o.status === 'cancelled' || isMarketplace(o.channel_id)) return null;
+  const paid = netPaid('order', orderId);
+  if (paid <= 0) return null;
+  if (!paid_action) {
+    throw conflict('CANCEL_PAYMENT_CHOICE_REQUIRED', `Đơn ${o.code} còn ${paid} ₫ khách đã thu. Chọn hoàn lại khách hoặc giữ cọc (thu nhập của shop) trước khi huỷ.`, { paid_amount: paid, options: ['refund', 'forfeit'] });
+  }
+  let forfeit = 0;
+  if (paid_action === 'forfeit') {
+    forfeit = forfeit_amount ?? paid;
+    if (!Number.isInteger(forfeit) || forfeit <= 0) throw badRequest('INVALID_FORFEIT', 'Số tiền giữ cọc phải là số nguyên dương');
+    if (forfeit > paid) throw badRequest('FORFEIT_OVER_PAID', `Số giữ cọc tối đa ${paid} (số khách đã thu)`, { max: paid });
+  } else if (forfeit_amount) {
+    throw badRequest('INVALID_FORFEIT', 'Chỉ nhập số giữ cọc khi chọn giữ cọc');
+  }
+  if (refund && paid - forfeit <= 0) throw badRequest('NOTHING_TO_REFUND', 'Đã giữ toàn bộ tiền cọc nên không còn gì để hoàn');
+  return { forfeit, refund: refund ?? null, paid };
+}
+
+/** Ghi kết quả lựa chọn khi huỷ: số giữ lại thành thu nhập của đơn, phần còn lại hoàn ngay (nếu chọn) hoặc thành khoản còn nợ khách. */
+function applyCancelPayment(orderId, plan, actor) {
+  const o = db().prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  const owed = plan.paid - plan.forfeit;
+  if (plan.forfeit > 0) {
+    db().prepare('UPDATE orders SET forfeited_amount = ?, updated_at = ? WHERE id = ?').run(plan.forfeit, nowIso(), orderId);
+    audit(actor, 'order.deposit_forfeited', 'order', orderId, null, { forfeited_amount: plan.forfeit, paid_amount: plan.paid, refund_owed: owed });
+    emit('order.deposit_forfeited', { entityType: 'order', entityId: orderId, shopId: o.shop_id, data: { forfeited_amount: plan.forfeit, refund_owed_amount: owed } });
+  }
+  if (plan.refund && owed > 0) {
+    const method = plan.refund.to_credit ? 'customer_credit' : plan.refund.method ?? 'cash';
+    if (method === 'customer_credit' && !o.customer_id) throw badRequest('CUSTOMER_CREDIT_CUSTOMER_REQUIRED', 'Cần hồ sơ khách để chuyển tiền hoàn thành tiền khách gửi');
+    recordPayment({ direction: 'out', refType: 'order', refId: orderId, shopId: o.shop_id, amount: owed, method, note: plan.refund.to_credit ? 'Chuyển tiền cọc đơn huỷ thành tiền khách gửi' : 'Hoàn tiền đơn huỷ' }, actor);
+  }
 }
 
 // ---------- Tạo / sửa ----------
@@ -421,15 +493,23 @@ export function previewAllocation(input) {
       if (stockOf.has(it.variant_id)) continue;
       stockOf.set(it.variant_id, { variant_id: it.variant_id, sku: it.sku, warehouses: plan.warehouses.map((w) => ({ warehouse_id: w, warehouse_name: names.get(w), on_hand: level.get(w, it.variant_id)?.on_hand ?? 0 })) });
     }
-    return { index: i, variant_id: lines[i].variant_id, sku: lines[i].sku, qty: lines[i].qty, items };
+    return { index: i, variant_id: lines[i].variant_id, sku: lines[i].sku, qty: lines[i].qty, items, ...(lines[i].is_service ? { is_service: true } : {}) };
   });
+  // Cảnh báo lô: lô quá hạn mà đơn sẽ lấy (bị chặn khi xác nhận nếu không xác nhận vượt), lô sắp hết hạn trong expiry_warn_days
+  const lotAlerts = fefoPreview(plan.lines.flatMap((l) => l.items.map((it) => ({ warehouse_id: it.warehouse_id, variant_id: it.variant_id, sku: it.sku, qty: it.qty })))).filter((x) => x.status !== 'ok');
+  const lotWarnings = lotAlerts.map((x) => ({
+    code: x.status === 'expired' ? 'LOT_EXPIRED' : 'LOT_EXPIRING',
+    sku: x.sku, lot_no: x.lot_no, expiry_date: x.expiry_date, qty: x.qty, days_left: x.days_left,
+    message: x.status === 'expired' ? `${x.sku}: lô ${x.lot_no ?? '(không số lô)'} đã hết hạn ${x.expiry_date}` : `${x.sku}: lô ${x.lot_no ?? '(không số lô)'} sắp hết hạn (${x.expiry_date}, còn ${x.days_left} ngày)`,
+  }));
   return {
     primary_warehouse_id: plan.warehouses[0],
     warehouses: plan.warehouses.map((w) => ({ id: w, name: names.get(w) })),
     lines: outLines,
     stock: [...stockOf.values()],
     shortages: plan.shortages,
-    warnings: plan.warnings,
+    warnings: [...plan.warnings, ...lotWarnings],
+    lot_alerts: lotAlerts,
     ok: plan.shortages.length === 0,
   };
 }
@@ -447,6 +527,7 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
   }
   const customer = resolveCustomer(input, actor);
   if (customer) ensureMember(customer.id, shop.id); // mua ở shop nào thì là khách của shop đó
+  assertMarketplaceShipping(isMarketplace(channel.id), input.shipping_fee, input.seller_shipping_amount, source);
   const lines = resolveLines(shop.id, input.lines, channel.id);
   // Khuyến mãi (module Loyalty): máy chủ tự tính lại, không tin số giảm từ giao diện
   let promoApplied = [];
@@ -519,7 +600,7 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
   emit('order.created', { entityType: 'order', entityId: id, shopId: shop.id, data: { id, shop_id: shop.id, channel_id: channel.id, external_id: input.external_id ?? null } });
 
   const target = input.status || 'draft';
-  if (target !== 'draft') transitionOrder(id, target, { actor, allowNegative: input.allow_negative_stock ?? false, note: input.status_note });
+  if (target !== 'draft') transitionOrder(id, target, { actor, allowNegative: input.allow_negative_stock ?? false, allowExpired: input.allow_expired ?? false, note: input.status_note });
   for (const p of input.payments ?? []) {
     if (p.amount > 0) {
       if (p.method === 'customer_credit') {
@@ -534,6 +615,19 @@ export function createOrder(input, actor, { source = 'manual' } = {}) {
   const o = getOrder(id);
   audit(actor, 'order.created', 'order', id, null, o);
   return o;
+}
+
+/**
+ * Đơn sàn: tiền ship người mua trả đi qua sàn tới hãng vận chuyển, KHÔNG về shop, nên không được cộng vào số shop nhận.
+ * Nhập tay/API thường: nếu có phí ship khách trả thì phải kèm ship shop chịu (seller_shipping_amount) ít nhất bằng số đó (hai khoản triệt tiêu nhau
+ * trong net_amount), nếu không từ chối (MARKETPLACE_SHIPPING_FEE). Đơn import từ file sàn không bị kiểm (mẫu import đã bỏ cột này).
+ */
+function assertMarketplaceShipping(marketplace, shippingFee, sellerShipping, source) {
+  if (!marketplace || source === 'import') return;
+  const fee = shippingFee ?? 0;
+  if (fee > 0 && (sellerShipping ?? 0) < fee) {
+    throw badRequest('MARKETPLACE_SHIPPING_FEE', 'Đơn sàn: tiền ship người mua trả đi qua sàn, không về shop nên không nhập vào “Phí ship khách trả”. Để trống ô này (hoặc nhập kèm “Ship shop chịu” bằng đúng số đó nếu muốn ghi cả hai).', { shipping_fee: fee, seller_shipping_amount: sellerShipping ?? 0 });
+  }
 }
 
 const EDITABLE_ALWAYS = ['note', 'internal_note', 'tracking_code', 'carrier', 'shipping_address', 'customer_name', 'customer_phone', 'platform_fee_amount', 'seller_shipping_amount', 'shipping_fee', 'tags', 'ordered_at'];
@@ -555,9 +649,16 @@ export function updateOrder(id, input, actor) {
     for (const lid of lineIds) {
       db().prepare('DELETE FROM order_line_allocations WHERE order_line_id = ?').run(lid);
       db().prepare('DELETE FROM order_line_components WHERE order_line_id = ?').run(lid);
+      forgetOrderLots(lid);
     }
   }
   const merged = { ...before, ...input };
+  if (input.shipping_fee !== undefined || input.seller_shipping_amount !== undefined) {
+    assertMarketplaceShipping(before.is_marketplace, merged.shipping_fee, merged.seller_shipping_amount, before.source);
+  }
+  if (merged.platform_fee_amount < before.platform_fee_refunded_amount) {
+    throw badRequest('PLATFORM_FEE_BELOW_REFUNDED', `Phí sàn không thể nhỏ hơn phần sàn đã hoàn (${before.platform_fee_refunded_amount})`, { min: before.platform_fee_refunded_amount });
+  }
   if (input.customer_id !== undefined || input.customer) {
     const c = resolveCustomer(input, actor);
     merged.customer_id = c?.id ?? null;
@@ -572,7 +673,7 @@ export function updateOrder(id, input, actor) {
   if (isDraft && input.lines) {
     lines = resolveLines(before.shop_id, input.lines, before.channel_id);
   }
-  const h = computeHeader(lines.map((l) => ({ ...l, line_total: l.line_total ?? l.qty * l.unit_price - l.discount_amount })), merged);
+  const h = computeHeader(lines.map((l) => ({ ...l, line_total: l.line_total ?? lineAmount(l.qty, l.unit_price) - l.discount_amount })), merged);
   if (isDraft && input.lines) checkPlanned(before.shop_id, h.lines, merged.warehouse_id);
   const orderedAt = input.ordered_at ? toIso(input.ordered_at) : before.ordered_at;
   db()
@@ -619,7 +720,7 @@ export function updateOrder(id, input, actor) {
     h.lines.forEach((l) => upd.run(l.allocated_order_discount, l.id));
   }
   if (revise) {
-    deductStock(db().prepare('SELECT * FROM orders WHERE id = ?').get(before.id), actor, false);
+    deductStock(db().prepare('SELECT * FROM orders WHERE id = ?').get(before.id), actor, false, input.allow_expired ?? false);
     logStatus(before.id, 'confirmed', 'confirmed', 'Sửa nội dung đơn đã xác nhận', actor);
   }
   if (input.due_date !== undefined) db().prepare('UPDATE orders SET due_date = ? WHERE id = ?').run(input.due_date, before.id);
@@ -642,6 +743,9 @@ export function addOrderPayment(id, { amount, method, paidAt, note, direction = 
   }
   if (direction === 'in' && o.status === 'cancelled') throw conflict('ORDER_CANCELLED', 'Đơn đã huỷ');
   if (direction === 'out' && amount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
+  if (direction === 'out' && o.status === 'cancelled' && !o.is_marketplace && amount > o.refund_owed_amount) {
+    throw badRequest('OVER_REFUND', o.forfeited_amount > 0 ? `Đơn đã huỷ, shop giữ cọc ${o.forfeited_amount}; chỉ còn nợ khách ${o.refund_owed_amount}` : `Chỉ còn nợ khách ${o.refund_owed_amount}; không hoàn nhiều hơn số đó`, { max: o.refund_owed_amount });
+  }
   if (direction === 'out' && o.status !== 'cancelled' && !o.is_marketplace && o.status !== 'draft' && amount > o.refund_owed_amount) {
     throw badRequest('OVER_REFUND', `Chỉ còn nợ khách ${o.refund_owed_amount}; không hoàn nhiều hơn số đó`, { max: o.refund_owed_amount });
   }
@@ -665,6 +769,9 @@ export function voidOrderPayment(p, reason, actor) {
     if (/_payout$/.test(p.method) && db().prepare('SELECT 1 FROM payout_adjustments WHERE order_id = ? LIMIT 1').get(o.id)) {
       throw conflict('PAYOUT_HAS_ADJUSTMENT', 'Đơn này đã đối soát lệch và cộng phần lệch vào phí sàn. Sửa lại phí sàn của đơn trước, rồi mới huỷ khoản tiền sàn trả.');
     }
+    if (p.direction === 'in' && o.status === 'cancelled' && o.forfeited_amount > 0 && o.paid_amount - p.amount < o.forfeited_amount) {
+      throw conflict('PAYMENT_BELOW_FORFEIT', `Đơn đã huỷ và shop đang giữ cọc ${o.forfeited_amount}. Huỷ khoản thu này sẽ làm số đã thu (${o.paid_amount - p.amount}) nhỏ hơn số giữ.`, { forfeited_amount: o.forfeited_amount, paid_after: o.paid_amount - p.amount });
+    }
     if (p.direction === 'in' && o.paid_amount - p.amount < 0) {
       throw conflict('PAYMENT_HAS_REFUND', 'Đã có khoản hoàn tiền dựa trên khoản thu này. Huỷ khoản hoàn trước, rồi huỷ khoản thu.');
     }
@@ -686,8 +793,40 @@ export function voidOrderPayment(p, reason, actor) {
  */
 export function returnLineValue(l, qty) {
   const net = l.line_total - l.allocated_order_discount;
-  const cum = l.returned_qty + qty >= l.qty ? net : Math.round((net * (l.returned_qty + qty)) / l.qty);
-  return cum - l.returned_value;
+  const done = qty3(l.returned_qty + qty);
+  const cum = done >= l.qty ? net : shareOf(net, done, l.qty);
+  return Math.max(0, cum - l.returned_value); // giảm giá sau bán đã trừ vào tiền thực của dòng nên có thể không còn gì để tính cho phần trả sau
+}
+
+
+/**
+ * Phí sàn được hoàn mặc định cho một lần trả (đơn sàn): theo tỷ lệ giá trị hàng trả, tính LUỸ KẾ để trả hết thì tổng hoàn = đúng toàn bộ phí sàn.
+ * luỹ kế = round(phí sàn × hàng đã trả (kể cả lần này) / doanh thu hàng của đơn); mặc định = luỹ kế − đã hoàn, trong [0, phí còn lại].
+ * Giảm giá sau bán (kind = 'allowance') không tính vào hàng đã trả vì hàng không quay về.
+ */
+export function defaultPlatformFeeRefund(o, thisGoods, fullyAfter) {
+  const fee = o.platform_fee_amount;
+  const left = Math.max(0, fee - o.platform_fee_refunded_amount);
+  if (!fee || !left) return 0;
+  const prior = db().prepare("SELECT COALESCE(SUM(goods_amount),0) AS n FROM order_returns WHERE order_id = ? AND kind = 'return'").get(o.id).n;
+  const cum = fullyAfter ? fee : shareOf(fee, prior + thisGoods, o.goods_revenue);
+  return Math.max(0, Math.min(left, cum - o.platform_fee_refunded_amount));
+}
+
+/** Xem trước một phiếu trả (không ghi gì): giá trị hàng trả và phí sàn được hoàn mặc định / tối đa. */
+export function previewReturn(orderId, { lines }) {
+  const o = getOrder(orderId);
+  let goods = 0;
+  let left = 0;
+  for (const l of o.lines) {
+    const r = lines.find((x) => x.order_line_id === l.id);
+    const q = r?.qty ?? 0;
+    if (q > qty3(l.qty - l.returned_qty)) throw badRequest('RETURN_QTY', `Dòng ${l.sku}: chỉ còn trả được ${qty3(l.qty - l.returned_qty)}`);
+    if (q > 0) goods += returnLineValue(l, q);
+    left = qty3(left + l.qty - l.returned_qty - q);
+  }
+  const max = o.is_marketplace ? Math.max(0, o.platform_fee_amount - o.platform_fee_refunded_amount) : 0;
+  return { goods_amount: goods, platform_fee_refund_default: o.is_marketplace ? defaultPlatformFeeRefund(o, goods, left === 0) : 0, platform_fee_refund_max: max, is_marketplace: o.is_marketplace };
 }
 
 /**
@@ -698,8 +837,10 @@ export function returnLineValue(l, qty) {
  * returnShippingCost: phí ship chiều về shop chịu.
  * Cần trả khách = hàng + ship hoàn − phí trả hàng; tiền trả ngay không vượt số đó và không vượt số khách đã trả.
  * Kênh sàn: sàn tự hoàn tiền cho người mua → không có ship hoàn, phí trả hàng, tiền trả khách (chỉ ship chiều về nếu sàn tính cho shop).
+ * Kênh sàn còn có `platformFeeRefund`: phí sàn sàn hoàn lại cho shop (Shopee không thu phí với hàng Trả hàng & Hoàn tiền). Không truyền = mặc định theo
+ * tỷ lệ luỹ kế (defaultPlatformFeeRefund); truyền được 0 hoặc số khác, tối đa phí sàn còn lại.
  */
-export function createReturn(orderId, { lines, reason, refund, returnedAt, shippingRefund = 0, returnFee = 0, returnShippingCost = 0, awaitingGoods = false, reasonCode = null, allowLate = false }, actor) {
+export function createReturn(orderId, { lines, reason, refund, returnedAt, shippingRefund = 0, returnFee = 0, returnShippingCost = 0, awaitingGoods = false, reasonCode = null, allowLate = false, platformFeeRefund = null }, actor) {
   const o = getOrder(orderId);
   if (!['completed', 'shipping', 'confirmed'].includes(o.status)) throw conflict('INVALID_STATUS', 'Chỉ trả hàng cho đơn đã xác nhận/giao/hoàn thành');
   // Thời hạn nhận trả: chỉ áp cho đơn đã hoàn thành (khách đã nhận hàng). Quá hạn vẫn nhận được nếu chủ shop xác nhận.
@@ -725,20 +866,35 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
   for (const r of lines) {
     const l = o.lines.find((x) => x.id === r.order_line_id);
     if (!l) throw badRequest('LINE_NOT_FOUND', 'Dòng đơn không tồn tại', r);
-    if (r.qty > l.qty - l.returned_qty) throw badRequest('RETURN_QTY', `Dòng ${l.sku}: chỉ còn trả được ${l.qty - l.returned_qty}`);
+    if (r.qty > qty3(l.qty - l.returned_qty)) throw badRequest('RETURN_QTY', `Dòng ${l.sku}: chỉ còn trả được ${qty3(l.qty - l.returned_qty)}`);
     const value = returnLineValue(l, r.qty);
     goods += value;
     let restoredCost = 0;
-    if (!r.restock && !waitingForGoods) damaged.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, unit_cost: l.unit_cost });
-    if (r.restock && !waitingForGoods) {
+    const restock = l.is_service ? true : r.restock; // dịch vụ: hoàn tiền, không có hàng quay về kho nên không lập phiếu hàng huỷ
+    if (!restock && !waitingForGoods) damaged.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, unit_cost: l.unit_cost });
+    if (restock && !waitingForGoods) {
       restoredCost = putBackLine(o, l, r.qty, { type: 'sale_return_in', note: reason, actor, at, warehouseId: r.warehouse_id });
     }
     db()
-      .prepare('UPDATE order_lines SET returned_qty = returned_qty + ?, restocked_qty = restocked_qty + ? WHERE id = ?')
-      .run(r.qty, r.restock && !waitingForGoods ? r.qty : 0, l.id);
-    l.returned_qty += r.qty;
+      .prepare('UPDATE order_lines SET returned_qty = ROUND(returned_qty + ?, 3), restocked_qty = ROUND(restocked_qty + ?, 3) WHERE id = ?')
+      .run(r.qty, restock && !waitingForGoods ? r.qty : 0, l.id);
+    l.returned_qty = qty3(l.returned_qty + r.qty);
     l.returned_value += value;
-    result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!r.restock, received: !waitingForGoods, value, unit_cost: l.unit_cost, restored_cost: restoredCost });
+    result.push({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: r.qty, restock: !!restock, received: !waitingForGoods, value, unit_cost: l.unit_cost, restored_cost: restoredCost });
+  }
+  const leftAfter = o.lines.reduce((a, x) => qty3(a + x.qty - x.returned_qty), 0);
+  // Đơn sàn trả HẾT: phần ship người mua trả còn nằm trong số shop nhận (đơn cũ nhập ship vào “phí ship khách trả”) thì tự hoàn,
+  // vì sàn hoàn cả ship cho người mua. Không thì số cần thu của đơn không về 0 dù đã trả toàn bộ.
+  if (o.is_marketplace && leftAfter === 0) {
+    shippingRefund = Math.max(shippingRefund, Math.max(0, Math.min(shipLeft, o.shipping_fee - o.seller_shipping_amount)));
+  }
+  let feeRefund = 0;
+  if (o.is_marketplace) {
+    const feeLeft = Math.max(0, o.platform_fee_amount - o.platform_fee_refunded_amount);
+    feeRefund = platformFeeRefund == null ? defaultPlatformFeeRefund(o, goods, leftAfter === 0) : platformFeeRefund;
+    if (feeRefund > feeLeft) throw badRequest('OVER_PLATFORM_FEE_REFUND', `Phí sàn được hoàn tối đa ${feeLeft} (phí sàn còn lại của đơn)`, { max: feeLeft });
+  } else if (platformFeeRefund > 0) {
+    throw badRequest('NOT_MARKETPLACE', 'Chỉ đơn kênh sàn mới có phí sàn được hoàn');
   }
   if (returnFee > goods + shippingRefund) throw badRequest('OVER_RETURN_FEE', `Phí trả hàng tối đa ${goods + shippingRefund} (hàng trả + ship hoàn)`, { max: goods + shippingRefund });
   const dueToCustomer = goods + shippingRefund - returnFee;
@@ -746,17 +902,17 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
   if (refundAmount > o.paid_amount) throw badRequest('OVER_REFUND', 'Số tiền hoàn lớn hơn số đã thu');
   db()
     .prepare(
-      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, shipping_refund_amount, return_fee_amount, return_shipping_cost, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at, goods_received_at, reason_code)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, shipping_refund_amount, return_fee_amount, return_shipping_cost, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at, goods_received_at, reason_code, platform_fee_refund_amount)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, dailyCode('TH', o.shop_code, at), o.id, o.shop_id, goods, shippingRefund, returnFee, returnShippingCost, refundAmount, reason ?? null, JSON.stringify(result), at, businessDate(at), actor?.id ?? null, nowIso(), waitingForGoods ? null : at, reasonCode ?? null);
+    .run(id, dailyCode('TH', o.shop_code, at), o.id, o.shop_id, goods, shippingRefund, returnFee, returnShippingCost, refundAmount, reason ?? null, JSON.stringify(result), at, businessDate(at), actor?.id ?? null, nowIso(), waitingForGoods ? null : at, reasonCode ?? null, feeRefund);
   if (damaged.length) createWriteOff(o, id, damaged, at, reason, actor);
   if (refundAmount > 0) {
     const method = refund.to_credit ? 'customer_credit' : refund.method ?? 'cash';
     if (method === 'customer_credit' && !o.customer_id) throw badRequest('CUSTOMER_CREDIT_CUSTOMER_REQUIRED', 'Cần hồ sơ khách để chuyển tiền hoàn thành tiền khách gửi');
     recordPayment({ direction: 'out', refType: 'order', refId: o.id, shopId: o.shop_id, amount: refundAmount, method, paidAt: at, note: refund.to_credit ? 'Chuyển tiền trả hàng thành tiền khách gửi' : 'Hoàn tiền trả hàng' }, actor);
   }
-  const fully = db().prepare('SELECT SUM(qty - returned_qty) AS left FROM order_lines WHERE order_id = ?').get(o.id).left === 0;
+  const fully = db().prepare('SELECT ROUND(SUM(qty - returned_qty), 3) AS left FROM order_lines WHERE order_id = ?').get(o.id).left === 0;
   if (fully) {
     db().prepare("UPDATE orders SET status = 'returned', updated_at = ? WHERE id = ?").run(nowIso(), o.id);
     logStatus(o.id, o.status, 'returned', reason, actor);
@@ -764,8 +920,62 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
   refreshDerived(o.id);
   if (o.customer_id) recalcCustomerStats(o.customer_id);
   const after = getOrder(o.id);
-  audit(actor, 'order.returned', 'order', o.id, null, { return_id: id, lines: result, goods, shippingRefund, returnFee, returnShippingCost, refundAmount });
-  emit('order.returned', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: id, goods_amount: goods, shipping_refund_amount: shippingRefund, return_fee_amount: returnFee, return_shipping_cost: returnShippingCost, refund_amount: refundAmount, order: after } });
+  audit(actor, 'order.returned', 'order', o.id, null, { return_id: id, lines: result, goods, shippingRefund, returnFee, returnShippingCost, refundAmount, platformFeeRefund: feeRefund });
+  emit('order.returned', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: id, goods_amount: goods, shipping_refund_amount: shippingRefund, return_fee_amount: returnFee, return_shipping_cost: returnShippingCost, refund_amount: refundAmount, platform_fee_refund_amount: feeRefund, order: after } });
+  return after;
+}
+
+/** Tiền hàng thực còn lại của đơn = Σ (tiền dòng − giảm giá đơn phân bổ − đã trả/đã giảm). Là mức tối đa của một khoản giảm giá sau bán. */
+export function remainingGoodsValue(o) {
+  return o.lines.reduce((a, l) => a + Math.max(0, l.line_total - l.allocated_order_discount - l.returned_value), 0);
+}
+
+/**
+ * Giảm giá sau bán / bồi thường: shop giảm một khoản tiền hàng sau khi đã bán, khách giữ hàng (hàng lỗi một phần, giao thiếu, đền bù…).
+ * Là một phiếu order_returns kind = 'allowance' không có hàng quay về: không đụng kho, không đổi giá vốn, không đổi trạng thái đơn.
+ * Số giảm được chia cho các dòng theo tiền thực còn lại (allocate) và ghi vào lines[].value, nên mọi báo cáo theo dòng (sản phẩm, ngũ hành)
+ * vẫn cộng ra đúng doanh thu thuần. Giảm doanh thu thuần và số phải thu như hàng trả; khách đã trả đủ thì thành khoản shop còn nợ khách (hoàn sau được).
+ * refund: { amount, method, to_credit } trả tiền ngay (≤ số giảm và ≤ phần shop còn nợ khách sau khoản giảm). Đơn sàn: sàn tự hoàn cho người mua nên không có refund
+ * và phí sàn không hoàn (chỉ giảm số phải thu từ sàn).
+ */
+export function createAllowance(orderId, { amount, reason, reasonCode = null, refund, at: atInput }, actor) {
+  const o = getOrder(orderId);
+  if (!['completed', 'shipping', 'confirmed'].includes(o.status)) throw conflict('INVALID_STATUS', 'Chỉ giảm giá sau bán cho đơn đã xác nhận/giao/hoàn thành');
+  if (!Number.isInteger(amount) || amount <= 0) throw badRequest('INVALID_AMOUNT', 'Số tiền giảm phải là số nguyên dương');
+  if (reasonCode && !RETURN_REASON_CODES.includes(reasonCode)) throw badRequest('INVALID_REASON', 'Lý do không hợp lệ', { allowed: RETURN_REASON_CODES });
+  const remaining = remainingGoodsValue(o);
+  if (amount > remaining) throw badRequest('OVER_ALLOWANCE', `Số giảm tối đa ${remaining} (tiền hàng thực còn lại của đơn)`, { max: remaining });
+  const refundAmount = refund?.amount ?? 0;
+  if (o.is_marketplace && refundAmount > 0) throw badRequest('MARKETPLACE_RETURN', 'Đơn sàn: sàn tự hoàn tiền cho người mua nên không có tiền trả khách. Chỉ ghi khoản giảm.');
+  const at = toIso(atInput) || nowIso();
+  const weights = o.lines.map((l) => Math.max(0, l.line_total - l.allocated_order_discount - l.returned_value));
+  const shares = allocate(amount, weights);
+  const items = o.lines
+    .map((l, i) => ({ order_line_id: l.id, variant_id: l.variant_id, sku: l.sku, qty: 0, restock: false, received: true, allowance: true, value: shares[i], unit_cost: l.unit_cost, restored_cost: 0 }))
+    .filter((x) => x.value > 0);
+  // Phần shop còn nợ khách sau khoản giảm = đã thu − phải thu mới. Tiền trả ngay không vượt số đó
+  if (refundAmount > 0) {
+    const base = o.total_amount;
+    const owed = Math.max(0, o.paid_amount - Math.max(0, base - o.returned_amount - amount));
+    if (refundAmount > Math.min(amount, owed)) throw badRequest('OVER_REFUND', `Tiền trả khách tối đa ${Math.min(amount, owed)}`, { max: Math.min(amount, owed) });
+  }
+  const id = newId('ret');
+  db()
+    .prepare(
+      `INSERT INTO order_returns (id, code, order_id, shop_id, goods_amount, shipping_refund_amount, return_fee_amount, return_shipping_cost, refund_amount, reason, lines, returned_at, business_date, actor_id, created_at, goods_received_at, reason_code, platform_fee_refund_amount, kind)
+       VALUES (?,?,?,?,?,0,0,0,?,?,?,?,?,?,?,?,?,0,'allowance')`,
+    )
+    .run(id, dailyCode('GG', o.shop_code, at), o.id, o.shop_id, amount, refundAmount, reason ?? null, JSON.stringify(items), at, businessDate(at), actor?.id ?? null, nowIso(), at, reasonCode ?? null);
+  if (refundAmount > 0) {
+    const method = refund.to_credit ? 'customer_credit' : refund.method ?? 'cash';
+    if (method === 'customer_credit' && !o.customer_id) throw badRequest('CUSTOMER_CREDIT_CUSTOMER_REQUIRED', 'Cần hồ sơ khách để chuyển tiền hoàn thành tiền khách gửi');
+    recordPayment({ direction: 'out', refType: 'order', refId: o.id, shopId: o.shop_id, amount: refundAmount, method, paidAt: at, note: refund.to_credit ? 'Chuyển tiền trả hàng thành tiền khách gửi' : 'Hoàn tiền trả hàng' }, actor);
+  }
+  refreshDerived(o.id);
+  if (o.customer_id) recalcCustomerStats(o.customer_id);
+  const after = getOrder(o.id);
+  audit(actor, 'order.allowance', 'order', o.id, null, { return_id: id, amount, reason_code: reasonCode, refundAmount });
+  emit('order.allowance_created', { entityType: 'order', entityId: o.id, shopId: o.shop_id, data: { return_id: id, goods_amount: amount, refund_amount: refundAmount, order: after } });
   return after;
 }
 
@@ -775,7 +985,7 @@ export function createReturn(orderId, { lines, reason, refund, returnedAt, shipp
  */
 function createWriteOff(o, returnId, items, at, reason, actor) {
   const id = newId('wof');
-  const total = items.reduce((a, i) => a + Math.round(i.qty * i.unit_cost), 0);
+  const total = items.reduce((a, i) => a + lineAmount(i.qty, i.unit_cost), 0);
   db()
     .prepare('INSERT INTO return_write_offs (id, code, return_id, order_id, shop_id, warehouse_id, lines, total_cost, reason, created_at, business_date, actor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
     .run(id, dailyCode('HH', o.shop_code, at), returnId, o.id, o.shop_id, o.warehouse_id, JSON.stringify(items), total, reason ?? null, nowIso(), businessDate(at), actor?.id ?? null);
@@ -806,7 +1016,7 @@ export function receiveReturn(orderId, returnId, { actor, receivedAt, damagedLin
     if (!line) throw conflict('RETURN_LINE_MISSING', 'Không tìm thấy dòng đơn của phiếu trả');
     item.restored_cost = putBackLine(o, line, item.qty, { type: 'sale_return_in', note: ret.reason, actor, at });
     item.received = true;
-    db().prepare('UPDATE order_lines SET restocked_qty = restocked_qty + ? WHERE id = ?').run(item.qty, line.id);
+    db().prepare('UPDATE order_lines SET restocked_qty = ROUND(restocked_qty + ?, 3) WHERE id = ?').run(item.qty, line.id);
   }
   if (damaged.length) createWriteOff(o, returnId, damaged, at, ret.reason, actor);
   db().prepare('UPDATE order_returns SET lines = ?, goods_received_at = ? WHERE id = ?').run(JSON.stringify(lines), at, returnId);
@@ -831,11 +1041,11 @@ export function removeAwaitingReturn(orderId, returnId, { actor, restoreStatus =
   if (ret.refund_amount > 0) throw conflict('RETURN_HAS_REFUND', 'Phiếu trả này đã hoàn tiền cho khách, không gỡ được');
   if (db().prepare('SELECT 1 FROM return_write_offs WHERE return_id = ? LIMIT 1').get(returnId)) throw conflict('RETURN_HAS_WRITE_OFF', 'Phiếu trả này đã có phiếu hàng huỷ, không gỡ được');
   for (const item of JSON.parse(ret.lines || '[]')) {
-    db().prepare('UPDATE order_lines SET returned_qty = MAX(0, returned_qty - ?) WHERE id = ? AND order_id = ?').run(item.qty, item.order_line_id, orderId);
+    db().prepare('UPDATE order_lines SET returned_qty = MAX(0, ROUND(returned_qty - ?, 3)) WHERE id = ? AND order_id = ?').run(item.qty, item.order_line_id, orderId);
   }
   db().prepare('DELETE FROM order_returns WHERE id = ?').run(returnId);
   if (o.status === 'returned' && restoreStatus) {
-    const left = db().prepare('SELECT SUM(qty - returned_qty) AS n FROM order_lines WHERE order_id = ?').get(orderId).n;
+    const left = db().prepare('SELECT ROUND(SUM(qty - returned_qty), 3) AS n FROM order_lines WHERE order_id = ?').get(orderId).n;
     if (left > 0) {
       db().prepare('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?').run(restoreStatus, nowIso(), orderId);
       logStatus(orderId, 'returned', restoreStatus, 'Gỡ phiếu trả hàng chờ hàng về', actor);
@@ -899,12 +1109,12 @@ export function splitOrder(orderId, { lines }, actor) {
   const newLines = [];
   for (const l of o.lines) {
     const q = move.get(l.id) ?? 0;
-    const lineDisc = q === l.qty ? l.discount_amount : Math.round((l.discount_amount * q) / l.qty);
+    const lineDisc = q === l.qty ? l.discount_amount : shareOf(l.discount_amount, q, l.qty);
     if (q > 0) newLines.push({ variant_id: l.variant_id, name: l.name, qty: q, unit_price: l.unit_price, discount_amount: lineDisc });
-    if (q < l.qty) keepLines.push({ variant_id: l.variant_id, name: l.name, qty: l.qty - q, unit_price: l.unit_price, discount_amount: l.discount_amount - lineDisc });
+    if (q < l.qty) keepLines.push({ variant_id: l.variant_id, name: l.name, qty: qty3(l.qty - q), unit_price: l.unit_price, discount_amount: l.discount_amount - lineDisc });
   }
   if (!keepLines.length) throw badRequest('SPLIT_ALL', 'Đơn gốc phải còn ít nhất một sản phẩm. Muốn chuyển hết thì không cần tách.');
-  const base = (arr) => arr.reduce((a, l) => a + l.qty * l.unit_price - l.discount_amount, 0);
+  const base = (arr) => arr.reduce((a, l) => a + lineAmount(l.qty, l.unit_price) - l.discount_amount, 0);
   const [moveDisc, keepDisc] = allocate(o.discount_amount, [base(newLines), base(keepLines)]);
   // Đơn gốc trước: nếu thiếu hàng cho phần còn lại thì lỗi ở đây, chưa tạo đơn mới
   updateOrder(o.id, { lines: keepLines, discount_amount: keepDisc }, actor);

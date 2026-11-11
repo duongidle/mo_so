@@ -4,7 +4,7 @@ import { createProduct, createCategory } from './service.js';
 
 const db = () => getDb();
 const norm = (s) => String(s ?? '').trim().toLowerCase();
-const ITEM_TYPES = { 'hàng bán': 'product', 'hang ban': 'product', product: 'product', 'đóng gói': 'packaging', 'dong goi': 'packaging', packaging: 'packaging', 'vận hành': 'supply', 'van hanh': 'supply', supply: 'supply' };
+const ITEM_TYPES = { 'dịch vụ': 'service', 'dich vu': 'service', service: 'service', 'hàng bán': 'product', 'hang ban': 'product', product: 'product', 'đóng gói': 'packaging', 'dong goi': 'packaging', packaging: 'packaging', 'vận hành': 'supply', 'van hanh': 'supply', supply: 'supply' };
 const MAX_ROWS = 2000;
 const int = (v) => (v === '' || v == null ? null : Number(v));
 
@@ -40,8 +40,9 @@ export function planImport(rows, { warehouseId, shopIds = [] } = {}) {
     if (![price, qty, minStock].every((n) => Number.isFinite(n) && n >= 0)) return bad(`SKU ${sku}: giá bán, tồn đầu kỳ, tồn tối thiểu phải là số không âm`);
     if (cost != null && !(Number.isFinite(cost) && cost >= 0)) return bad(`SKU ${sku}: giá vốn phải là số không âm`);
     const itemType = raw.item_type ? ITEM_TYPES[norm(raw.item_type)] : 'product';
-    if (!itemType) return bad(`SKU ${sku}: loại “${raw.item_type}” không hợp lệ (Hàng bán, Đóng gói hoặc Vận hành)`);
+    if (!itemType) return bad(`SKU ${sku}: loại “${raw.item_type}” không hợp lệ (Hàng bán, Dịch vụ, Đóng gói hoặc Vận hành)`);
     let wh = null;
+    if (itemType === 'service' && qty > 0) return bad(`SKU ${sku}: dịch vụ không có tồn kho nên không có tồn đầu kỳ`);
     if (qty > 0) {
       wh = raw.warehouse ? warehouses.find((w) => norm(w.name) === norm(raw.warehouse) || norm(w.code) === norm(raw.warehouse)) : defaultWh;
       if (!wh) return bad(`SKU ${sku}: có tồn đầu kỳ ${qty} nhưng ${raw.warehouse ? `không có kho “${raw.warehouse}”` : 'chưa chọn kho nhận hàng'}`);
@@ -75,8 +76,8 @@ export function runImport(rows, opts, actor) {
           if (!category_id) { category_id = createCategory({ name: g.category }, actor).id; catId.set(norm(g.category), category_id); }
         }
         const p = createProduct({
-          name: g.name, description: g.description, category_id, unit: g.unit, brand: g.brand, warranty_days: g.item_type === 'product' ? g.warranty_days : null, item_type: g.item_type,
-          shop_ids: g.item_type === 'product' ? opts.shopIds ?? [] : [],
+          name: g.name, description: g.description, category_id, unit: g.unit, brand: g.brand, warranty_days: g.item_type === 'product' || g.item_type === 'service' ? g.warranty_days : null, item_type: g.item_type,
+          shop_ids: g.item_type === 'product' || g.item_type === 'service' ? opts.shopIds ?? [] : [],
           variants: g.variants.map(({ line, ...v }) => ({ ...v, opening_qty: v.opening_qty || undefined, opening_cost: v.opening_qty ? v.opening_cost : undefined })),
         }, actor);
         created.push({ id: p.id, name: g.name, variants: g.variants.length });

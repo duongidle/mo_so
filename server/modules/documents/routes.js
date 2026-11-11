@@ -4,11 +4,12 @@ import { getDb } from '../../db/index.js';
 import { query } from '../../lib/http.js';
 
 const r = new Hono();
-const TYPES = ['order', 'purchase', 'return', 'write_off', 'transfer', 'adjustment', 'count'];
+const TYPES = ['order', 'purchase', 'purchase_return', 'purchase_allowance', 'return', 'write_off', 'transfer', 'conversion', 'adjustment', 'count'];
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /**
  * Danh sách chứng từ gộp: đơn bán, phiếu nhập, phiếu trả hàng, phiếu hàng huỷ, chuyển kho, điều chỉnh, kiểm kê.
+ * Phiếu trả hàng nhập và giảm giá sau nhận trả mã phiếu nhập gốc ở order_id (cột dùng chung để dẫn tới chứng từ cha).
  * Mỗi dòng: loại, mã, ngày (giờ VN), shop (nếu có), kho, số tiền, trạng thái. Chuyển kho/điều chỉnh/kiểm kê thuộc kho nên khi lọc shop
  * lấy theo các kho của shop đó.
  */
@@ -20,9 +21,12 @@ r.get('/documents', (c) => {
   const parts = [
     { type: 'order', sql: sel('order', 'o.id', 'o.code', day('o.created_at'), 'o.created_at', 'o.shop_id', 'o.warehouse_id', 'o.total_amount', 'o.status', 'o.id', 'orders o'), shop: 'o.shop_id', d: day('o.created_at'), alias: 'o' },
     { type: 'purchase', sql: sel('purchase', 'p.id', 'p.code', day('p.ordered_at'), 'p.ordered_at', 'p.shop_id', 'p.warehouse_id', 'p.total_amount', 'p.status', 'NULL', 'purchases p'), shop: 'p.shop_id', d: day('p.ordered_at'), alias: 'p' },
+    { type: 'purchase_return', sql: sel('purchase_return', 'x.id', 'x.code', 'x.business_date', 'x.returned_at', 'x.shop_id', 'x.warehouse_id', 'x.goods_amount', "CASE WHEN x.voided_at IS NULL THEN 'done' ELSE 'cancelled' END", 'x.purchase_id', 'purchase_returns x'), shop: 'x.shop_id', d: 'x.business_date', alias: 'x' },
+    { type: 'purchase_allowance', sql: sel('purchase_allowance', 'x.id', 'x.code', 'x.business_date', 'x.allowed_at', 'x.shop_id', 'x.warehouse_id', 'x.amount', "CASE WHEN x.voided_at IS NULL THEN 'done' ELSE 'cancelled' END", 'x.purchase_id', 'purchase_allowances x'), shop: 'x.shop_id', d: 'x.business_date', alias: 'x' },
     { type: 'return', sql: sel('return', 't.id', 't.code', 't.business_date', 't.returned_at', 't.shop_id', 'o.warehouse_id', 't.goods_amount', "CASE WHEN t.goods_received_at IS NULL THEN 'awaiting' ELSE 'done' END", 't.order_id', 'order_returns t JOIN orders o ON o.id = t.order_id'), shop: 't.shop_id', d: 't.business_date', alias: 't' },
     { type: 'write_off', sql: sel('write_off', 'w.id', 'w.code', 'w.business_date', 'w.created_at', 'w.shop_id', 'w.warehouse_id', 'w.total_cost', "'done'", 'w.order_id', 'return_write_offs w'), shop: 'w.shop_id', d: 'w.business_date', alias: 'w' },
     { type: 'transfer', sql: sel('transfer', 'x.id', 'x.code', day('x.created_at'), 'x.created_at', 'NULL', 'x.from_warehouse_id', 'NULL', "'done'", 'NULL', 'stock_transfers x'), wh: 'x.from_warehouse_id', wh2: 'x.to_warehouse_id', d: day('x.created_at'), alias: 'x' },
+    { type: 'conversion', sql: sel('conversion', 'x.id', 'x.code', 'x.business_date', 'x.converted_at', 'x.shop_id', 'x.warehouse_id', 'x.source_value', "CASE WHEN x.voided_at IS NULL THEN 'done' ELSE 'cancelled' END", 'NULL', 'stock_conversions x'), wh: 'x.warehouse_id', d: 'x.business_date', alias: 'x' },
     { type: 'adjustment', sql: sel('adjustment', 'a.id', 'a.code', day('a.created_at'), 'a.created_at', 'NULL', 'a.warehouse_id', 'NULL', 'a.kind', 'NULL', 'stock_adjustments a'), wh: 'a.warehouse_id', d: day('a.created_at'), alias: 'a' },
     { type: 'count', sql: sel('count', 'k.id', 'k.code', day('k.created_at'), 'k.created_at', 'NULL', 'k.warehouse_id', 'NULL', 'k.status', 'NULL', 'stock_counts k'), wh: 'k.warehouse_id', d: day('k.created_at'), alias: 'k' },
   ].filter((p) => !q.type || p.type === q.type);

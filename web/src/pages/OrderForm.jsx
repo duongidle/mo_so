@@ -100,7 +100,7 @@ function Form({ order }) {
     (async () => {
       const base = order.lines.map((l) => ({
         uid: l.id, is_gift: !!l.is_gift, variant_id: l.variant_id, sku: l.sku, kind: 'single', name: l.name, image_url: l.image_url, qty: l.qty, price: l.unit_price, discount: l.discount_amount,
-        avg_cost: null, on_hand_total: null, stock_by_warehouse: [],
+        avg_cost: null, on_hand_total: null, stock_by_warehouse: [], is_service: !!l.is_service,
       }));
       const ed = {};
       base.forEach((l, i) => {
@@ -112,7 +112,7 @@ function Form({ order }) {
         try {
           const r = await api.get('/variants', { shop_id: order.shop_id, q: l.sku, all: 1, limit: 10 });
           const v = r.data.find((x) => x.id === l.variant_id);
-          return v ? { ...l, kind: v.kind, avg_cost: v.avg_cost, on_hand_total: v.on_hand_total, stock_by_warehouse: v.stock_by_warehouse } : l;
+          return v ? { ...l, kind: v.kind, is_service: !!v.is_service, avg_cost: v.avg_cost, on_hand_total: v.is_service ? null : v.on_hand_total, stock_by_warehouse: v.stock_by_warehouse } : l;
         } catch { return l; }
       }));
       if (!off) setLines((cur) => cur.map((l) => enriched.find((e) => e.uid === l.uid) || l));
@@ -168,25 +168,47 @@ function Form({ order }) {
       const common = { shopId, channelId, externalId, customerId: customer?.id, address, lines, edits, discount, shipping, platformFee, sellerShipping, marketplace, note, dueDate };
       const collected = method === 'customer_credit' && paid === '' ? Math.min(totals.amountDue, customerCredit) : paid;
       const payments = paymentsFor(status, collected, totals.amountDue, method);
-      const askNegative = (e) => e.code === 'STOCK_NOT_ENOUGH' && status !== 'draft' && window.confirm(`${e.message}\n\nVẫn xác nhận và cho phép âm kho?`);
+      // Lỗi cần xác nhận lại: thiếu tồn (cho âm kho), lô quá hạn (vẫn bán). Trả về phần bổ sung cho lần gửi lại, hoặc null
+      const retryExtra = (e, extra) => {
+        if (status === 'draft') return null;
+        if (e.code === 'STOCK_NOT_ENOUGH' && !extra.allow_negative_stock && window.confirm(`${e.message}\n\nVẫn xác nhận và cho phép âm kho?`)) return { ...extra, allow_negative_stock: true };
+        if (e.code === 'LOT_EXPIRED' && !extra.allow_expired && window.confirm(`${e.message}\n\nVẫn bán hàng từ lô đã hết hạn?`)) return { ...extra, allow_expired: true };
+        return null;
+      };
       try {
         if (!isEdit) {
           const body = buildPayload({ ...common, status, payments });
-          try {
-            finish((await api.post('/orders', { ...body, auto_promotions: true, promotion_code: promoCode || null }, { 'Idempotency-Key': key.current })).data);
-          } catch (e) {
-            key.current = newKey(); // lỗi 4xx được lưu theo khoá; thử lại phải dùng khoá mới
-            if (!askNegative(e)) throw e;
-            finish((await api.post('/orders', { ...body, auto_promotions: true, promotion_code: promoCode || null, allow_negative_stock: true }, { 'Idempotency-Key': key.current })).data);
+          let extra = {};
+          for (;;) {
+            try {
+              finish((await api.post('/orders', { ...body, auto_promotions: true, promotion_code: promoCode || null, ...extra }, { 'Idempotency-Key': key.current })).data);
+              break;
+            } catch (e) {
+              key.current = newKey(); // lỗi 4xx được lưu theo khoá; thử lại phải dùng khoá mới
+              const next = retryExtra(e, extra);
+              if (!next) throw e;
+              extra = next;
+            }
           }
           return;
         }
-        await api.patch(`/orders/${order.id}`, buildPayload(common));
+        // Sửa đơn đã xác nhận trừ kho lại: lô quá hạn thì hỏi lại rồi gửi allow_expired, như lúc tạo đơn
+        let patchExtra = {};
+        for (;;) {
+          try { await api.patch(`/orders/${order.id}`, { ...buildPayload(common), ...patchExtra }); break; } catch (e) {
+            if (!revise || e.code !== 'LOT_EXPIRED' || patchExtra.allow_expired || !window.confirm(`${e.message}\n\nVẫn bán hàng từ lô đã hết hạn?`)) throw e;
+            patchExtra = { allow_expired: true };
+          }
+        }
         if (revise) { nav(`/orders/${order.id}`); return; }
         if (status !== 'draft') {
-          try { await api.post(`/orders/${order.id}/status`, { status }); } catch (e) {
-            if (!askNegative(e)) throw e;
-            await api.post(`/orders/${order.id}/status`, { status, allow_negative_stock: true });
+          let extra = {};
+          for (;;) {
+            try { await api.post(`/orders/${order.id}/status`, { status, ...extra }); break; } catch (e) {
+              const next = retryExtra(e, extra);
+              if (!next) throw e;
+              extra = next;
+            }
           }
           for (const p of payments) await api.post(`/orders/${order.id}/payments`, p);
         }
@@ -201,9 +223,10 @@ function Form({ order }) {
   if (!shop) return <div className="page"><Empty>Chọn một shop cụ thể (không phải “Tất cả shop”) để tạo đơn.</Empty></div>;
 
   const itemCount = lines.reduce((a, l) => a + l.qty, 0);
-  const lineWarn = (l) => (l.on_hand_total !== null && l.on_hand_total !== undefined && l.qty > l.on_hand_total ? `Tồn chỉ còn ${num(l.on_hand_total)}` : null);
+  const lineWarn = (l) => (!l.is_service && l.on_hand_total !== null && l.on_hand_total !== undefined && l.qty > l.on_hand_total ? `Tồn chỉ còn ${num(l.on_hand_total)}` : null);
 
-  const showAlloc = lines.length > 0 && (previewErr || (preview && (preview.warehouses.length > 1 || notes.short.length > 0 || notes.elsewhere.length > 0)));
+  const lotWarn = (preview?.warnings || []).filter((w) => w.code === 'LOT_EXPIRED' || w.code === 'LOT_EXPIRING');
+  const showAlloc = lines.length > 0 && (previewErr || (preview && (preview.warehouses.length > 1 || notes.short.length > 0 || notes.elsewhere.length > 0 || lotWarn.length > 0)));
 
   return (
     <div className="page of stack">
@@ -237,7 +260,7 @@ function Form({ order }) {
                         <div className="grow">
                           <div>{v.product_name}{v.variant_name ? ` — ${v.variant_name}` : ''}{v.kind === 'bundle' && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}</div>
                           <div className="small muted">
-                            {v.sku} · {v.kind === 'bundle' ? 'bán được' : 'tồn'} {num(v.on_hand_total ?? v.on_hand)}
+                            {v.sku} · {v.is_service ? 'Dịch vụ' : <>{v.kind === 'bundle' ? 'bán được' : 'tồn'} {num(v.on_hand_total ?? v.on_hand)}</>}
                             {v.stock_by_warehouse?.length > 1 && ` (${v.stock_by_warehouse.map((w) => `${w.warehouse_name} ${num(w.on_hand)}`).join(' · ')})`}
                           </div>
                         </div>
@@ -257,7 +280,7 @@ function Form({ order }) {
                       <ProductThumb src={l.image_url} name={l.name} size={44} />
                       <div className="of-name">
                         <div>{l.name}{l.kind === 'bundle' && <span className="badge plain" style={{ marginLeft: 8 }}>Combo</span>}</div>
-                        <div className="small muted">{l.sku}{l.on_hand_total !== null && l.on_hand_total !== undefined ? ` · tồn ${num(l.on_hand_total)}` : ''}</div>
+                        <div className="small muted">{l.sku}{l.is_service ? ' · Dịch vụ' : l.on_hand_total !== null && l.on_hand_total !== undefined ? ` · tồn ${num(l.on_hand_total)}` : ''}</div>
                         {lineWarn(l) && <div className="small h-yellow">{lineWarn(l)}</div>}
                       </div>
                       <div className="of-edit">
@@ -332,14 +355,14 @@ function Form({ order }) {
             <div className="stack">
               <div className="grid cols-2 collapse">
                 <Field label="Giảm giá đơn"><MoneyInput value={discount} onChange={(e) => setDiscount(toMoney(e.target.value))} aria-label="Giảm giá đơn" /></Field>
-                <Field label="Phí ship khách trả"><MoneyInput value={shipping} onChange={(e) => setShipping(toMoney(e.target.value))} aria-label="Phí ship khách trả" /></Field>
+                {!marketplace && <Field label="Phí ship khách trả"><MoneyInput value={shipping} onChange={(e) => setShipping(toMoney(e.target.value))} aria-label="Phí ship khách trả" /></Field>}
                 {marketplace && <Field label="Phí sàn"><MoneyInput value={platformFee} onChange={(e) => setPlatformFee(toMoney(e.target.value))} aria-label="Phí sàn" /></Field>}
                 <Field label={marketplace ? 'Ship shop chịu' : 'Ship shop tự trả hãng vận chuyển'}><MoneyInput value={sellerShipping} onChange={(e) => setSellerShipping(toMoney(e.target.value))} aria-label="Ship shop chịu" /></Field>
               </div>
               <div>
                 <div className="ledger-line"><span>Tạm tính</span><span className="num">{vnd(totals.subtotal)}</span></div>
                 {totals.lineDiscount + totals.orderDiscount > 0 && <div className="ledger-line"><span>Giảm giá{promoDiscount > 0 ? ' (gồm khuyến mãi)' : ''}</span><span className="num">−{vnd(totals.lineDiscount + totals.orderDiscount)}</span></div>}
-                {toMoney(shipping) > 0 && <div className="ledger-line"><span>Phí ship khách trả</span><span className="num">{vnd(shipping)}</span></div>}
+                {!marketplace && toMoney(shipping) > 0 && <div className="ledger-line"><span>Phí ship khách trả</span><span className="num">{vnd(shipping)}</span></div>}
                 <div className="ledger-line total"><span>Khách phải trả</span><span className="num" data-testid="total">{vnd(totals.total)}</span></div>
                 {toMoney(sellerShipping) > 0 && !marketplace && <div className="ledger-line"><span>Ship shop tự trả</span><span className="num">−{vnd(sellerShipping)}</span></div>}
                 {marketplace && <div className="ledger-line"><span>Shop thực nhận</span><span className="num" data-testid="net">{vnd(totals.net)}</span></div>}
@@ -397,6 +420,7 @@ function AllocationPanel({ lines, edits, setEdits, preview, previewErr, notes, m
     <div className="stack" style={{ gap: 12 }}>
       {previewErr && <div className="alert err small">{previewErr.message}</div>}
       {!multi && <div className="small muted">Shop lấy hàng từ một kho: <b>{preview.warehouses[0]?.name}</b>.</div>}
+      {(preview.warnings || []).filter((w) => w.code === 'LOT_EXPIRED' || w.code === 'LOT_EXPIRING').map((w, i) => <div key={i} className={`alert small ${w.code === 'LOT_EXPIRED' ? 'err' : 'warn'}`}>{w.message}{w.code === 'LOT_EXPIRED' ? '. Xác nhận đơn sẽ hỏi lại; nên xuất huỷ lô ở Kho → Lô & hạn dùng.' : '.'}</div>)}
       {notes.short.length > 0 && (
         <div className="alert warn small">
           Thiếu hàng: {notes.short.map((s) => `${s.sku} còn ${num(s.on_hand_total)}, cần ${num(s.required)}`).join('; ')}. Xác nhận đơn sẽ hỏi cho phép âm kho.
@@ -417,7 +441,7 @@ function AllocationPanel({ lines, edits, setEdits, preview, previewErr, notes, m
               <div className="grow">
                 <div className="small"><b>{l.sku}</b> × {l.qty}</div>
                 <div className="small muted">
-                  {!fresh ? 'Đang tính…' : pl.items.map((it) => `${it.warehouse_name} × ${it.qty}${l.kind === 'bundle' ? ` (${it.sku})` : ''}`).join(', ')}
+                  {l.is_service ? 'Dịch vụ: không trừ kho' : !fresh ? 'Đang tính…' : pl.items.map((it) => `${it.warehouse_name} × ${it.qty}${l.kind === 'bundle' ? ` (${it.sku})` : ''}`).join(', ')}
                   {edit && ' · chia tay'}
                 </div>
               </div>

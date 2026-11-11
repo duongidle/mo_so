@@ -2,6 +2,7 @@ import { getDb } from '../../db/index.js';
 import { badRequest, conflict } from '../../lib/errors.js';
 import { getLevel } from '../inventory/service.js';
 import { componentsOf } from '../catalog/bundles.js';
+import { qty3 } from '../../lib/money.js';
 
 const db = () => getDb();
 
@@ -18,12 +19,13 @@ export function shopWarehouseIds(shopId) {
 
 /** Những biến thể đơn thật sự có tồn mà một dòng đơn cần lấy: chính nó, hoặc từng thành phần × SL nếu là combo */
 export function stockNeeds(variantId, qty) {
-  const v = db().prepare('SELECT id, sku, kind FROM variants WHERE id = ?').get(variantId);
+  const v = db().prepare('SELECT v.id, v.sku, v.kind, p.is_service FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(variantId);
   if (!v) throw badRequest('VARIANT_NOT_FOUND', `Không tìm thấy biến thể ${variantId}`);
+  if (v.is_service) return []; // dịch vụ không có kho: không lấy hàng, không phân bổ
   if (v.kind === 'bundle') {
     const comps = componentsOf(variantId);
     if (!comps.length) throw conflict('BUNDLE_EMPTY', `Combo ${v.sku} chưa có thành phần nào`);
-    return comps.map((c) => ({ variant_id: c.component_variant_id, sku: c.sku, qty: c.qty * qty }));
+    return comps.map((c) => ({ variant_id: c.component_variant_id, sku: c.sku, qty: qty3(c.qty * qty) }));
   }
   return [{ variant_id: v.id, sku: v.sku, qty }];
 }
@@ -52,7 +54,7 @@ export function planAllocation(shopId, lines, { overrides, allowNegative = false
     return remaining.get(k);
   };
   const avail = (w, v) => Math.max(0, left(w, v));
-  const consume = (w, v, n) => remaining.set(key(w, v), left(w, v) - n);
+  const consume = (w, v, n) => remaining.set(key(w, v), qty3(left(w, v) - n));
   const whExists = db().prepare('SELECT id FROM warehouses WHERE id = ? AND archived_at IS NULL');
   const initialTotal = (v) => order.reduce((a, w) => a + Math.max(0, getLevel(w, v).on_hand), 0);
 
@@ -63,8 +65,8 @@ export function planAllocation(shopId, lines, { overrides, allowNegative = false
   const push = (r, item) => {
     const same = r.items.find((x) => x.warehouse_id === item.warehouse_id && x.variant_id === item.variant_id);
     if (same) {
-      same.qty += item.qty;
-      same.short_qty += item.short_qty;
+      same.qty = qty3(same.qty + item.qty);
+      same.short_qty = qty3(same.short_qty + item.short_qty);
     } else r.items.push(item);
   };
 
@@ -80,10 +82,10 @@ export function planAllocation(shopId, lines, { overrides, allowNegative = false
       if (!vid || !need.has(vid)) {
         throw badRequest('ALLOCATION_MISMATCH', 'Phân bổ kho nhắc tới sản phẩm không có trong dòng đơn', { line: i, variant_id: a.variant_id });
       }
-      if (!Number.isInteger(a.qty) || a.qty <= 0) throw badRequest('INVALID_QTY', 'Số lượng phân bổ phải là số nguyên dương', { line: i });
+      if (!(a.qty > 0) || Math.abs(a.qty * 1000 - Math.round(a.qty * 1000)) > 1e-7) throw badRequest('INVALID_QTY', 'Số lượng phân bổ phải dương, tối đa 3 chữ số thập phân', { line: i });
       if (!whExists.get(a.warehouse_id)) throw badRequest('INVALID_WAREHOUSE', 'Kho phân bổ không tồn tại hoặc đã lưu trữ', { line: i, warehouse_id: a.warehouse_id });
-      sums.set(vid, (sums.get(vid) ?? 0) + a.qty);
-      const short = Math.max(0, a.qty - avail(a.warehouse_id, vid));
+      sums.set(vid, qty3((sums.get(vid) ?? 0) + a.qty));
+      const short = qty3(Math.max(0, a.qty - avail(a.warehouse_id, vid)));
       consume(a.warehouse_id, vid, a.qty);
       if (!shopIds.includes(a.warehouse_id) && a.warehouse_id !== primaryWarehouseId) {
         warnings.push({ code: 'WAREHOUSE_OUTSIDE_SHOP', line: i, warehouse_id: a.warehouse_id, message: 'Kho này không nằm trong danh sách kho của shop' });
@@ -109,7 +111,7 @@ export function planAllocation(shopId, lines, { overrides, allowNegative = false
         if (take <= 0) continue;
         consume(w, n.variant_id, take);
         push(r, { variant_id: n.variant_id, sku: n.sku, warehouse_id: w, qty: take, short_qty: 0 });
-        rest -= take;
+        rest = qty3(rest - take);
       }
       if (rest > 0) {
         consume(order[0], n.variant_id, rest);

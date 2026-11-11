@@ -31,7 +31,7 @@ export function nextStep(o, { onStatus, onModal, onReturn }) {
   return {};
 }
 
-export default function OrderActionBar({ o, busy, refundMax, onStatus, onModal, onReturn, onPay, onRefund, onCancel }) {
+export default function OrderActionBar({ o, busy, refundMax, onStatus, onModal, onReturn, onAllowance, onPay, onRefund, onCancel }) {
   const { main, alt, hint } = nextStep(o, { onStatus, onModal, onReturn });
   const live = ['confirmed', 'shipping', 'completed'].includes(o.status);
   const menu = [
@@ -41,6 +41,7 @@ export default function OrderActionBar({ o, busy, refundMax, onStatus, onModal, 
     o.status === 'confirmed' && !o.packaged_at && main?.label !== 'Xác nhận đóng gói' && { label: 'Xác nhận đóng gói', run: () => onModal('packaging') },
     o.status === 'confirmed' && { label: 'Giao tại chỗ, hoàn thành ngay', run: () => onStatus('completed') },
     live && { label: 'Trả hàng', run: () => onReturn(emptyReturnForm(o.is_marketplace)) },
+    live && onAllowance && { label: 'Giảm giá sau bán / bồi thường', run: onAllowance },
     live && !o.is_marketplace && o.customer_id && { label: 'Đổi hàng', run: () => onModal('exchange') },
     live && o.packaged_at && { label: 'Vật tư đóng gói đã ghi', run: () => onModal('packaging') },
     { label: 'In phiếu bán hàng', href: `/api/v1/orders/${o.id}/receipt` },

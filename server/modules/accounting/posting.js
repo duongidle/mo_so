@@ -1,12 +1,13 @@
 import { businessDate } from '../../lib/time.js';
+import { lineAmount } from '../../lib/money.js';
 import { depreciationSchedule, postedPeriods } from '../../lib/schedule.js';
 
 /**
  * Quy tắc hạch toán: mỗi loại chứng từ một hàm THUẦN (không đụng DB) từ ảnh chụp chứng từ → danh sách bút toán.
  * Quy tắc số liệu: bút toán đơn/trả hàng/chi phí phải khớp ĐÚNG cách báo cáo (reports/stats.js, service.js) đếm từng khoản và vào ngày nào:
  * - Đơn tính khi đã xác nhận trở đi (COUNTED), vào ngày của đơn (business_date). Trả hàng cũng vào ngày của đơn gốc.
- * - Doanh thu hàng = goods_revenue (đã trừ giảm giá); phí ship khách trả riêng (5113, trừ ship hoàn ở phiếu trả); phí sàn không được hoàn khi trả hàng.
- * - Phiếu trả: Nợ 5212 hàng, Nợ 5113 ship hoàn, Có 131 (hoặc 1388) phần còn lại sau phí trả hàng, Có 5118 phí trả hàng, Nợ 6412 / Có 3388 ship chiều về.
+ * - Doanh thu hàng = goods_revenue (đã trừ giảm giá); phí ship khách trả riêng (5113, trừ ship hoàn ở phiếu trả); đơn sàn trả hàng được hoàn phí sàn theo phiếu (Có 6411), kênh khác không hoàn.
+ * - Phiếu trả (và phiếu giảm giá sau bán, không có hàng quay về): Nợ 5212 hàng, Nợ 5113 ship hoàn, Có 131 (hoặc 1388) phần còn lại sau phí trả hàng và phí sàn được hoàn, Có 6411 phí sàn được hoàn, Có 5118 phí trả hàng, Nợ 6412 / Có 3388 ship chiều về.
  * - Giá vốn = cogs_amount của đơn (đã trừ phần nhập lại kho) + giá vốn đã nhập lại ở các phiếu trả (chụp lúc xuất).
  * Mỗi bút toán phải cân (Σ Nợ = Σ Có), nếu không ném lỗi.
  */
@@ -43,6 +44,12 @@ export function postingsFor(type, src, ctx) {
 const recvAccount = (marketplace) => (marketplace ? '1388' : '131');
 
 function orderEntry({ o, returns, marketplace }) {
+  // Đơn huỷ mà shop giữ cọc: khoản đã thu (131 có dư Có) chuyển thành doanh thu khác 5119, ghi vào ngày của đơn (cùng cách báo cáo đếm)
+  if (o.status === 'cancelled' && o.forfeited_amount > 0 && !marketplace) {
+    const sc = { shop_id: o.shop_id, channel_id: o.channel_id };
+    const cust = o.customer_id ? { partner_type: 'customer', partner_id: o.customer_id } : {};
+    return entry({ source_type: 'order', source_id: o.id, date: o.business_date, description: `Giữ cọc đơn huỷ ${o.code}`, shop_id: o.shop_id }, [dr('131', o.forfeited_amount, { ...sc, ...cust }), cr('5119', o.forfeited_amount, { ...sc, memo: 'Cọc khách bỏ, shop giữ lại' })]);
+  }
   if (!COUNTED.has(o.status)) return null;
   const sc = { shop_id: o.shop_id, channel_id: o.channel_id };
   const cust = o.customer_id ? { partner_type: 'customer', partner_id: o.customer_id } : {};
@@ -69,13 +76,15 @@ function returnEntry({ ret, o, marketplace }) {
   const shipRefund = ret.shipping_refund_amount ?? 0;
   const fee = ret.return_fee_amount ?? 0;
   const shipCost = ret.return_shipping_cost ?? 0;
-  // Hàng trả giảm 5212; ship hoàn giảm 5113; phí trả hàng là doanh thu khác 5118 (cấn vào công nợ khách); ship chiều về là chi phí như ship shop chịu
+  const feeBack = ret.platform_fee_refund_amount ?? 0; // phí sàn được hoàn: giảm chi phí 6411, giảm phần sàn còn nợ shop (1388) tương ứng
+  // Hàng trả (hoặc giảm giá sau bán) giảm 5212; ship hoàn giảm 5113; phí trả hàng là doanh thu khác 5118 (cấn vào công nợ khách); ship chiều về là chi phí như ship shop chịu
   return entry(
     { source_type: 'return', source_id: ret.id, date: o.business_date, description: `Trả hàng ${ret.code} (đơn ${o.code})`, shop_id: o.shop_id },
     [
       dr('5212', ret.goods_amount, { ...sc, memo }),
       dr('5113', shipRefund, { ...sc, memo }),
-      cr(recv, ret.goods_amount + shipRefund - fee, { ...sc, ...cust }),
+      cr(recv, ret.goods_amount + shipRefund - fee - feeBack, { ...sc, ...cust }),
+      cr('6411', feeBack, { ...sc, memo: 'Sàn hoàn phí khi trả hàng' }),
       cr('5118', fee, { ...sc, memo: 'Phí trả hàng shop giữ lại' }),
       dr('156', restored, sc),
       cr('632', restored, sc),
@@ -130,6 +139,34 @@ function purchaseEntry({ pu }) {
   );
 }
 
+/**
+ * Trả hàng nhập: Nợ 331 (NCC trả lại theo giá mua, đã trừ chiết khấu) / Có 156 (giá trị xuất kho thực tế).
+ * Chênh lệch = phí nhập đã phân bổ vào hàng trả mà NCC không hoàn (và chênh giá bình quân khi kho về 0): Nợ 811, hoặc Có 711 nếu âm. Ghi vào ngày lập phiếu trả.
+ */
+function purchaseReturnEntry({ ret, purchase }) {
+  if (!ret || ret.voided_at) return null;
+  const sc = { shop_id: ret.shop_id };
+  const sup = ret.supplier_id ? { partner_type: 'supplier', partner_id: ret.supplier_id } : {};
+  const diff = ret.stock_value - ret.goods_amount;
+  return entry(
+    { source_type: 'purchase_return', source_id: ret.id, date: ret.business_date, description: `Trả hàng nhập ${ret.code}${purchase ? ` (phiếu ${purchase.code})` : ''}`, shop_id: ret.shop_id },
+    [dr('331', ret.goods_amount, { ...sc, ...sup }), cr('156', ret.stock_value, sc), diff > 0 ? dr('811', diff, { ...sc, memo: 'Phí nhập của hàng trả, NCC không hoàn' }) : cr('711', -diff, { ...sc, memo: 'Chênh giá xuất kho so với giá NCC hoàn' })],
+  );
+}
+
+/**
+ * Giảm giá sau nhận: Nợ 331 / Có 156 phần ứng với hàng còn tồn (giảm giá vốn tồn kho) / Có 711 phần ứng với hàng đã bán (giá vốn đã chụp trên đơn không sửa).
+ */
+function purchaseAllowanceEntry({ al, purchase }) {
+  if (!al || al.voided_at) return null;
+  const sc = { shop_id: al.shop_id };
+  const sup = al.supplier_id ? { partner_type: 'supplier', partner_id: al.supplier_id } : {};
+  return entry(
+    { source_type: 'purchase_allowance', source_id: al.id, date: al.business_date, description: `NCC giảm giá sau nhận ${al.code}${purchase ? ` (phiếu ${purchase.code})` : ''}`, shop_id: al.shop_id },
+    [dr('331', al.amount, { ...sc, ...sup }), cr('156', al.stock_amount, sc), cr('711', al.sold_amount, { ...sc, memo: 'Giảm giá phần hàng đã bán' })],
+  );
+}
+
 function expenseEntry({ e }, ctx) {
   if (e.voided_at) return null;
   const account = ctx.expenseAccount(e.category_id);
@@ -142,15 +179,15 @@ function expenseEntry({ e }, ctx) {
 
 function stockEntry({ movements, label }) {
   if (!movements.length) return null;
-  const sum = (types) => movements.filter((m) => types.includes(m.type)).reduce((a, m) => a + Math.round(Math.abs(m.qty) * m.unit_cost), 0);
+  const sum = (types) => movements.filter((m) => types.includes(m.type)).reduce((a, m) => a + lineAmount(Math.abs(m.qty), m.unit_cost), 0);
   const inV = sum(['adjust_in']);
   const outMovements = movements.filter((m) => ['adjust_out', 'damage_out'].includes(m.type));
   const materialOut = outMovements.filter((m) => ['packaging_run','material_issue'].includes(m.ref_type));
-  const outV = outMovements.filter((m) => !['packaging_run','material_issue'].includes(m.ref_type)).reduce((a,m)=>a+Math.round(Math.abs(m.qty)*m.unit_cost),0);
+  const outV = outMovements.filter((m) => !['packaging_run','material_issue'].includes(m.ref_type)).reduce((a,m)=>a+lineAmount(Math.abs(m.qty), m.unit_cost),0);
   const materialByAccount = new Map();
   for (const m of materialOut) {
     const account = m.expense_account_code || '6428';
-    materialByAccount.set(account, (materialByAccount.get(account) || 0) + Math.round(Math.abs(m.qty) * m.unit_cost));
+    materialByAccount.set(account, (materialByAccount.get(account) || 0) + lineAmount(Math.abs(m.qty), m.unit_cost));
   }
   const openV = sum(['opening']);
   const first = movements[0];
@@ -217,6 +254,8 @@ const POSTERS = {
   return: (s) => [returnEntry(s)],
   payment: (s, c) => [paymentEntry(s, c)],
   purchase: (s) => [purchaseEntry(s)],
+  purchase_return: (s) => [purchaseReturnEntry(s)],
+  purchase_allowance: (s) => [purchaseAllowanceEntry(s)],
   expense: (s, c) => [expenseEntry(s, c)],
   stock: (s) => [stockEntry(s)],
   cash_open: (s, c) => [cashOpenEntry(s, c)],

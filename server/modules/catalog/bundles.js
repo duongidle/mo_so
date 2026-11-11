@@ -23,8 +23,9 @@ export function setComponents(bundleId, comps) {
     if (c.variant_id === bundleId) throw badRequest('BUNDLE_SELF', 'Combo không thể chứa chính nó');
     if (seen.has(c.variant_id)) throw badRequest('BUNDLE_DUPLICATE', 'Một thành phần chỉ khai báo một lần');
     seen.add(c.variant_id);
-    const v = db().prepare('SELECT kind FROM variants WHERE id = ?').get(c.variant_id);
+    const v = db().prepare('SELECT v.kind, p.is_service FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = ?').get(c.variant_id);
     if (!v) throw notFound('Biến thể thành phần');
+    if (v.is_service) throw badRequest('SERVICE_IN_BUNDLE', 'Dịch vụ không có kho nên chưa dùng làm thành phần combo được', { variant_id: c.variant_id });
     if (v.kind === 'bundle') throw badRequest('BUNDLE_NESTED', 'Thành phần của combo phải là sản phẩm đơn, không lồng combo trong combo');
   }
   db().prepare('DELETE FROM bundle_components WHERE bundle_variant_id = ?').run(bundleId);

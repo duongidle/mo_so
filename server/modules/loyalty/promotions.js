@@ -3,7 +3,7 @@ import { newId } from '../../lib/id.js';
 import { nowIso, businessDate } from '../../lib/time.js';
 import { badRequest, notFound } from '../../lib/errors.js';
 import { audit } from '../../lib/events.js';
-import { allocate } from '../../lib/money.js';
+import { allocate, lineAmount } from '../../lib/money.js';
 import { categoryClause } from '../../lib/categories.js';
 import { customerLoyalty } from './service.js';
 
@@ -76,7 +76,7 @@ export const listPromotions = ({ includeArchived = false } = {}) =>
   db().prepare(`SELECT p.*, ${STATS} FROM promotions p ${includeArchived ? '' : 'WHERE p.archived_at IS NULL'} ORDER BY p.active DESC, p.created_at DESC`).all().map(hydrate);
 
 // ---------- Tính khuyến mãi cho một giỏ hàng ----------
-const gross = (l) => l.qty * l.unit_price;
+const gross = (l) => lineAmount(l.qty, l.unit_price);
 const inScope = (p, l, catVariants) => (!p.variant_ids && !p.category_ids) || p.variant_ids?.includes(l.variant_id) || (p.category_ids && catVariants.get(p)?.has(l.variant_id));
 
 function usageOf(promoId, customerId) {

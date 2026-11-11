@@ -4,9 +4,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api, qs } from '../api.js';
 import { useSession } from '../session.jsx';
 import { Async, Card, Chips, Tabs, Empty, ErrorBox, Field, Kpi, Modal, useAction, useAsync, useDebounced, PageHeader, Toolbar } from '../components/ui.jsx';
-import { vnd, num, fmtDate, MOVE_TYPES } from '../lib.js';
+import { vnd, num, fmtDate, moveLabel, STOCK_REASONS } from '../lib.js';
 import StockCounts from './StockCounts.jsx';
 import StockClose from './StockClose.jsx';
+import { ConversionList } from './Conversions.jsx';
 import ProductThumb from '../components/ProductThumb.jsx';
 import { flattenTree, indent } from '../lib/categories.js';
 import MoneyInput from '../components/MoneyInput.jsx';
@@ -20,7 +21,7 @@ export default function Stock() {
   const dq = useDebounced(q);
   const [cat, setCat] = useState('');
   const cats = useAsync(() => api.get('/categories'), []);
-  const [tab, setTab] = useState('stock');
+  const [tab, setTab] = useState(sp.get('tab') || 'stock');
   const [period, setPeriod] = useState({ from: '', to: '' });
   const [adj, setAdj] = useState(null);
   const [hist, setHist] = useState(null);
@@ -33,9 +34,9 @@ export default function Stock() {
 
   return (
     <div className="page stack">
-      <PageHeader title="Kho" actions={<><button className="btn" onClick={() => setIssue(true)}>Xuất vật tư</button>{warehouses.length > 1 && <button className="btn" onClick={() => setTransfer(true)}>Chuyển kho</button>}<button className="btn" onClick={() => setAdj({ kind: 'adjust', lines: [] })}>Điều chỉnh nhanh</button></>} />
-      <Toolbar><Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê'], ['lots', 'Lô & hạn dùng'], ['close', 'Chốt kho'], ['reports', 'Báo cáo'], ['consumption', 'Tiêu hao vật tư']]} value={tab} onChange={setTab} /></Toolbar>
-      {tab === 'counts' ? <StockCounts /> : tab === 'lots' ? <StockLots /> : tab === 'close' ? <StockClose /> : <>
+      <PageHeader title="Kho" actions={<><Link to="/stock/conversions/new" className="btn">Đóng gói</Link><button className="btn" onClick={() => setIssue(true)}>Xuất vật tư</button>{warehouses.length > 1 && <button className="btn" onClick={() => setTransfer(true)}>Chuyển kho</button>}<button className="btn" onClick={() => setAdj({ kind: 'adjust', lines: [] })}>Điều chỉnh nhanh</button></>} />
+      <Toolbar><Tabs options={[['stock', 'Tồn kho'], ['moves', 'Lịch sử biến động'], ['counts', 'Kiểm kê'], ['lots', 'Lô & hạn dùng'], ['conversions', 'Đóng gói'], ['close', 'Chốt kho'], ['reports', 'Báo cáo'], ['consumption', 'Tiêu hao vật tư']]} value={tab} onChange={setTab} /></Toolbar>
+      {tab === 'counts' ? <StockCounts /> : tab === 'conversions' ? <ConversionList /> : tab === 'lots' ? <StockLots /> : tab === 'close' ? <StockClose /> : <>
       <Toolbar>
         <select value={wh} onChange={(e) => setWh(e.target.value)} aria-label="Kho"><option value="">Mọi kho</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select>
         {['reports', 'consumption'].includes(tab) && <><input aria-label="Từ ngày" type="date" value={period.from} onChange={(e) => setPeriod((p) => ({ ...p, from: e.target.value }))} /><input aria-label="Đến ngày" type="date" value={period.to} onChange={(e) => setPeriod((p) => ({ ...p, to: e.target.value }))} /></>}
@@ -71,7 +72,7 @@ export default function Stock() {
         <Async state={moves}>{(r) => r && (
           <Card flat className="list-card sticky-head"><div className="table-wrap"><table>
             <thead><tr><th>Thời gian</th><th>Sản phẩm</th><th>Loại</th><th className="num">SL</th><th className="num">Tồn sau</th></tr></thead>
-            <tbody>{r.data.map((m) => <tr key={m.id}><td className="small">{fmtDate(m.created_at)}</td><td>{m.product_name}<div className="small muted">{m.sku}</div></td><td>{MOVE_TYPES[m.type] || m.type}</td><td className="num">{m.qty > 0 ? '+' : ''}{num(m.qty)}</td><td className="num">{num(m.balance_after)}</td></tr>)}</tbody>
+            <tbody>{r.data.map((m) => <tr key={m.id}><td className="small">{fmtDate(m.created_at)}</td><td>{m.product_name}<div className="small muted">{m.sku}</div></td><td>{moveLabel(m)}</td><td className="num">{m.qty > 0 ? '+' : ''}{num(m.qty)}</td><td className="num">{num(m.balance_after)}</td></tr>)}</tbody>
           </table></div></Card>
         )}</Async>
       ) : tab === 'reports' ? (
@@ -100,7 +101,7 @@ function History({ item, warehouseId, warehouses, onClose }) {
     <Modal title={`${item.product_name} · ${item.sku}`} onClose={onClose} footer={<Link className="btn" to={`/products/${item.product_id}`}>Mở trang sản phẩm</Link>}>
       <div className="stack">
         <div className="small muted">{warehouseId ? `Lịch sử của kho ${whName(warehouseId)}` : 'Lịch sử ở mọi kho'} · tồn hiện tại {num(item.on_hand)}</div>
-        <Async state={s}>{(r) => !r.data.length ? <Empty>Chưa có biến động nào.</Empty> : r.data.map((m) => <div key={m.id} className="row between small"><span>{fmtDate(m.created_at)} · {MOVE_TYPES[m.type] || m.type}{!warehouseId && warehouses.length > 1 ? ` · ${whName(m.warehouse_id)}` : ''}</span><b>{m.qty > 0 ? '+' : ''}{m.qty} → {m.balance_after}</b></div>)}</Async>
+        <Async state={s}>{(r) => !r.data.length ? <Empty>Chưa có biến động nào.</Empty> : r.data.map((m) => <div key={m.id} className="row between small"><span>{fmtDate(m.created_at)} · {moveLabel(m)}{!warehouseId && warehouses.length > 1 ? ` · ${whName(m.warehouse_id)}` : ''}</span><b>{m.qty > 0 ? '+' : ''}{m.qty} → {m.balance_after}</b></div>)}</Async>
       </div>
     </Modal>
   );
@@ -114,6 +115,7 @@ function Adjust({ onClose, onSaved }) {
   const dq = useDebounced(q);
   const [lines, setLines] = useState([]);
   const [reason, setReason] = useState('');
+  const [reasonCode, setReasonCode] = useState('');
   const found = useAsync(() => (dq ? api.get('/variants', { warehouse_id: wh, q: dq, all: '1', limit: 8 }) : null), [dq, wh]);
   const { busy, error, run } = useAction();
   const add = (v) => { setLines((l) => (l.some((x) => x.id === v.id) ? l : [...l, { id: v.id, sku: v.sku, name: v.product_name, on_hand: v.on_hand, counted: v.on_hand, change: 0, unit_cost: '' }])); setQ(''); };
@@ -121,6 +123,7 @@ function Adjust({ onClose, onSaved }) {
   const save = () => run(async () => {
     await api.post('/stock-adjustments', {
       warehouse_id: wh, kind, reason: reason || null,
+      ...((kind === 'adjust' || kind === 'damage') && (reasonCode || kind === 'damage') ? { reason_code: reasonCode || 'damaged' } : {}),
       lines: lines.map((l) => ({ variant_id: l.id, ...(kind === 'count' ? { counted: Number(l.counted) } : { change: kind === 'damage' ? -Math.abs(Number(l.change)) : Number(l.change) }), ...(l.unit_cost !== '' ? { unit_cost: Number(l.unit_cost) } : {}) })),
     });
     onSaved();
@@ -140,7 +143,8 @@ function Adjust({ onClose, onSaved }) {
           {(kind === 'opening' || kind === 'adjust' || kind === 'count') && <MoneyInput placeholder="Giá vốn" value={l.unit_cost} onChange={(e) => upd(l.id, { unit_cost: e.target.value })} style={{ width: 100 }} aria-label="Giá vốn" />}
         </div>
       ))}
-      <Field label="Lý do"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+      {(kind === 'adjust' || kind === 'damage') && <Field label="Lý do giảm kho" hint="Dùng để thống kê hao hụt ở Báo cáo → Hao hụt"><select value={reasonCode} onChange={(e) => setReasonCode(e.target.value)} aria-label="Lý do giảm kho"><option value="">{kind === 'damage' ? 'Hỏng, vỡ' : 'Không chọn (tính là Khác)'}</option>{STOCK_REASONS.filter(([c]) => kind !== 'damage' || c !== 'damaged').map(([c, l]) => <option key={c} value={c}>{l}</option>)}</select></Field>}
+      <Field label="Ghi chú"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
       <ErrorBox error={error} />
     </Modal>
   );

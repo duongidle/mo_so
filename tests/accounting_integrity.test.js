@@ -65,7 +65,7 @@ async function world() {
   ok(await api.post(`/orders/${o6.id}/returns`, { lines: [{ order_line_id: o6.lines[0].id, qty: 2, restock: true }] })); // toàn phần đơn sàn chưa thu
   // Huỷ
   ok(await api.post(`/orders/${o9.id}/status`, { status: 'cancelled' }));
-  ok(await api.post(`/orders/${o5.id}/status`, { status: 'cancelled' }));
+  ok(await api.post(`/orders/${o5.id}/status`, { status: 'cancelled', paid_action: 'refund' }));
   ok(await api.post(`/orders/${o5.id}/payments`, { amount: 100000, method: 'cod', direction: 'out' })); // hoàn tiền khách
   // Chi phí
   ok(await api.patch('/settings', { expense_allocation: 'revenue' }));
@@ -172,10 +172,10 @@ test('Công nợ: 131 + 1388 khớp báo cáo (kèm số dư có của đơn sà
   const { api } = await world();
   const cf = ok(await api.get(`/reports/cashflow?${WIDE()}`));
   assert.ok(cf.customer_receivable > 0 && cf.supplier_payable > 0);
-  // Báo cáo cắt công nợ mỗi đơn ở 0; sổ cái giữ số dư có (đơn sàn trả toàn phần: sàn không hoàn phí 18.000 nên shop nợ sàn phần đó)
+  // Báo cáo cắt công nợ mỗi đơn ở 0; sổ cái giữ số dư có. Đơn sàn trả toàn phần được sàn hoàn phí 18.000 nên không còn số dư có nào
   const orders = q("SELECT o.*, ch.is_marketplace AS mp FROM orders o JOIN channels ch ON ch.id = o.channel_id WHERE o.status IN ('confirmed','shipping','completed','returned')");
   const credit = orders.reduce((a, o) => a + Math.min(0, (o.mp ? o.net_amount : o.total_amount) - o.returned_amount - o.paid_amount), 0);
-  assert.equal(credit, -18000);
+  assert.equal(credit, 0);
   assert.equal(bal('131') + bal('1388'), cf.customer_receivable + cf.marketplace_pending + credit);
   assert.equal(bal('131'), cf.customer_receivable);
   assert.equal(bal('331'), -cf.supplier_payable);
@@ -194,7 +194,7 @@ test('Sửa/huỷ chứng từ: bút toán tự cập nhật, mã bút toán gi�
   assert.equal(entryOf(o.o1.id).code, before.code, 'mã bút toán giữ nguyên khi sinh lại');
   assert.deepEqual(verifyJournal(), []);
   const rev = bal('5111');
-  ok(await api.post(`/orders/${o.o7.id}/status`, { status: 'cancelled' }));
+  ok(await api.post(`/orders/${o.o7.id}/status`, { status: 'cancelled', paid_action: 'refund' }));
   flushJournal();
   assert.equal(entryOf(o.o7.id), undefined, 'đơn huỷ không còn bút toán bán hàng');
   assert.equal(bal('5111'), rev + 80000, 'doanh thu (bên Có) giảm 80.000');

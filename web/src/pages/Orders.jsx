@@ -8,16 +8,18 @@ import Icon from '../components/Icon.jsx';
 import ImportPanel from './Import.jsx';
 import ExportOrders from '../components/ExportOrders.jsx';
 import CustomFieldsPanel from '../components/CustomFieldsPanel.jsx';
-import { vnd, num, fmtDate, STATUS, PAY_STATUS } from '../lib.js';
+import { vnd, num, fmtDate, STATUS, payBadges } from '../lib.js';
 import MoneyInput from '../components/MoneyInput.jsx';
 import MoneyFill from '../components/MoneyFill.jsx';
 import ReturnModal, { emptyReturnForm } from './ReturnModal.jsx';
+import AllowanceModal, { emptyAllowanceForm } from './AllowanceModal.jsx';
 import ExchangeModal from './ExchangeModal.jsx';
 import OrderFlow from '../components/OrderFlow.jsx';
 import OrderActionBar from '../components/OrderActionBar.jsx';
 import { ShipModal, SplitModal, ReserveModal, ShipmentsSection } from '../components/OrderActions.jsx';
 import { codRefusedForm } from '../lib/returnForm.js';
 import { reasonLabel } from '../lib/returnReasons.js';
+import { needsPaidChoice, emptyCancelForm, cancelError, cancelBody } from '../lib/cancelForm.js';
 
 const TABS = [['', 'Tất cả'], ['draft', 'Nháp'], ['confirmed', 'Đã xác nhận'], ['shipping', 'Đang giao'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã huỷ'], ['returned', 'Trả hàng']];
 const PAY_CLASS = { paid: 'st-completed', partial: 'st-returned', unpaid: 'st-draft', refunded: 'st-returned' };
@@ -79,7 +81,7 @@ export function OrderList() {
                         <td className="hide-sm"><span className="badge plain">{chName(o.channel_id)}</span></td>
                         <td className="hide-sm num">{num(o.item_count || 0)}</td>
                         <td className="num o2"><b>{vnd(o.total_amount)}</b></td>
-                        <td className="o5"><span className={`badge ${PAY_CLASS[o.payment_status] || 'plain'}`}>{PAY_STATUS[o.payment_status]}</span></td>
+                        <td className="o5">{payBadges(o).map((b) => <span key={b.label} className={`badge ${b.cls || PAY_CLASS[o.payment_status] || 'plain'}`}>{b.label}</span>)}</td>
                         <td className="o4"><StatusBadge status={o.status} /></td>
                       </tr>
                     );
@@ -114,12 +116,18 @@ export function OrderDetail() {
       <Async state={state}>
         {({ data: o }) => {
           const ch = channels.find((c) => c.id === o.channel_id);
-          // Đơn huỷ đã nhận tiền (cọc): hoàn lại được tới số đã thu. Đơn khác: tới số còn nợ khách
-          const refundMax = o.status === 'cancelled' && !o.is_marketplace ? o.paid_amount : o.refund_owed_amount;
-          const doStatus = (status, note) => act.run(async () => { await api.post(`/orders/${o.id}/status`, { status, note }); setModal(null); state.reload(); });
+          // Hoàn tiền khách: tới số shop còn nợ khách (đơn huỷ: phần đã thu trừ cọc shop giữ lại)
+          const allowanceTotal = o.returns.filter((r) => r.kind === 'allowance').reduce((a, r) => a + r.goods_amount, 0);
+          const refundMax = o.refund_owed_amount;
+          const doCancel = () => {
+            if (cancelError(o, form)) return undefined;
+            return act.run(async () => { await api.post(`/orders/${o.id}/status`, cancelBody(o, form)); setModal(null); state.reload(); });
+          };
           const doStatusForce = (status) => act.run(async () => {
-            try { await api.post(`/orders/${o.id}/status`, { status }); } catch (e) {
-              if (e.code === 'STOCK_NOT_ENOUGH' && confirm(`${e.message}\n\nVẫn xác nhận và cho phép âm kho?`)) await api.post(`/orders/${o.id}/status`, { status, allow_negative_stock: true });
+            const send = (extra = {}) => api.post(`/orders/${o.id}/status`, { status, ...extra });
+            try { await send(); } catch (e) {
+              if (e.code === 'STOCK_NOT_ENOUGH' && confirm(`${e.message}\n\nVẫn xác nhận và cho phép âm kho?`)) await send({ allow_negative_stock: true });
+              else if (e.code === 'LOT_EXPIRED' && confirm(`${e.message}\n\nVẫn bán hàng từ lô đã hết hạn?`)) await send({ allow_expired: true });
               else throw e;
             }
             state.reload();
@@ -129,9 +137,11 @@ export function OrderDetail() {
               <PageHeader
                 title={o.code}
                 sub={`${o.shop_name} · ${ch?.name || ''}${o.external_id ? ` · ${o.external_id}` : ''} · ${fmtDate(o.ordered_at)}`}
-                actions={<>{o.status === 'completed' && o.payment_status === 'paid' && <span className="seal">ĐÃ CHỐT</span>}<StatusBadge status={o.status} /><span className="badge plain">{PAY_STATUS[o.payment_status]}</span></>}
+                actions={<>{o.status === 'completed' && o.payment_status === 'paid' && <span className="seal">ĐÃ CHỐT</span>}<StatusBadge status={o.status} />{payBadges(o).map((b) => <span key={b.label} className="badge plain">{b.label}</span>)}</>}
               />
               <ErrorBox error={act.error} />
+              {o.expired_lot_warning ? <div className="alert warn">Đơn này đã lấy hàng từ lô quá hạn. Kiểm tra hàng trước khi giao.</div> : null}
+              {o.status === 'cancelled' && o.forfeited_amount > 0 ? <div className="alert">Đơn huỷ, shop giữ lại {vnd(o.forfeited_amount)} (cọc khách bỏ) và ghi là thu nhập khác.</div> : null}
               {o.stock_warning ? <div className="alert warn">Đơn này làm tồn kho âm. Kiểm tra kho thực tế và điều chỉnh nếu cần.</div> : null}
               {o.refund_owed_amount > 0 ? <div className="alert warn">Còn phải trả khách {vnd(o.refund_owed_amount)} (đã thu {vnd(o.paid_amount)}, số phải thu sau trả hàng thấp hơn). Hoàn bằng nút “Hoàn tiền”.</div> : o.needs_refund && <div className="alert warn">Đã thu nhiều hơn số cần thu ({vnd(o.paid_amount)}). Cần hoàn lại khách.</div>}
               <OrderFlow order={o} />
@@ -139,9 +149,10 @@ export function OrderDetail() {
                 o={o} busy={act.busy} refundMax={refundMax}
                 onStatus={doStatusForce} onModal={setModal}
                 onReturn={(form) => { setForm(form); setModal('return'); }}
+                onAllowance={() => { setForm(emptyAllowanceForm()); setModal('allowance'); }}
                 onPay={() => { setForm({ amount: o.amount_due, method: 'cash' }); setModal('pay'); }}
                 onRefund={() => { setForm({ amount: refundMax, method: 'cash' }); setModal('refund'); }}
-                onCancel={() => { setForm({ note: '' }); setModal('cancel'); }}
+                onCancel={() => { setForm(emptyCancelForm(o)); setModal('cancel'); }}
               />
 
               <div className="grid cols-2 collapse">
@@ -158,14 +169,18 @@ export function OrderDetail() {
                     {o.shipping_fee > 0 && <Row l="Phí ship khách trả" v={o.shipping_fee} />}
                     <Row l="Khách phải trả" v={o.total_amount} bold />
                     {o.platform_fee_amount > 0 && <Row l="Phí sàn" v={-o.platform_fee_amount} />}
+                    {o.platform_fee_refunded_amount > 0 && <Row l="Phí sàn được hoàn" v={o.platform_fee_refunded_amount} />}
                     {o.seller_shipping_amount > 0 && <Row l="Ship shop chịu" v={-o.seller_shipping_amount} />}
-                    {o.returned_goods_amount > 0 && <Row l="Hàng trả" v={-o.returned_goods_amount} />}
+                    {allowanceTotal > 0 && <Row l="Giảm giá sau bán" v={-allowanceTotal} />}
+                    {o.returned_goods_amount - allowanceTotal > 0 && <Row l="Hàng trả" v={-(o.returned_goods_amount - allowanceTotal)} />}
                     {o.returned_shipping_amount > 0 && <Row l="Hoàn phí ship khách" v={-o.returned_shipping_amount} />}
                     {o.return_fee_amount > 0 && <Row l="Phí trả hàng thu được" v={o.return_fee_amount} />}
+
                     {o.return_shipping_cost > 0 && <Row l="Ship chiều về" v={-o.return_shipping_cost} />}
                     <Row l="Giá vốn" v={-o.cogs_amount} />
                     <Row l="Lợi nhuận gộp" v={o.gross_profit} bold />
                     <Row l="Đã thu" v={o.paid_amount} />
+                    {o.forfeited_amount > 0 && <Row l="Cọc giữ lại" v={o.forfeited_amount} bold />}
                     {o.refund_owed_amount > 0 && <Row l="Còn phải trả khách" v={o.refund_owed_amount} bold />}
                   </div>
                 </Section>
@@ -209,15 +224,33 @@ export function OrderDetail() {
                 <Section title="Lịch sử">
                   {o.history.map((h) => <div key={h.id} className="small"><span className="muted">{fmtDate(h.created_at)}</span> · {h.from_status ? `${STATUS[h.from_status]} → ` : ''}{STATUS[h.to_status]}{h.note && ` (${h.note})`}</div>)}
                   {o.write_offs?.map((w) => <div key={w.id} className="small h-red">{w.code}: phiếu hàng huỷ, giá vốn {vnd(w.total_cost)} ({w.lines.map((x) => `${x.sku} ×${x.qty}`).join(', ')})</div>)}
-                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: trả hàng {vnd(r.goods_amount)}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.awaiting_goods ? <> · <b>Chờ hàng về</b> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, {}); state.reload(); })}>Đã nhận hàng, nhập kho</button> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, { damaged_line_ids: r.lines.map((x) => x.order_line_id) }); state.reload(); })}>Hàng về bị hỏng</button></> : r.goods_received_at && o.is_marketplace ? ' · Đã nhận hàng' : ''} · {reasonLabel(r.reason_code)}{r.reason && ` — ${r.reason}`}</div>)}
+                  {o.returns.map((r) => <div key={r.id} className="small h-yellow">{r.code}: {r.kind === 'allowance' ? 'giảm giá sau bán' : 'trả hàng'} {vnd(r.goods_amount)}{r.platform_fee_refund_amount > 0 && `, sàn hoàn phí ${vnd(r.platform_fee_refund_amount)}`}{r.shipping_refund_amount > 0 && `, hoàn ship ${vnd(r.shipping_refund_amount)}`}{r.return_fee_amount > 0 && `, phí trả hàng ${vnd(r.return_fee_amount)}`}{r.awaiting_goods ? <> · <b>Chờ hàng về</b> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, {}); state.reload(); })}>Đã nhận hàng, nhập kho</button> <button className="btn sm" disabled={act.busy} onClick={() => act.run(async () => { await api.post(`/orders/${o.id}/returns/${r.id}/receive`, { damaged_line_ids: r.lines.map((x) => x.order_line_id) }); state.reload(); })}>Hàng về bị hỏng</button></> : r.goods_received_at && o.is_marketplace ? ' · Đã nhận hàng' : ''} · {reasonLabel(r.reason_code)}{r.reason && ` — ${r.reason}`}</div>)}
                 </Section>
               </div>
 
               <CustomFieldsPanel entity="order" id={o.id} shopId={o.shop_id} />
 
               {modal === 'cancel' && (
-                <Modal title="Huỷ đơn" onClose={() => setModal(null)} footer={<button className="btn danger" disabled={act.busy} onClick={() => doStatus('cancelled', form.note)}>Xác nhận huỷ</button>}>
+                <Modal title="Huỷ đơn" onClose={() => setModal(null)} footer={<button className="btn danger" disabled={act.busy || !!cancelError(o, form)} onClick={doCancel}>Xác nhận huỷ</button>}>
                   <p className="muted small">Hàng đã trừ kho sẽ được cộng lại.</p>
+                  {needsPaidChoice(o) && (
+                    <div className="stack" role="radiogroup" aria-label="Xử lý tiền khách đã thu">
+                      <div className="alert warn">Khách đã thu {vnd(o.paid_amount)}. Chọn cách xử lý trước khi huỷ.</div>
+                      <label className="row" style={{ gap: 8 }}><input type="radio" name="paid_action" checked={form.paid_action === 'refund'} onChange={() => setForm({ ...form, paid_action: 'refund' })} /> Hoàn lại khách {vnd(o.paid_amount)}</label>
+                      <label className="row" style={{ gap: 8 }}><input type="radio" name="paid_action" checked={form.paid_action === 'forfeit'} onChange={() => setForm({ ...form, paid_action: 'forfeit' })} /> Giữ cọc (thành thu nhập của shop)</label>
+                      {form.paid_action === 'forfeit' && (
+                        <Field label="Số tiền giữ lại" hint={form.forfeit < o.paid_amount ? `Phần còn lại ${vnd(o.paid_amount - (Number(form.forfeit) || 0))} hoàn cho khách.` : 'Giữ toàn bộ số đã thu.'}>
+                          <MoneyFill fill={o.paid_amount} label="Giữ hết" value={form.forfeit} onChange={(e) => setForm({ ...form, forfeit: e.target.value })} />
+                        </Field>
+                      )}
+                      {form.paid_action && o.paid_amount - (form.paid_action === 'forfeit' ? Number(form.forfeit) || 0 : 0) > 0 && (
+                        <>
+                          <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={!!form.refund_now} onChange={(e) => setForm({ ...form, refund_now: e.target.checked })} /> Hoàn tiền cho khách ngay (bỏ chọn = hoàn sau, đơn hiện ở Công nợ phải trả)</label>
+                          {form.refund_now && <Field label="Phương thức hoàn"><select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>{methodList(form.method).map(([k, v]) => <option key={k} value={k}>{v}</option>)}{o.customer_id && <option value="customer_credit">Chuyển thành tiền khách gửi</option>}</select></Field>}
+                        </>
+                      )}
+                    </div>
+                  )}
                   <Field label="Lý do"><input value={form.note || ''} onChange={(e) => setForm({ ...form, note: e.target.value })} /></Field>
                   <ErrorBox error={act.error} />
                 </Modal>
@@ -254,6 +287,7 @@ export function OrderDetail() {
                 </Modal>
               )}
               {modal === 'return' && <ReturnModal order={o} form={form} setForm={setForm} act={act} methodList={methodList} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
+              {modal === 'allowance' && <AllowanceModal order={o} form={form} setForm={setForm} act={act} methodList={methodList} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
               {modal === 'exchange' && <ExchangeModal order={o} methodList={methodList} onClose={() => setModal(null)} onDone={(result) => navigate(`/orders/${result.created.id}`)} />}
               {modal === 'packaging' && <PackagingModal orderId={o.id} warehouses={warehouses} onClose={() => setModal(null)} onDone={() => { setModal(null); state.reload(); }} />}
             </>

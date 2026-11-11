@@ -26,12 +26,14 @@ const importOrder = z.object({
         sku: z.union([z.string(), z.number()]).transform(String),
         qty: z.coerce.number().int().positive(),
         unit_price: num.optional(),
-        discount_amount: num.default(0),
+        discount_amount: num.optional(),
         name: z.string().nullish(),
+        return_status: z.string().nullish(),
+        returned_qty: z.coerce.number().int().min(0).optional(),
       }),
     )
     .min(1),
-  discount_amount: num.default(0),
+  discount_amount: num.optional(), // không gửi = file không có cột giảm giá đơn, không so sánh
   shipping_fee: num.default(0),
   platform_fee_amount: num.default(0),
   seller_shipping_amount: num.default(0),

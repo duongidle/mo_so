@@ -4,10 +4,11 @@ const db = () => getDb();
 
 /** Tên hành động tiếng Việt; hành động chưa có tên hiện nguyên mã để không bị giấu. */
 export const ACTION_LABELS = {
-  'order.created': 'Tạo đơn', 'order.updated': 'Sửa đơn', 'order.status_changed': 'Đổi trạng thái đơn', 'order.returned': 'Trả hàng', 'order.return_goods_received': 'Nhận hàng trả về',
+  'order.created': 'Tạo đơn', 'order.updated': 'Sửa đơn', 'order.status_changed': 'Đổi trạng thái đơn', 'order.returned': 'Trả hàng', 'order.allowance': 'Giảm giá sau bán / bồi thường', 'order.deposit_forfeited': 'Giữ cọc khi huỷ đơn', 'order.return_goods_received': 'Nhận hàng trả về',
   'order.return_write_off': 'Lập phiếu hàng huỷ', 'order.exchanged': 'Đổi hàng', 'order.split': 'Tách đơn', 'order.seller_shipping_paid': 'Trả ship cho hãng vận chuyển', 'order.debt_reminded': 'Nhắc nợ khách',
   'order.reserved': 'Giữ hàng', 'order.unreserved': 'Bỏ giữ hàng', 'import.orders': 'Nhập đơn từ file',
-  'purchase.created': 'Tạo phiếu nhập', 'purchase.updated': 'Sửa phiếu nhập', 'purchase.received': 'Nhận hàng nhập', 'purchase.cancelled': 'Huỷ phiếu nhập', 'purchase.payment': 'Trả tiền nhà cung cấp', 'purchase.carrier_payment': 'Trả ship nhập', 'payment.voided': 'Huỷ khoản thanh toán',
+  'purchase.created': 'Tạo phiếu nhập', 'purchase.updated': 'Sửa phiếu nhập', 'purchase.received': 'Nhận hàng nhập', 'purchase.cancelled': 'Huỷ phiếu nhập', 'purchase.payment': 'Trả tiền nhà cung cấp', 'purchase.returned': 'Trả hàng nhập', 'purchase.return_voided': 'Huỷ phiếu trả hàng nhập', 'purchase.allowance_created': 'NCC giảm giá sau nhận', 'purchase.allowance_voided': 'Huỷ giảm giá sau nhận', 'purchase.supplier_refund': 'NCC hoàn tiền', 'purchase.carrier_payment': 'Trả ship nhập', 'payment.voided': 'Huỷ khoản thanh toán',
+  'inventory.conversion.created': 'Lập phiếu đóng gói', 'inventory.conversion.voided': 'Huỷ phiếu đóng gói', 'inventory.conversion_recipe.saved': 'Đặt công thức đóng từ', 'inventory.conversion_recipe.deleted': 'Xoá công thức đóng từ',
   'product.created': 'Tạo sản phẩm', 'product.updated': 'Sửa sản phẩm', 'product.removed': 'Gỡ sản phẩm', 'product.restored': 'Khôi phục sản phẩm', 'listing.set': 'Đặt giá niêm yết', 'listing.synced': 'Đồng bộ sản phẩm', 'channel_prices.set': 'Đặt giá theo kênh',
   'stock.transfer': 'Chuyển kho', 'stock.opening': 'Tồn đầu kỳ', 'stock.adjust': 'Điều chỉnh tồn', 'stock.damage': 'Ghi hàng hỏng', 'stock.count': 'Kiểm kê (điều chỉnh)', 'stock.closed': 'Chốt kho', 'stock.reopened': 'Mở lại kỳ kho', 'costing.method_changed': 'Đổi phương pháp giá vốn',
   'stock_count.created': 'Tạo phiếu kiểm kê', 'stock_count.completed': 'Hoàn tất kiểm kê', 'stock_count.cancelled': 'Huỷ phiếu kiểm kê',

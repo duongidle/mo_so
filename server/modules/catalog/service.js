@@ -103,6 +103,7 @@ function hydrateProduct(p) {
   const { elements: _legacy, ...rest } = p; // cột elements cũ không còn dùng (ngũ hành là trường sản phẩm theo shop)
   return {
     ...rest,
+    item_type: p.is_service ? 'service' : p.item_type, // dịch vụ lưu item_type = 'product' + is_service = 1, API trả 'service'
     options: parseJson(p.options),
     tags: parseJson(p.tags),
     images,
@@ -133,7 +134,9 @@ export function listProducts({ shopId, q, categoryId, type, itemType, includeArc
   const params = [];
   if (archivedOnly) where.push('p.archived_at IS NOT NULL');
   else if (!includeArchived) where.push('p.archived_at IS NULL');
-  if (itemType) { where.push('p.item_type = ?'); params.push(itemType); }
+  if (itemType === 'service') where.push('p.is_service = 1');
+  else if (itemType === 'product') where.push("p.item_type = 'product' AND p.is_service = 0");
+  else if (itemType) { where.push('p.item_type = ?'); params.push(itemType); }
   const cat = categoryClause(categoryId);
   if (cat.sql) {
     where.push(cat.sql.slice(5));
@@ -170,7 +173,7 @@ export function listProducts({ shopId, q, categoryId, type, itemType, includeArc
                 WHERE v.kind != 'bundle' AND v.archived_at IS NULL AND v.product_id IN (${ph}) GROUP BY v.product_id`)
       .all(...data.map((d) => d.id));
     const sm = new Map(st.map((r) => [r.id, r]));
-    for (const d of data) { d.stock_total = sm.get(d.id)?.stock_total ?? null; d.low_stock_count = sm.get(d.id)?.low_count ?? 0; }
+    for (const d of data) { d.stock_total = d.is_service ? null : sm.get(d.id)?.stock_total ?? null; d.low_stock_count = d.is_service ? 0 : sm.get(d.id)?.low_count ?? 0; }
   }
   if (shopId && data.length) {
     // Ngũ hành của sản phẩm theo shop đang xem (trường vai trò element của shop đó), chỉ để hiển thị ở danh sách
@@ -292,6 +295,7 @@ function openingWarehouse(v, input) {
 
 function recordOpening(variantId, v, input, actor, index) {
   if (!v.opening_qty || v.opening_qty <= 0) return;
+  if (input.item_type === 'service') throw badRequest('SERVICE_NO_STOCK', 'Dịch vụ không có tồn kho nên không có tồn đầu kỳ', { index });
   if (v.kind === 'bundle') throw badRequest('BUNDLE_NO_STOCK', 'Combo không có tồn đầu kỳ riêng', { index });
   applyMovement({ warehouseId: openingWarehouse(v, input), variantId, type: 'opening', qty: v.opening_qty, unitCost: v.opening_cost ?? 0, refType: 'product', note: 'Tồn đầu kỳ khi tạo sản phẩm', actorId: actor?.id });
 }
@@ -399,7 +403,8 @@ export function upsertListing(shopId, variantId, price, active = true) {
 }
 
 export function createProduct(input, actor) {
-  if (input.item_type && input.item_type !== 'product' && input.shop_ids?.length) throw badRequest('MATERIAL_NOT_SELLABLE', 'Vật tư không thể gán vào shop bán hàng');
+  const isService = input.item_type === 'service';
+  if (input.item_type && input.item_type !== 'product' && !isService && input.shop_ids?.length) throw badRequest('MATERIAL_NOT_SELLABLE', 'Vật tư không thể gán vào shop bán hàng');
   if (input.default_supplier_id && !db().prepare('SELECT 1 FROM suppliers WHERE id=? AND archived_at IS NULL').get(input.default_supplier_id)) throw notFound('Nhà cung cấp');
   if (!input.variants?.length) throw badRequest('NO_VARIANT', 'Sản phẩm cần ít nhất 1 biến thể (SKU)');
   const options = normalizeOptions(input.options);
@@ -413,7 +418,8 @@ export function createProduct(input, actor) {
       `INSERT INTO products (id, name, description, category_id, unit, image_url, brand, consumption_days, options, tags, item_type, default_supplier_id, created_at, updated_at, warranty_days)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-    .run(id, input.name, input.description ?? null, input.category_id ?? null, input.unit ?? 'cái', input.image_url ?? null, input.brand ?? null, input.consumption_days ?? null, options.length ? json(options) : null, json(input.tags ?? []), input.item_type ?? 'product', input.default_supplier_id ?? null, at, at, input.warranty_days ?? null);
+    .run(id, input.name, input.description ?? null, input.category_id ?? null, input.unit ?? 'cái', input.image_url ?? null, input.brand ?? null, input.consumption_days ?? null, options.length ? json(options) : null, json(input.tags ?? []), isService ? 'product' : input.item_type ?? 'product', input.default_supplier_id ?? null, at, at, input.warranty_days ?? null);
+  if (isService) db().prepare('UPDATE products SET is_service = 1 WHERE id = ?').run(id);
   const variantImages = [];
   const bySku = new Map();
   input.variants.forEach((v, i) => {
@@ -439,10 +445,13 @@ const PRODUCT_FIELDS = ['name', 'description', 'category_id', 'unit', 'image_url
 export function updateProduct(id, input, actor) {
   const before = getProduct(id);
   if (input.default_supplier_id && !db().prepare('SELECT 1 FROM suppliers WHERE id=? AND archived_at IS NULL').get(input.default_supplier_id)) throw notFound('Nhà cung cấp');
-  if (input.item_type && input.item_type !== 'product' && before.variants.some((v) => v.listings?.some((l) => l.active))) throw conflict('MATERIAL_HAS_LISTINGS', 'Gỡ niêm yết ở các shop trước khi đổi thành vật tư');
+  const wantService = input.item_type === undefined ? !!before.is_service : input.item_type === 'service';
+  if (wantService !== !!before.is_service && before.variants.some((v) => variantHasHistory(v.id))) throw conflict('SERVICE_TYPE_LOCKED', 'Sản phẩm đã có lịch sử kho, đơn hoặc phiếu nhập nên không đổi giữa hàng hoá và dịch vụ được.');
+  if (input.item_type && input.item_type !== 'product' && input.item_type !== 'service' && before.variants.some((v) => v.listings?.some((l) => l.active))) throw conflict('MATERIAL_HAS_LISTINGS', 'Gỡ niêm yết ở các shop trước khi đổi thành vật tư');
   const at = nowIso();
   const next = { ...before };
   for (const f of PRODUCT_FIELDS) if (input[f] !== undefined) next[f] = input[f];
+  if (next.item_type === 'service') next.item_type = 'product'; // cột item_type có CHECK; dịch vụ dùng is_service
   if (input.options !== undefined) next.options = normalizeOptions(input.options);
   if (input.category_id && !db().prepare('SELECT 1 FROM categories WHERE id = ? AND archived_at IS NULL').get(input.category_id)) throw notFound('Danh mục');
   const optionsNow = next.options ?? [];
@@ -455,6 +464,7 @@ export function updateProduct(id, input, actor) {
   db()
     .prepare(`UPDATE products SET ${PRODUCT_FIELDS.map((f) => `${f}=?`).join(', ')}, updated_at=? WHERE id=?`)
     .run(...PRODUCT_FIELDS.map((f) => (f === 'options' ? (next.options?.length ? json(next.options) : null) : f === 'tags' ? json(next.tags) : next[f])), at, id);
+  db().prepare('UPDATE products SET is_service = ? WHERE id = ?').run(wantService ? 1 : 0, id);
 
   // Biến thể: có id = cập nhật, không id = thêm mới, remove = bỏ (xoá nếu chưa dùng, không thì lưu trữ).
   const shopsOfProduct = [...new Set(before.variants.flatMap((v) => v.listings.map((l) => l.shop_id)))];
@@ -607,7 +617,7 @@ export function searchVariants({ shopId, warehouseId, q, categoryId, limit = 30,
   return db()
     .prepare(
       `SELECT v.id, v.sku, v.kind, v.name AS variant_name, v.barcode, v.default_price, v.min_stock,
-              p.id AS product_id, p.name AS product_name, p.unit, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url, v.option_values,
+              p.id AS product_id, p.name AS product_name, p.unit, p.is_service, COALESCE('/api/v1/files/images/' || v.image_id, p.image_url) AS image_url, v.option_values,
               COALESCE(l.price, v.default_price) AS price, l.active AS listed
        FROM variants v
        JOIN products p ON p.id = v.product_id

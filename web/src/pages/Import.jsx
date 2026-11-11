@@ -5,49 +5,9 @@ import { useSession } from '../session.jsx';
 import { Async, Card, ErrorBox, Field, Kpi, Modal, useAction, useAsync } from '../components/ui.jsx';
 import { vnd, fmtDate } from '../lib.js';
 import ProfileEditor from '../components/ProfileEditor.jsx';
+import { rowsToOrders, missingColumns } from '../lib/importRows.js';
 
-const toInt = (v) => {
-  if (v === undefined || v === null || v === '') return 0;
-  const n = Number(String(v).replace(/[^\d-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
-};
-// "2026-11-03 14:30:00" (giờ VN) → ISO có múi giờ; chuỗi khác để server tự hiểu
-const toDate = (v) => {
-  if (!v) return null;
-  const s = String(v).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/) || s.match(/^(\d{2})[/-](\d{2})[/-](\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (!m) return s;
-  const iso = s.match(/^\d{4}/) ? [m[1], m[2], m[3]] : [m[3], m[2], m[1]];
-  return `${iso.join('-')}T${m[4] || '12'}:${m[5] || '00'}:${m[6] || '00'}+07:00`;
-};
-const pick = (row, col) => (Array.isArray(col) ? col : [col]).map((c) => row[c]).filter((v) => v !== undefined);
-
-/** Gom các dòng của cùng 1 mã đơn thành 1 đơn theo mẫu map cột */
-export function rowsToOrders(rows, map) {
-  const first = (row, key) => (map[key] ? pick(row, map[key])[0] : undefined);
-  const sum = (row, key) => (map[key] ? pick(row, map[key]).reduce((a, v) => a + toInt(v), 0) : 0);
-  const by = new Map();
-  const errors = [];
-  rows.forEach((row, i) => {
-    const id = first(row, 'external_id');
-    if (id === undefined || id === '') return errors.push(`Dòng ${i + 2}: thiếu mã đơn`);
-    const sku = first(row, 'sku') || (map.sku_fallback && first(row, 'sku_fallback'));
-    if (!sku) return errors.push(`Dòng ${i + 2} (đơn ${id}): thiếu SKU`);
-    const qty = toInt(first(row, 'qty')) || 1;
-    const price = map.unit_price && first(row, 'unit_price') !== undefined && first(row, 'unit_price') !== '' ? toInt(first(row, 'unit_price')) : undefined;
-    if (!by.has(String(id))) {
-      by.set(String(id), {
-        external_id: String(id), status: first(row, 'status') || null, ordered_at: toDate(first(row, 'ordered_at')),
-        customer: { name: first(row, 'customer_name') || null, phone: first(row, 'customer_phone') || null, shopee_username: first(row, 'shopee_username') || null },
-        shipping_address: first(row, 'shipping_address') || null, discount_amount: sum(row, 'order_discount'), shipping_fee: sum(row, 'shipping_fee'),
-        platform_fee_amount: sum(row, 'platform_fee'), seller_shipping_amount: sum(row, 'seller_shipping'), note: first(row, 'note') || null,
-        tracking_code: first(row, 'tracking_code') || null, carrier: first(row, 'carrier') || null, paid_amount: sum(row, 'paid_amount'), lines: [],
-      });
-    }
-    by.get(String(id)).lines.push({ sku: String(sku).trim(), qty, ...(price !== undefined ? { unit_price: price } : {}), discount_amount: sum(row, 'line_discount') });
-  });
-  return { orders: [...by.values()], errors };
-}
+export { rowsToOrders };
 
 const ACTION = { created: ['Tạo mới', 'h-green'], updated: ['Cập nhật', 'h-yellow'], unchanged: ['Không đổi', 'muted'], error: ['Lỗi', 'h-red'] };
 
@@ -80,8 +40,7 @@ export default function ImportPanel({ onClose, defaultShop }) {
     setParsed({ rows, columns: Object.keys(rows[0]) });
   });
 
-  const needed = profile ? Object.entries(profile.column_map).filter(([k]) => !['sku_fallback'].includes(k)).flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).map((c) => [k, c])) : [];
-  const missing = parsed ? needed.filter(([, c]) => !parsed.columns.includes(c)) : [];
+  const missing = parsed && profile ? missingColumns(parsed.columns, profile.column_map, profile.options) : [];
 
   const send = (commit) => run(async () => {
     const { orders, errors } = rowsToOrders(parsed.rows, profile.column_map);
@@ -91,7 +50,7 @@ export default function ImportPanel({ onClose, defaultShop }) {
       const r = await api.post(`/imports/orders/${commit ? 'commit' : 'preview'}`, { shop_id: shop, channel_id: channel, profile_id: profileId, file_name: file?.name, orders: part });
       results.push(...r.data.results);
     }
-    const summary = { total: results.length, created: 0, updated: 0, unchanged: 0, error: 0 };
+    const summary = { total: results.length, created: 0, updated: 0, unchanged: 0, error: 0, warning: results.filter((r) => r.warning).length };
     results.forEach((r) => (summary[r.action] += 1));
     (commit ? setFinal : setPreview)({ summary, results, skipped: errors });
     if (commit) { batches.reload(); setPreview(null); }
@@ -131,11 +90,12 @@ export default function ImportPanel({ onClose, defaultShop }) {
             <Kpi label="Tạo mới" value={show.summary.created} /><Kpi label="Cập nhật" value={show.summary.updated} />
             <Kpi label="Không đổi" value={show.summary.unchanged} /><Kpi label="Lỗi" value={show.summary.error} tone={show.summary.error ? 'red' : undefined} />
           </div>
+          {show.summary.warning > 0 && <div className="alert warn small" style={{ marginTop: 8 }}>{show.summary.warning} đơn có cảnh báo (xem cột Chi tiết). Cảnh báo không chặn việc ghi, nhưng nên kiểm lại các đơn đó.</div>}
           {show.skipped?.length > 0 && <div className="alert warn small" style={{ marginTop: 8 }}>{show.skipped.length} dòng đã bị bỏ qua vì thiếu mã đơn/SKU.</div>}
           <div className="table-wrap" style={{ marginTop: 8, maxHeight: 360, overflowY: 'auto' }}><table>
             <thead><tr><th>Mã đơn</th><th>Kết quả</th><th>Chi tiết</th></tr></thead>
             <tbody>{show.results.map((r, i) => (
-              <tr key={i}><td>{r.external_id}</td><td className={ACTION[r.action][1]}><b>{ACTION[r.action][0]}</b></td><td className="small">{r.error || (r.changes ? Object.entries(r.changes).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('; ') : '')}</td></tr>
+              <tr key={i}><td>{r.external_id}</td><td className={ACTION[r.action][1]}><b>{ACTION[r.action][0]}</b></td><td className="small">{r.error || (r.changes ? Object.entries(r.changes).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('; ') : '')}{r.warning && <div style={{ color: 'var(--terracotta)' }}>Cảnh báo: {r.warning}</div>}</td></tr>
             ))}</tbody>
           </table></div>
           {!final && (

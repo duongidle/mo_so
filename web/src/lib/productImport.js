@@ -15,7 +15,7 @@ export const FIELDS = [
   ['barcode', 'Mã vạch', false, ['ma vach', 'barcode']],
   ['min_stock', 'Tồn tối thiểu', false, ['ton toi thieu', 'dinh muc']],
   ['warranty_days', 'Bảo hành (ngày)', false, ['bao hanh']],
-  ['item_type', 'Loại (Hàng bán / Đóng gói / Vận hành)', false, ['loai hang', 'loai']],
+  ['item_type', 'Loại (Hàng bán / Dịch vụ / Đóng gói / Vận hành)', false, ['loai hang', 'loai']],
   ['description', 'Mô tả', false, ['mo ta', 'ghi chu']],
 ];
 

@@ -12,7 +12,7 @@ import Icon from '../components/Icon.jsx';
 import MetricInfo, { MetricFilters, MetricLabel } from '../components/MetricInfo.jsx';
 import { METRICS } from '../metrics.js';
 
-const TABS = [['revenue', 'Doanh thu'], ['profit', 'Lợi nhuận'], ['expenses', 'Chi phí'], ['channels', 'Kênh'], ['products', 'Sản phẩm'], ['customers', 'Khách'], ['inventory', 'Kho'], ['cash', 'Tiền & công nợ'], ['custom', 'Chỉ số tuỳ chỉnh'], ['health', 'Sức khoẻ']];
+const TABS = [['revenue', 'Doanh thu'], ['profit', 'Lợi nhuận'], ['expenses', 'Chi phí'], ['channels', 'Kênh'], ['products', 'Sản phẩm'], ['customers', 'Khách'], ['inventory', 'Kho'], ['shrinkage', 'Hao hụt'], ['cash', 'Tiền & công nợ'], ['custom', 'Chỉ số tuỳ chỉnh'], ['health', 'Sức khoẻ']];
 const INTRO = {
   revenue: 'Bán được bao nhiêu tiền hàng, từ bao nhiêu đơn, và giảm giá hay hàng trả đang lấy đi bao nhiêu?',
   profit: 'Sau khi trừ giá vốn, phí sàn và chi phí, shop còn lại bao nhiêu?',
@@ -21,6 +21,7 @@ const INTRO = {
   products: 'Sản phẩm nào bán chạy và sản phẩm nào lãi?',
   customers: 'Có bao nhiêu khách mua, bao nhiêu là khách mới và khách quay lại?',
   inventory: 'Hàng còn bao nhiêu, bao nhiêu tiền đang nằm trong kho, món nào sắp hết hoặc bán chậm? Số tồn tính đến hôm nay.',
+  shrinkage: 'Hàng hao hụt vì lý do gì, mất bao nhiêu tiền và chiếm bao nhiêu phần trăm lượng nhập? Hết hạn và hỏng nhiều thì nên nhập ít hơn hoặc bán sớm.',
   cash: 'Tiền đang có ở đâu, khách và sàn còn nợ bao nhiêu, bạn còn nợ nhà cung cấp bao nhiêu?',
   custom: 'Các chỉ số do bạn tự đặt công thức.',
   health: 'Các tỷ lệ chính đang xanh, vàng hay đỏ so với ngưỡng bạn đặt?',
@@ -67,6 +68,7 @@ export default function Reports() {
       case 'products': return Promise.all([api.get('/reports/products', { ...p, category_id: cat || undefined }), has('feng_shui') ? api.get('/reports/elements', { ...p, category_id: cat || undefined }) : Promise.resolve({ data: [] })]);
       case 'customers': return api.get('/reports/customers', p);
       case 'inventory': return api.get('/reports/inventory', { shop_id: p.shop_id });
+      case 'shrinkage': return api.get('/reports/shrinkage', p);
       case 'cash': return Promise.all([api.get('/reports/cashflow', p), api.get('/reports/aging', { shop_id: p.shop_id }), api.get('/cash/accounts')]);
       case 'custom': return api.get('/reports/custom-metrics', p);
       default: return api.get('/reports/health', p);
@@ -141,7 +143,7 @@ function Body({ tab, d, elements }) {
     return (
       <>
         <Card title="Lợi nhuận"><div className="stack small">
-          <Row m="net_revenue" l="Doanh thu thuần" v={c.net_revenue} /><Row m="shipping_fee" l="Phí ship khách trả (sau hoàn ship)" v={c.shipping_fee} />{c.return_fee > 0 && <Row m="return_fee" l="Phí trả hàng thu được" v={c.return_fee} />}<Row m="platform_fee" l="Phí sàn" v={c.platform_fee} neg /><Row m="seller_shipping" l="Ship shop chịu" v={c.seller_shipping} neg />{c.return_shipping_cost > 0 && <Row m="return_shipping_cost" l="Phí ship chiều về (trả hàng)" v={c.return_shipping_cost} neg />}<Row m="cogs" l="Giá vốn" v={c.cogs} neg />
+          <Row m="net_revenue" l="Doanh thu thuần" v={c.net_revenue} /><Row m="shipping_fee" l="Phí ship khách trả (sau hoàn ship)" v={c.shipping_fee} />{c.return_fee > 0 && <Row m="return_fee" l="Phí trả hàng thu được" v={c.return_fee} />}{c.forfeit > 0 && <Row m="forfeit" l="Cọc giữ lại" v={c.forfeit} />}<Row m="platform_fee" l="Phí sàn" v={c.platform_fee} neg /><Row m="seller_shipping" l="Ship shop chịu" v={c.seller_shipping} neg />{c.return_shipping_cost > 0 && <Row m="return_shipping_cost" l="Phí ship chiều về (trả hàng)" v={c.return_shipping_cost} neg />}<Row m="cogs" l="Giá vốn" v={c.cogs} neg />
           <Row m="gross_profit" l="Lợi nhuận gộp" v={c.gross_profit} bold /><Row m="gross_margin_pct" l={`Biên lợi nhuận gộp: ${pct(c.gross_margin_pct)}`} v={null} /><Row m="expenses_amount" l="Chi phí (gồm phần chia từ chi phí chung)" v={c.expenses_amount} neg />{c.other_profit_adjustment !== 0 && <Row m="report_other_adjustment" l="Điều chỉnh kho và kiểm đếm quỹ" v={c.other_profit_adjustment} />}<Row m="net_profit_estimate" l="Lợi nhuận ròng ước tính" v={c.net_profit_estimate} bold />
         </div><p className="small muted" style={{ marginTop: 8 }}>“Ước tính” vì chưa tính thuế, khấu hao và các chứng từ thu/chi khác lập tay.</p></Card>
         {ov.tax?.applicable && (
@@ -198,6 +200,36 @@ function Body({ tab, d, elements }) {
         <div className="grid cols-3"><Kpi metric="stock_value" label="Giá trị tồn" value={vnd(i.stock_value)} /><Kpi metric="days_of_inventory" label="Số ngày tồn" value={i.days_of_inventory === null ? '—' : `${i.days_of_inventory} ngày`} hint="Tính theo giá vốn bán 30 ngày gần nhất" /><Kpi metric="sku_count" label="Số SKU" value={i.sku_count} /></div>
         <Card title={<MetricLabel metric="low_stock">{`Sắp hết (${i.low_stock.length})`}</MetricLabel>}>{i.low_stock.map((x) => <div key={x.variant_id} className="row between small"><span>{x.product_name} <span className="muted">{x.sku}</span></span><b>còn {x.on_hand}</b></div>)}{!i.low_stock.length && <span className="muted small">Không có.</span>}</Card>
         <Card title={<MetricLabel metric="slow_moving">{`Bán chậm (${i.slow_moving.length})`}</MetricLabel>}>{i.slow_moving.map((x) => <div key={x.variant_id} className="row between small"><span>{x.product_name} <span className="muted">{x.sku}</span></span><span>tồn {x.on_hand} · {vnd(x.stock_value)}</span></div>)}{!i.slow_moving.length && <span className="muted small">Không có.</span>}</Card>
+      </>
+    );
+  }
+  if (tab === 'shrinkage') {
+    const r = d.data;
+    const rate = (() => { const q = r.items.reduce((a, i) => a + i.qty - i.by_reason.return_damaged.qty, 0); const rec = r.items.reduce((a, i) => a + (i.received_qty > 0 ? i.received_qty : 0), 0); return rec > 0 ? (q / rec) * 100 : null; })();
+    return (
+      <>
+        <div className="grid cols-3">
+          <Kpi metric="shrink_value" label="Giá trị hao hụt" value={vnd(r.total_value)} tone={r.total_value ? 'yellow' : undefined} />
+          <Kpi metric="shrink_rate" label="Tỷ lệ trên lượng nhập" value={rate === null ? '—' : pct(Math.round(rate * 100) / 100)} hint="Gộp mọi sản phẩm có nhập trong kỳ" />
+          <Kpi metric="shrink_by_reason" label="Lý do lớn nhất" value={(() => { const top = r.reasons.map((x) => [x.label, r.totals[x.code].value]).sort((a, b) => b[1] - a[1])[0]; return top && top[1] > 0 ? top[0] : '—'; })()} />
+        </div>
+        {!r.items.length ? <Empty>Không có hao hụt trong kỳ này.</Empty> : (
+          <>
+            <Card title={<MetricLabel metric="shrink_by_reason">Theo lý do</MetricLabel>} flat><div className="table-wrap"><table><tbody>{r.reasons.filter((x) => r.totals[x.code].value > 0 || r.totals[x.code].qty_lines > 0).map((x) => <tr key={x.code}><td>{x.label}</td><td className="num">{r.totals[x.code].qty_lines} sản phẩm</td><td className="num">{vnd(r.totals[x.code].value)}</td></tr>)}</tbody></table></div></Card>
+            <Card title="Theo sản phẩm" flat className="list-card"><div className="table-wrap"><table className="stackable">
+              <thead><tr><th>Sản phẩm</th>{r.reasons.map((x) => <th key={x.code} className="num hide-sm">{x.label}</th>)}<th className="num">Giá trị</th><th className="num">Nhập kỳ</th><th className="num"><MetricLabel metric="shrink_rate">Tỷ lệ</MetricLabel></th></tr></thead>
+              <tbody>{r.items.map((i) => (
+                <tr key={i.variant_id}>
+                  <td>{i.product_name}{i.variant_name && i.variant_name !== i.product_name ? ` · ${i.variant_name}` : ''}<span className="sub">{i.sku}</span></td>
+                  {r.reasons.map((x) => <td key={x.code} className="num hide-sm">{i.by_reason[x.code].qty ? <>{num(i.by_reason[x.code].qty)}<span className="sub">{vnd(i.by_reason[x.code].value)}</span></> : <span className="muted">—</span>}</td>)}
+                  <td className="num"><b>{vnd(i.value)}</b></td>
+                  <td className="num">{i.received_qty ? `${num(i.received_qty)} ${i.unit || ''}` : <span className="muted">—</span>}</td>
+                  <td className="num">{i.shrink_rate === null ? <span className="muted">—</span> : pct(Math.round(i.shrink_rate * 10000) / 100)}</td>
+                </tr>))}</tbody>
+            </table></div></Card>
+            <p className="note">Chưa có cột theo nhà cung cấp: phiếu điều chỉnh không ghi hao hụt thuộc phiếu nhập nào.</p>
+          </>
+        )}
       </>
     );
   }

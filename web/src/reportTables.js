@@ -23,7 +23,7 @@ export function reportTables(tab, d, { range, shopName } = {}) {
     const c = ov.current;
     const out = [
       info,
-      T('Lợi nhuận', ['Khoản', 'Số tiền'], [['Doanh thu thuần', c.net_revenue], ['Phí ship khách trả (sau hoàn ship)', c.shipping_fee], ['Phí trả hàng thu được', c.return_fee], ['Phí sàn', -c.platform_fee], ['Ship shop chịu', -c.seller_shipping], ['Phí ship chiều về (trả hàng)', -c.return_shipping_cost], ['Giá vốn', -c.cogs], ['Lợi nhuận gộp', c.gross_profit], ['Biên lợi nhuận gộp (%)', c.gross_margin_pct], ['Chi phí', -c.expenses_amount], ...(c.other_profit_adjustment ? [['Điều chỉnh kho và kiểm đếm quỹ', c.other_profit_adjustment]] : []), ['Lợi nhuận ròng ước tính (trước thuế)', c.net_profit_estimate]]),
+      T('Lợi nhuận', ['Khoản', 'Số tiền'], [['Doanh thu thuần', c.net_revenue], ['Phí ship khách trả (sau hoàn ship)', c.shipping_fee], ['Phí trả hàng thu được', c.return_fee], ['Cọc giữ lại (đơn huỷ)', c.forfeit ?? 0], ['Phí sàn', -c.platform_fee], ['Ship shop chịu', -c.seller_shipping], ['Phí ship chiều về (trả hàng)', -c.return_shipping_cost], ['Giá vốn', -c.cogs], ['Lợi nhuận gộp', c.gross_profit], ['Biên lợi nhuận gộp (%)', c.gross_margin_pct], ['Chi phí', -c.expenses_amount], ...(c.other_profit_adjustment ? [['Điều chỉnh kho và kiểm đếm quỹ', c.other_profit_adjustment]] : []), ['Lợi nhuận ròng ước tính (trước thuế)', c.net_profit_estimate]]),
       T('Theo shop', ['Shop', 'Doanh thu thuần', 'Lợi nhuận gộp', 'Chi phí', 'Lợi nhuận ròng ước tính'], shops.data.map((s) => [s.shop_name, s.net_revenue, s.gross_profit, s.expenses_amount, s.net_profit_estimate])),
     ];
     if (ov.tax?.applicable) out.push(T('Ước tính thuế', ['Khoản thuế', 'Tỷ lệ (%)', 'Cơ sở tính', 'Ngưỡng miễn thuế cả năm', 'Số tiền chịu thuế trong kỳ', 'Thuế ước tính'], ov.tax.items.map((i) => [i.name, i.rate_pct, i.base_label, i.exempt_threshold_year, i.taxable_amount, i.tax])));
@@ -46,6 +46,16 @@ export function reportTables(tab, d, { range, shopName } = {}) {
       T('Tổng quan', ['Chỉ số', 'Giá trị'], [['Giá trị tồn', i.stock_value], ['Số ngày tồn', i.days_of_inventory], ['Số SKU', i.sku_count]]),
       T('Sắp hết', ['SKU', 'Sản phẩm', 'Tồn'], i.low_stock.map((x) => [x.sku, x.product_name, x.on_hand])),
       T('Bán chậm', ['SKU', 'Sản phẩm', 'Tồn', 'Giá trị tồn'], i.slow_moving.map((x) => [x.sku, x.product_name, x.on_hand, x.stock_value])),
+    ];
+  }
+  if (tab === 'shrinkage') {
+    const r = d.data;
+    const rc = r.reasons.map((x) => x.code);
+    return [
+      info,
+      T('Theo lý do', ['Lý do', 'Số sản phẩm', 'Giá trị hao hụt'], r.reasons.map((x) => [x.label, r.totals[x.code].qty_lines, r.totals[x.code].value]).concat([['Tổng', '', r.total_value]])),
+      T('Theo sản phẩm', ['SKU', 'Sản phẩm', 'Đơn vị', ...r.reasons.flatMap((x) => [`${x.label} (SL)`, `${x.label} (giá trị)`]), 'Tổng số lượng', 'Tổng giá trị', 'Nhập trong kỳ', 'Tỷ lệ hao hụt (%)'],
+        r.items.map((i) => [i.sku, i.product_name, i.unit, ...rc.flatMap((c) => [i.by_reason[c].qty, i.by_reason[c].value]), i.qty, i.value, i.received_qty, i.shrink_rate === null ? '' : Math.round(i.shrink_rate * 10000) / 100])),
     ];
   }
   if (tab === 'cash') {
@@ -85,7 +95,7 @@ export function accountingTables(tab, d, { range, shopName } = {}) {
   if (tab === 'ledger') return [info, T('Sổ cái', ['Mã', 'Ngày', 'Diễn giải', 'Nợ', 'Có', 'Số dư'], [['', '', 'Số dư đầu', '', '', d.opening_balance], ...d.data.map((r) => [r.entry_code, dmy(r.entry_date), r.description, r.debit, r.credit, r.balance]), ['', '', 'Số dư cuối', d.debit, d.credit, d.closing_balance]])];
   if (tab === 'trial') return [info, T('Cân đối phát sinh', ['Tài khoản', 'Tên', 'Đầu kỳ Nợ', 'Đầu kỳ Có', 'Phát sinh Nợ', 'Phát sinh Có', 'Cuối kỳ Nợ', 'Cuối kỳ Có'], [...d.data.map((r) => [r.code, r.name, r.opening_debit, r.opening_credit, r.debit, r.credit, r.closing_debit, r.closing_credit]), ['', 'Tổng', d.totals.opening_debit, d.totals.opening_credit, d.totals.debit, d.totals.credit, d.totals.closing_debit, d.totals.closing_credit]])];
   if (tab === 'income') {
-    const rows = [['Doanh thu bán hàng (5111)', d.revenue_goods], ['Doanh thu phí vận chuyển (5113)', d.revenue_shipping], ['Hàng bán bị trả lại (5212)', -d.returns], ...(d.revenue_return_fee ? [['Doanh thu khác: phí trả hàng (5118)', d.revenue_return_fee]] : []), ['Doanh thu thuần', d.net_revenue], ['Giá vốn hàng bán (632)', -d.cogs], ['Lãi gộp', d.gross_profit],
+    const rows = [['Doanh thu bán hàng (5111)', d.revenue_goods], ['Doanh thu phí vận chuyển (5113)', d.revenue_shipping], ['Hàng bán bị trả lại (5212)', -d.returns], ...(d.revenue_return_fee ? [['Doanh thu khác: phí trả hàng (5118)', d.revenue_return_fee]] : []), ...(d.revenue_forfeit ? [['Doanh thu khác: cọc giữ lại (5119)', d.revenue_forfeit]] : []), ['Doanh thu thuần', d.net_revenue], ['Giá vốn hàng bán (632)', -d.cogs], ['Lãi gộp', d.gross_profit],
       ...d.selling_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ...d.admin_expenses.map((r) => [`${r.name} (${r.code})`, -r.amount]), ...(d.depreciation_total ? [['Lãi thuần trước khấu hao', d.operating_profit_before_depreciation], ...d.depreciation.map((r) => [`Khấu hao/phân bổ: ${r.name} (${r.code})`, -r.amount])] : []), ['Lãi thuần từ kinh doanh', d.operating_profit], ['Thu nhập khác (711)', d.other_income], ['Chi phí khác (811)', -d.other_expense], ['Lợi nhuận trước thuế', d.profit_before_tax]];
     return [info, T('Kết quả kinh doanh', ['Khoản', 'Số tiền'], rows)];
   }
@@ -114,12 +124,13 @@ export const sheetName = (s) => s.replace(/[:\\/?*[\]]/g, ' ').slice(0, 31);
 // Chỉ số của từng tab, để sheet "Giải thích" liệt kê đúng những gì file đang chứa
 export const TAB_METRICS = {
   revenue: ['gross_revenue', 'discount_amount', 'returned_amount', 'net_revenue', 'order_count', 'aov', 'cancel_rate_pct', 'return_rate_pct'],
-  profit: ['net_revenue', 'shipping_fee', 'return_fee', 'platform_fee', 'seller_shipping', 'return_shipping_cost', 'cogs', 'gross_profit', 'gross_margin_pct', 'expenses_amount', 'net_profit_estimate', 'tax_estimate', 'profit_after_tax_estimate'],
+  profit: ['net_revenue', 'shipping_fee', 'return_fee', 'forfeit', 'platform_fee', 'seller_shipping', 'return_shipping_cost', 'cogs', 'gross_profit', 'gross_margin_pct', 'expenses_amount', 'net_profit_estimate', 'tax_estimate', 'profit_after_tax_estimate'],
   expenses: ['expenses_total', 'expense_ratio_pct', 'expenses_direct', 'expenses_shared', 'expense_share_pct', 'expense_change_pct', 'expense_largest'],
   channels: ['channel_table', 'order_count', 'net_revenue', 'platform_fee', 'gross_profit', 'gross_margin_pct', 'cancel_rate_pct'],
   products: ['qty_sold', 'qty_in_combos', 'product_revenue', 'product_cogs', 'product_gross_profit', 'product_margin_pct', 'element_revenue'],
   customers: ['buyers', 'new_customers', 'returning_customers', 'repeat_rate_pct', 'top_customers'],
   inventory: ['stock_value', 'days_of_inventory', 'sku_count', 'low_stock', 'slow_moving'],
+  shrinkage: ['shrink_value', 'shrink_rate', 'shrink_by_reason'],
   cash: ['fund_balance', 'cash_in', 'cash_out', 'net_cash', 'customer_receivable', 'customer_refund_owed', 'marketplace_pending', 'supplier_payable', 'aging_customer', 'aging_marketplace', 'aging_supplier'],
   custom: ['custom_metric'],
   health: ['gross_margin_pct', 'cancel_rate_pct', 'return_rate_pct', 'days_of_inventory', 'repeat_rate_pct', 'health_status'],

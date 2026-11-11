@@ -15,16 +15,36 @@ const DEFAULT_STATUS_MAP = {
   'đã giao': 'completed', 'huỷ': 'cancelled', 'hủy': 'cancelled', 'đã huỷ': 'cancelled', 'đã hủy': 'cancelled', 'trả hàng': 'returned',
 };
 
+const fold = (v) => String(v).normalize('NFC').trim().toLowerCase();
+
+/**
+ * Chữ trạng thái trong file → trạng thái của app. Thứ tự: khớp nguyên văn → không phân biệt hoa thường → tiền tố
+ * khai báo rõ trong status_map (khoá kết thúc bằng "*", vd "Người mua xác nhận*", tiền tố dài nhất thắng) → bảng mặc định
+ * (nguyên văn, không phân biệt hoa thường). Không đoán theo chuỗi con: không hiểu thì trả null để báo lỗi dòng.
+ */
 export function normalizeStatus(raw, statusMap = {}) {
   if (!raw) return 'completed';
-  const s = String(raw).trim();
-  if (statusMap[s]) return statusMap[s];
+  const s = String(raw).normalize('NFC').trim();
+  const entries = Object.entries(statusMap).map(([k, v]) => [String(k).normalize('NFC').trim(), v]);
+  for (const [k, v] of entries) if (k === s) return v;
   const lower = s.toLowerCase();
-  for (const [k, v] of Object.entries(statusMap)) if (k.toLowerCase() === lower) return v;
+  for (const [k, v] of entries) if (k.toLowerCase() === lower) return v;
+  const prefixes = entries
+    .filter(([k]) => k.endsWith('*') && k.length > 1)
+    .map(([k, v]) => [k.slice(0, -1).trimEnd().toLowerCase(), v])
+    .filter(([k]) => k)
+    .sort((x, y) => y[0].length - x[0].length);
+  for (const [k, v] of prefixes) if (lower.startsWith(k)) return v;
   if (DEFAULT_STATUS_MAP[lower]) return DEFAULT_STATUS_MAP[lower];
-  for (const [k, v] of Object.entries(DEFAULT_STATUS_MAP)) if (lower.includes(k) && k.length > 3) return v;
   return null;
 }
+
+const DEFAULT_RETURN_APPROVED = ['Đã Chấp Thuận Yêu Cầu'];
+const returnApproved = (line, options) => {
+  if (!line.return_status) return false;
+  const list = Array.isArray(options?.return_approved) && options.return_approved.length ? options.return_approved : DEFAULT_RETURN_APPROVED;
+  return list.map(fold).includes(fold(line.return_status));
+};
 
 // ---------- Mẫu import ----------
 export function listProfiles() {
@@ -54,9 +74,76 @@ export function saveProfile(input, id) {
 // ---------- Xử lý một đơn ----------
 const COMPARABLE = ['shipping_fee', 'platform_fee_amount', 'seller_shipping_amount', 'tracking_code', 'carrier', 'note', 'shipping_address'];
 
-function applyOne(shop, channelId, row, statusMap, actor) {
+const RETURN_REASON = 'Import: trả hàng/hoàn tiền trên kênh';
+const upper = (v) => String(v).trim().toUpperCase();
+
+/**
+ * Trả hàng ghi trong file (dòng có trạng thái trả hàng đã chấp thuận và số lượng hoàn trả): lập phiếu trả CHỜ HÀNG VỀ cho đúng dòng, đúng số lượng.
+ * So với returned_qty đã ghi trên dòng đơn nên import lại không lập trùng. Trả về danh sách cảnh báo.
+ */
+function applyFileReturns(orderId, row, options, actor) {
+  const warnings = [];
+  const wanted = (row.lines || []).filter((l) => returnApproved(l, options) && l.returned_qty > 0);
+  if (!wanted.length) return warnings;
+  const o = getOrder(orderId);
+  if (!['confirmed', 'shipping', 'completed', 'returned'].includes(o.status)) {
+    warnings.push(`File ghi có trả hàng nhưng đơn đang "${o.status}" nên chưa lập phiếu trả`);
+    return warnings;
+  }
+  const seen = new Map();
+  const items = [];
+  for (const w of row.lines) {
+    const key = upper(w.sku);
+    const nth = seen.get(key) ?? 0;
+    seen.set(key, nth + 1);
+    if (!(returnApproved(w, options) && w.returned_qty > 0)) continue;
+    const l = o.lines.filter((x) => upper(x.sku) === key)[nth];
+    if (!l) { warnings.push(`Trả hàng ${w.sku}: không thấy dòng này trong đơn`); continue; }
+    const target = Math.min(w.returned_qty, l.qty);
+    if (w.returned_qty > l.qty) warnings.push(`Trả hàng ${w.sku}: file ghi ${w.returned_qty}, đơn chỉ có ${l.qty}`);
+    const delta = target - l.returned_qty;
+    if (delta > 0) items.push({ order_line_id: l.id, qty: delta, restock: true });
+  }
+  if (items.length) createReturn(o.id, { lines: items, reason: RETURN_REASON, awaitingGoods: true, allowLate: true }, actor);
+  return warnings;
+}
+
+/** So dòng hàng trong file với đơn đã lưu, gộp theo SKU. Trả về danh sách khác biệt dạng chữ (rỗng nếu giống). */
+function diffLines(curLines, rowLines) {
+  const agg = (ls) => {
+    const m = new Map();
+    for (const l of ls) {
+      const k = upper(l.sku);
+      const e = m.get(k) ?? { sku: k, qty: 0, gross: 0, disc: 0, hasPrice: true, hasDisc: true };
+      e.qty += l.qty;
+      if (l.unit_price == null) e.hasPrice = false;
+      else e.gross += l.qty * l.unit_price;
+      if (l.discount_amount == null) e.hasDisc = false;
+      else e.disc += l.discount_amount;
+      m.set(k, e);
+    }
+    return m;
+  };
+  const a = agg(curLines.filter((l) => !l.is_gift));
+  const b = agg(rowLines);
+  const out = [];
+  for (const [k, n] of b) {
+    const c = a.get(k);
+    if (!c) { out.push(`thêm ${n.sku} x${n.qty}`); continue; }
+    const parts = [];
+    if (c.qty !== n.qty) parts.push(`SL ${c.qty}→${n.qty}`);
+    if (n.hasPrice && Math.round(c.gross / c.qty) !== Math.round(n.gross / n.qty)) parts.push(`giá ${Math.round(c.gross / c.qty)}→${Math.round(n.gross / n.qty)}`);
+    if (n.hasDisc && c.disc !== n.disc) parts.push(`giảm giá dòng ${c.disc}→${n.disc}`);
+    if (parts.length) out.push(`${n.sku}: ${parts.join(', ')}`);
+  }
+  for (const [k, c] of a) if (!b.has(k)) out.push(`bỏ ${c.sku} x${c.qty}`);
+  return out;
+}
+
+function applyOne(shop, channelId, row, ctx, actor) {
+  const { statusMap, options } = ctx;
   if (!row.external_id) throw badRequest('MISSING_EXTERNAL_ID', 'Thiếu mã đơn');
-  const status = normalizeStatus(row.status, statusMap);
+  let status = normalizeStatus(row.status, statusMap);
   if (!status) throw badRequest('UNKNOWN_STATUS', `Không hiểu trạng thái "${row.status}". Thêm vào bảng ánh xạ trạng thái của mẫu import.`);
   const existing = db().prepare('SELECT id FROM orders WHERE shop_id = ? AND channel_id = ? AND external_id = ?').get(shop.id, channelId, String(row.external_id));
   const paidMethod = payoutMethodOf(channelId);
@@ -87,10 +174,16 @@ function applyOne(shop, channelId, row, statusMap, actor) {
       { source: 'import' },
     );
     if (status === 'cancelled') o = transitionOrder(o.id, 'cancelled', { actor, note: 'Import: đơn đã huỷ trên kênh' });
+    const warnings = [];
+    if (o.stock_warning) warnings.push('Xuất kho làm âm tồn');
+    // Trả hàng từ file: hàng chưa về shop nên chờ nhận, không cộng tồn ngay
     if (status === 'returned') {
-      o = createReturn(o.id, { lines: o.lines.map((l) => ({ order_line_id: l.id, qty: l.qty, restock: true })), reason: 'Import: trả hàng/hoàn tiền trên kênh' }, actor);
+      o = createReturn(o.id, { lines: o.lines.map((l) => ({ order_line_id: l.id, qty: l.qty, restock: true })), reason: RETURN_REASON, awaitingGoods: true, allowLate: true }, actor);
+    } else if (status !== 'cancelled') {
+      warnings.push(...applyFileReturns(o.id, row, options, actor));
+      o = getOrder(o.id);
     }
-    return { action: 'created', order_id: o.id, code: o.code, status: o.status, warning: o.stock_warning ? 'Xuất kho làm âm tồn' : null };
+    return { action: 'created', order_id: o.id, code: o.code, status: o.status, warning: warnings.join('; ') || null };
   }
 
   // Đã có → so sánh & cập nhật
@@ -106,11 +199,41 @@ function applyOne(shop, channelId, row, statusMap, actor) {
   }
   if (Object.keys(patch).length && cur.status !== 'cancelled') updateOrder(cur.id, patch, actor);
 
+  // Dòng hàng và giảm giá đơn: nếu file khác đơn đã lưu thì sửa được thì sửa, không thì báo rõ, không im lặng
+  const warnings = [];
+  if (!['cancelled', 'returned'].includes(status) && !['cancelled', 'returned'].includes(cur.status)) {
+    const lineDiff = diffLines(cur.lines, row.lines || []);
+    const discDiff = row.discount_amount !== undefined && row.discount_amount !== null && row.discount_amount !== cur.discount_amount;
+    if (lineDiff.length || discDiff) {
+      const text = [...lineDiff, ...(discDiff ? [`giảm giá đơn ${cur.discount_amount}→${row.discount_amount}`] : [])].join('; ');
+      if (['draft', 'confirmed'].includes(cur.status)) {
+        const input = {};
+        if (lineDiff.length) {
+          const old = new Map(cur.lines.map((l) => [upper(l.sku), l]));
+          input.lines = row.lines.map((l) => ({ sku: l.sku, qty: l.qty, unit_price: l.unit_price ?? old.get(upper(l.sku))?.unit_price, discount_amount: l.discount_amount ?? old.get(upper(l.sku))?.discount_amount ?? 0 }));
+        }
+        if (discDiff) input.discount_amount = row.discount_amount;
+        try {
+          db().transaction(() => updateOrder(cur.id, input, actor))();
+          changes.lines = { from: null, to: text };
+        } catch (e) {
+          if (!(e instanceof AppError)) throw e;
+          warnings.push(`File khác đơn đã lưu (${text}) nhưng không sửa tự động được: ${e.message}`);
+        }
+      } else {
+        warnings.push(`File khác đơn đã lưu (${text}). Đơn đang "${cur.status}" nên không sửa tự động; dùng Trả hàng/Đổi hàng nếu cần.`);
+      }
+    }
+  }
+
+  // Đơn đã trả hết (từ lần import trước), file vẫn ghi "đã giao" kèm trả hàng: khớp nhau, không phải xung đột
+  if (cur.status === 'returned' && status !== 'returned' && status !== 'cancelled' && (row.lines || []).some((l) => returnApproved(l, options) && l.returned_qty > 0)) status = 'returned';
+
   if (status !== cur.status) {
     if (status === 'returned') {
       const left = cur.lines.filter((l) => l.qty > l.returned_qty);
       if (!['confirmed', 'shipping', 'completed'].includes(cur.status)) throw badRequest('STATUS_CONFLICT', `Đơn đang "${cur.status}", không thể chuyển sang trả hàng tự động`);
-      createReturn(cur.id, { lines: left.map((l) => ({ order_line_id: l.id, qty: l.qty - l.returned_qty, restock: true })), reason: 'Import: trả hàng/hoàn tiền trên kênh' }, actor);
+      createReturn(cur.id, { lines: left.map((l) => ({ order_line_id: l.id, qty: l.qty - l.returned_qty, restock: true })), reason: RETURN_REASON, awaitingGoods: true, allowLate: true }, actor);
     } else if (cur.status === 'cancelled' || cur.status === 'returned') {
       throw badRequest('STATUS_CONFLICT', `Đơn trong hệ thống đang "${cur.status}" nhưng file ghi "${row.status}". Cần xử lý tay.`);
     } else if (status === 'draft') {
@@ -130,8 +253,15 @@ function applyOne(shop, channelId, row, statusMap, actor) {
     }
   }
 
+  if (status !== 'returned') {
+    const before = getOrder(cur.id).returns?.length ?? 0;
+    warnings.push(...applyFileReturns(cur.id, row, options, actor));
+    const nowReturns = getOrder(cur.id);
+    if ((nowReturns.returns?.length ?? 0) > before) changes.returns = { from: before, to: nowReturns.returns.length };
+  }
+
   const after = getOrder(cur.id);
-  return { action: Object.keys(changes).length ? 'updated' : 'unchanged', order_id: cur.id, code: cur.code, status: after.status, changes };
+  return { action: Object.keys(changes).length ? 'updated' : 'unchanged', order_id: cur.id, code: cur.code, status: after.status, changes, warning: warnings.join('; ') || null };
 }
 
 class Rollback extends Error {}
@@ -143,12 +273,12 @@ class Rollback extends Error {}
 export function runImport({ shopId, channelId, profileId, fileName, orders, dryRun }, actor) {
   const shop = getShop(shopId);
   const profile = profileId ? listProfiles().find((p) => p.id === profileId) : null;
-  const statusMap = profile?.status_map ?? {};
+  const ctx = { statusMap: profile?.status_map ?? {}, options: profile?.options ?? {} };
   const results = [];
 
   const work = () => {
     for (const row of orders) {
-      const one = db().transaction(() => applyOne(shop, channelId, row, statusMap, actor));
+      const one = db().transaction(() => applyOne(shop, channelId, row, ctx, actor));
       try {
         results.push({ external_id: row.external_id, ...one() });
       } catch (e) {

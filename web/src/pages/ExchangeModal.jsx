@@ -4,6 +4,7 @@ import { ErrorBox, Field, Modal, useAction } from '../components/ui.jsx';
 import MoneyInput from '../components/MoneyInput.jsx';
 import { vnd } from '../lib.js';
 import { computeReturn } from '../lib/returnForm.js';
+import { lineAmount } from '../lib/money.js';
 
 /** Đổi hàng trong một giao dịch; phần hàng trả được nhập lại kho theo lựa chọn, chênh lệch được thu/cấn tự động. */
 export default function ExchangeModal({ order, methodList, onClose, onDone }) {
@@ -24,7 +25,7 @@ export default function ExchangeModal({ order, methodList, onClose, onDone }) {
   const returnForm = { lines: returned, refund: null, shipOn: false, shipRefund: '', fee: '', shipCost: '' };
   const returnTotal = computeReturn(order, returnForm);
   const creditIssued = returnTotal.refund;
-  const newTotal = useMemo(() => lines.reduce((sum, l) => sum + l.qty * l.unit_price - l.discount_amount, 0) + (Number(shipping) || 0), [lines, shipping]);
+  const newTotal = useMemo(() => lines.reduce((sum, l) => sum + lineAmount(l.qty, l.unit_price) - l.discount_amount, 0) + (Number(shipping) || 0), [lines, shipping]);
   const creditUsed = Math.min(creditIssued, newTotal);
   const cashDue = newTotal - creditUsed;
   const chosenReturns = Object.entries(returned).filter(([, r]) => r.qty > 0);

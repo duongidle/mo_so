@@ -16,7 +16,7 @@ const validDate = (d) => typeof d === 'string' && DATE_RE.test(d) && !Number.isN
 export function balancesAt(date) {
   return db()
     .prepare(
-      `SELECT warehouse_id, variant_id, ROUND(SUM(qty), 3) AS qty, CAST(SUM(ROUND(qty * unit_cost)) AS INTEGER) AS value
+      `SELECT warehouse_id, variant_id, ROUND(SUM(qty), 3) AS qty, CAST(SUM(ROUND(ROUND(qty * 1000) * unit_cost / 1000.0)) AS INTEGER) AS value
        FROM stock_movements WHERE business_date <= ?
        GROUP BY warehouse_id, variant_id HAVING qty != 0 OR value != 0
        ORDER BY warehouse_id, variant_id`,

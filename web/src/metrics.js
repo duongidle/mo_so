@@ -41,8 +41,8 @@ const LIST = [
     tip: 'Giảm giá tăng mà số đơn không tăng theo: khuyến mãi đang không có tác dụng.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('returned_amount', 'Hàng trả', {
-    group: 'Doanh thu và lãi', what: 'Tiền hàng khách đã trả lại (một phần hoặc toàn bộ), theo giá khách thực mua (đã trừ giảm giá dòng và phần giảm giá đơn chia cho dòng đó).',
-    formula: 'Σ giá trị hàng ghi trên phiếu trả của các đơn trong kỳ (không gồm hoàn phí ship và phí trả hàng)',
+    group: 'Doanh thu và lãi', what: 'Tiền hàng khách đã trả lại (một phần hoặc toàn bộ), theo giá khách thực mua (đã trừ giảm giá dòng và phần giảm giá đơn chia cho dòng đó). Gồm cả khoản giảm giá sau bán / bồi thường (khách giữ hàng), vì chúng giảm doanh thu hàng như nhau.',
+    formula: 'Σ giá trị hàng ghi trên phiếu trả và phiếu giảm giá sau bán của các đơn trong kỳ (không gồm hoàn phí ship và phí trả hàng)',
     source: `${COUNTED_TXT} Hàng trả được tính vào ngày của đơn gốc, không phải ngày khách trả, nên doanh thu một ngày đã chốt không đổi ngược về sau.`,
     tip: 'Cao bất thường: kiểm tra chất lượng, mô tả sản phẩm, đóng gói.', drill: ordersLink('returned'),
   }),
@@ -83,13 +83,18 @@ const LIST = [
     formula: 'Σ phí trả hàng ghi trên phiếu trả', source: `${COUNTED_TXT} ${BY_DATE} Tính vào ngày của đơn gốc. Khớp tài khoản 5118 trong sổ kế toán.`,
     tip: 'Lợi nhuận gộp chỉ giữ nguyên khi khách trả hàng nếu shop thu phí này. Không thu thì doanh thu và lãi của đơn mất theo hàng trả.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
+  M('forfeit', 'Cọc giữ lại', {
+    group: 'Doanh thu và lãi', what: 'Tiền khách đã đặt cọc hoặc trả trước rồi bỏ đơn, shop giữ lại thay vì hoàn. Là thu nhập khác, cộng vào lợi nhuận gộp, không nằm trong doanh thu thuần.',
+    formula: 'Σ số tiền giữ lại ghi trên các đơn đã huỷ', source: `Đơn đã huỷ có chọn “Giữ cọc” khi huỷ. ${BY_DATE} Tính vào ngày của đơn. Khớp tài khoản 5119 trong sổ kế toán.`,
+    tip: 'Đơn huỷ không phải đơn bán nên không vào số đơn, doanh thu hay tỷ lệ huỷ; chỉ phần cọc giữ lại được tính.', drill: ordersLink('cancelled'), drillNote: ORDERS_NOTE,
+  }),
   M('return_shipping_cost', 'Phí ship chiều về (trả hàng)', {
     group: 'Doanh thu và lãi', what: 'Tiền ship shop trả để nhận hàng khách gửi lại (hoặc đơn bị khách từ chối nhận).', formula: 'Σ phí ship chiều về ghi trên phiếu trả',
     source: `${COUNTED_TXT} ${BY_DATE} Tính vào ngày của đơn gốc. Ghi vào chi phí vận chuyển (6412) trong sổ kế toán.`, tip: 'Cao: xem lại chính sách đổi trả, hoặc thu phí trả hàng để bù.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('platform_fee', 'Phí sàn', {
-    group: 'Doanh thu và lãi', what: 'Hoa hồng, phí thanh toán, phí dịch vụ sàn thu trên đơn.', formula: 'Σ phí sàn ghi trên đơn',
-    source: `${COUNTED_TXT} ${BY_DATE} Khi khách trả hàng, hệ thống giả định sàn không hoàn lại phí sàn.`, tip: 'Phí sàn ăn nhiều: xem lại giá bán trên sàn hoặc chương trình tham gia.', drill: ordersCounted, drillNote: ORDERS_NOTE,
+    group: 'Doanh thu và lãi', what: 'Hoa hồng, phí thanh toán, phí dịch vụ sàn thu trên đơn, sau khi trừ phần sàn hoàn lại khi trả hàng.', formula: 'Σ (phí sàn ghi trên đơn − phí sàn được hoàn)',
+    source: `${COUNTED_TXT} ${BY_DATE} Đơn sàn trả hàng được hoàn phí sàn theo phiếu trả (mặc định theo tỷ lệ hàng trả, sửa được); khoản chỉ giảm giá sau bán thì sàn không hoàn phí. Kênh khác không có phí hoàn.`, tip: 'Phí sàn ăn nhiều: xem lại giá bán trên sàn hoặc chương trình tham gia.', drill: ordersCounted, drillNote: ORDERS_NOTE,
   }),
   M('seller_shipping', 'Ship shop chịu', {
     group: 'Doanh thu và lãi', what: 'Tiền ship shop tự trả (khách không trả).', formula: 'Σ phí ship shop chịu ghi trên đơn', source: `${COUNTED_TXT} ${BY_DATE}`,
@@ -250,6 +255,22 @@ const LIST = [
     group: 'Kho', scope: 'warehouse', time: 'today', what: 'Sản phẩm còn tồn nhưng lâu không xuất.', formula: 'Tồn > 0 và lần xuất gần nhất cách đây quá số ngày bạn đặt ở Cài đặt (hoặc chưa từng xuất)', source: 'Sổ cái kho.', tip: 'Giảm giá, làm combo hoặc ngừng nhập.', drill: () => '/stock?filter=slow',
   }),
 
+  M('shrink_value', 'Giá trị hao hụt', {
+    group: 'Kho', scope: 'warehouse', what: 'Tiền hàng mất đi trong kỳ vì hỏng, hết hạn, hao cân, mất hoặc kiểm kê thiếu; kèm hàng khách trả về bị hỏng.',
+    formula: 'Σ số lượng giảm × giá vốn lúc giảm, theo từng lý do', source: 'Phiếu điều chỉnh giảm, hàng hỏng, xuất huỷ lô hết hạn, kiểm kê thiếu (sổ kho, theo ngày ghi) và phiếu hàng huỷ của hàng trả về bị hỏng. Theo các kho của shop đang xem. Không tính tiêu hao bao bì, vật tư và đóng gói.',
+    tip: 'Phiếu cũ không có lý do được xếp vào “Khác”. Chọn lý do khi điều chỉnh để biết hao hụt đến từ đâu.', drill: () => '/stock?tab=moves',
+  }),
+  M('shrink_rate', 'Tỷ lệ hao hụt', {
+    group: 'Kho', scope: 'warehouse', what: 'Hao hụt trong kỳ chiếm bao nhiêu phần trăm lượng hàng đã nhập trong kỳ.', formula: 'Lượng hao hụt trong kho ÷ lượng nhập từ nhà cung cấp trong kỳ (trừ phần trả và huỷ phiếu nhập)',
+    source: 'Cùng nguồn với giá trị hao hụt, không gồm hàng trả về bị hỏng (hàng đó chưa từng vào kho). Để trống khi sản phẩm không nhập trong kỳ, ví dụ thành phẩm đóng gói từ hàng nhập theo kg: xem hao hụt ở hàng nguồn.',
+    tip: 'Hàng khô hao ít; tỷ lệ tăng đột ngột thường do bảo quản hoặc cân đong sai.',
+  }),
+  M('shrink_by_reason', 'Hao hụt theo lý do', {
+    group: 'Kho', scope: 'warehouse', what: 'Giá trị hao hụt chia theo lý do: hỏng/vỡ, hết hạn, hao hụt cân, mất, khác, hàng trả hỏng.', formula: 'Σ giá trị giảm kho theo mã lý do của phiếu',
+    source: 'Mã lý do chọn khi điều chỉnh giảm hoặc hàng hỏng; xuất huỷ lô hết hạn tự mang mã “Hết hạn”. Chưa có cột theo nhà cung cấp vì phiếu điều chỉnh không ghi hao hụt thuộc phiếu nhập nào.',
+    tip: 'Hết hạn nhiều: nhập ít hơn hoặc giảm giá sớm. Mất nhiều: kiểm kê thường xuyên hơn.',
+  }),
+
   // ---------- Tiền & công nợ ----------
   M('fund_balance', 'Số dư quỹ', {
     group: 'Tiền và công nợ', scope: 'account', time: 'today', what: 'Tiền thật đang có trong két, tài khoản ngân hàng, ví. Hệ thống tự tính từ thu chi, bạn kiểm đếm để khớp.',
@@ -313,7 +334,7 @@ const LIST = [
     source: 'Gần bằng Σ tồn × giá vốn bình quân; chênh vài đồng do làm tròn giá vốn bình quân về đồng nguyên.', tip: 'Chênh lớn: chạy kiểm tra sổ (npm run check-journal) và kiểm kê kho.', drill: () => '/stock',
   }),
   M('acc_net_revenue', 'Doanh thu thuần (KQKD)', {
-    group: 'Kế toán', what: 'Doanh thu bán hàng cộng phí ship khách trả (đã trừ ship hoàn) và phí trả hàng thu được, trừ hàng bán bị trả lại.', formula: '5111 + 5113 + 5118 − 5212',
+    group: 'Kế toán', what: 'Doanh thu bán hàng cộng phí ship khách trả (đã trừ ship hoàn), phí trả hàng thu được và cọc giữ lại, trừ hàng bán bị trả lại.', formula: '5111 + 5113 + 5118 − 5212',
     source: 'Từ sổ cái, đơn tính theo ngày đặt, cùng quy tắc với báo cáo. Phần hàng (5111 − 5212) bằng “Doanh thu thuần” ở Báo cáo; 5113 bằng phí ship khách trả; 5118 bằng “Phí trả hàng thu được”.', tip: 'So với tab Doanh thu ở Báo cáo để đối chiếu.', drill: () => '/reports?tab=profit',
   }),
   M('acc_cogs', 'Giá vốn hàng bán (KQKD)', {
@@ -338,7 +359,7 @@ const LIST = [
   }),
   M('acc_other', 'Thu nhập khác và chi phí khác (KQKD)', {
     group: 'Kế toán', what: 'Khoản ngoài bán hàng: thu nhập khác (711: kiểm đếm thừa, điều chỉnh tăng, thu khác) và chi phí khác (811: tiền phạt, hao hụt, kiểm đếm thiếu, giá trị còn lại khi thanh lý tài sản).', formula: '711 và 811',
-    source: 'Từ sổ cái, gồm cả phiếu thu/chi khác bạn lập tay. Báo cáo cộng điều chỉnh kho và kiểm đếm quỹ ở tổng toàn shop; các khoản thu/chi khác lập tay chưa đưa vào báo cáo. Tiền phạt nhập qua danh mục chi phí đã nằm trong chi phí báo cáo.', tip: 'Góp vốn hay rút vốn (411) KHÔNG phải thu chi khác: không vào lợi nhuận.', drill: () => '/accounting?tab=vouchers',
+    source: 'Từ sổ cái, gồm cả phiếu thu/chi khác bạn lập tay. Trả hàng nhập ghi vào 811 phần phí nhập của hàng trả mà nhà cung cấp không hoàn; NCC giảm giá sau nhận ghi vào 711 phần ứng với hàng đã bán. Báo cáo cộng điều chỉnh kho và kiểm đếm quỹ ở tổng toàn shop; các khoản thu/chi khác lập tay chưa đưa vào báo cáo. Tiền phạt nhập qua danh mục chi phí đã nằm trong chi phí báo cáo.', tip: 'Góp vốn hay rút vốn (411) KHÔNG phải thu chi khác: không vào lợi nhuận.', drill: () => '/accounting?tab=vouchers',
   }),
   M('acc_lock', 'Khoá sổ', {
     group: 'Kế toán', scope: 'account', time: 'today', what: 'Từ ngày khoá trở về trước, chứng từ tay, chi phí, thanh toán, chuyển quỹ và tài sản không tạo, sửa, huỷ được.', formula: 'Chứng từ có ngày ≤ ngày khoá bị chặn (PERIOD_LOCKED)',

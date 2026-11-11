@@ -67,6 +67,14 @@ function snapshot(type, id, ctx) {
       const pu = db().prepare('SELECT * FROM purchases WHERE id = ?').get(id);
       return pu ? { pu } : null;
     }
+    case 'purchase_return': {
+      const ret = db().prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
+      return ret ? { ret, purchase: db().prepare('SELECT code FROM purchases WHERE id = ?').get(ret.purchase_id) } : null;
+    }
+    case 'purchase_allowance': {
+      const al = db().prepare('SELECT * FROM purchase_allowances WHERE id = ?').get(id);
+      return al ? { al, purchase: db().prepare('SELECT code FROM purchases WHERE id = ?').get(al.purchase_id) } : null;
+    }
     case 'expense': {
       const e = db().prepare('SELECT e.*, c.name AS category_name FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id WHERE e.id = ?').get(id);
       return e ? { e } : null;
@@ -105,6 +113,8 @@ function allSources() {
     ...q('SELECT id FROM order_returns', 'return'),
     ...q('SELECT id FROM payments', 'payment'),
     ...q('SELECT id FROM purchases', 'purchase'),
+    ...q('SELECT id FROM purchase_returns', 'purchase_return'),
+    ...q('SELECT id FROM purchase_allowances', 'purchase_allowance'),
     ...q('SELECT id FROM expenses', 'expense'),
     ...q('SELECT id FROM assets', 'asset'),
     ...q('SELECT id FROM cash_accounts', 'cash_open'),

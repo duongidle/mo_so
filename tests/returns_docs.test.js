@@ -429,8 +429,8 @@ test('lô và hạn dùng: nhập có hạn, xuất lấy lô hết hạn sớm 
   const sum = ok(await api.get('/stock-lots/summary'));
   assert.equal(sum.expired.qty, 5);
   assert.equal(sum.expiring.lots, 1);
-  // bán 7 cái: lấy hết lô quá hạn (5) rồi 2 từ lô sắp hết
-  await order({}, 'completed', 7);
+  // bán 7 cái: lấy hết lô quá hạn (5) rồi 2 từ lô sắp hết. Chạm lô quá hạn thì bị chặn, phải xác nhận vượt (allow_expired)
+  await order({ allow_expired: true }, 'completed', 7);
   const after = ok(await api.get('/stock-lots'));
   assert.deepEqual(after.map((l) => [l.lot_no, l.qty]), [['L-SOON', 3], ['L-LATE', 5]]);
   // chuyển 4 sang kho khác: 3 từ L-SOON + 1 từ L-LATE đi theo
@@ -653,7 +653,7 @@ test('quà tặng kèm khác sản phẩm: đủ điều kiện thì thêm dòng
 test('đơn huỷ đã nhận cọc: hoàn lại được tới số đã thu, không quá', async () => {
   const { api, order } = await world();
   const o = await order({ payments: [{ amount: 100000, method: 'cash' }] }, 'confirmed', 1);
-  ok(await api.post(`/orders/${o.id}/status`, { status: 'cancelled' }));
+  ok(await api.post(`/orders/${o.id}/status`, { status: 'cancelled', paid_action: 'refund' }));
   assert.equal(ok(await api.get(`/orders/${o.id}`)).paid_amount, 100000);
   assert.equal((await api.post(`/orders/${o.id}/payments`, { direction: 'out', amount: 100001, method: 'cash' })).status, 400);
   ok(await api.post(`/orders/${o.id}/payments`, { direction: 'out', amount: 100000, method: 'cash' }));
