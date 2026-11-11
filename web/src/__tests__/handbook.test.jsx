@@ -47,6 +47,18 @@ describe('dữ liệu cẩm nang', () => {
     expect(3900000 / 40).toBe(97500);
     expect(JSON.stringify(s.script)).toContain('97.500 ₫');
   });
+  it('chỉ có một trang nhập file Shopee, và số ví dụ giảm giá nhà cung cấp cộng đúng', () => {
+    const titles = scenes.map((s) => s.title);
+    expect(titles.filter((t) => /Shopee/.test(t) && /(import|Nhập) .*file|file Shopee/.test(t))).toHaveLength(1);
+    expect(titles).not.toContain('Đơn Shopee: import từ file');
+    const ncc = scenes.find((s) => s.title === 'Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền');
+    // 5.000.000 − 1.000.000 (trả 20 kg × 50.000) − 200.000 (giảm giá) = 3.800.000; đã trả ròng 4.000.000 → NCC nợ shop 200.000
+    expect(5000000 - 20 * 50000 - 200000).toBe(3800000);
+    expect(4000000 - 3800000).toBe(200000);
+    // giá vốn kho: 80 kg × 50.000 − 200.000 = 3.800.000 → 47.500/kg
+    expect((80 * 50000 - 200000) / 80).toBe(47500);
+    for (const t of ['3.800.000', '200.000', '47.500']) expect(ncc.steps.join(' ')).toContain(t);
+  });
   it('không còn lối viết thân mật hay từ "app" trong lời hướng dẫn', () => {
     const text = JSON.stringify(scenes.map((s) => [s.title, s.lead, s.steps, s.tip, s.warn]));
     expect(text).not.toMatch(/(?<![\p{L}])(?:[Aa]pp|[Bb]ấm|[Hh]ãy|tớ|cậu)(?![\p{L}])/u);
@@ -71,7 +83,7 @@ describe('Cẩm nang trong trang Hướng dẫn', () => {
 
   it.each([
     ['Nhập theo kg, bán theo hộp', 'C', 's2', '40 (lô L1126, hạn 30/06/2027)'],
-    ['Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền', 'A', 'db', '0 ₫'],
+    ['Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền', 'A', 'gv', '47.500 ₫/kg'],
     ['Khách đặt cọc rồi không lấy: hoàn hay giữ', 'B', 'ps', 'Đã huỷ'],
     ['Khách nhận hàng bị lỗi, hoàn một phần', 'B', 'dt', '350.000 ₫'],
     ['Đơn Shopee bị trả hàng: phí sàn được hoàn', 'B', 'tv', '864.000 ₫'],
