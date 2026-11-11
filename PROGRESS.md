@@ -1,5 +1,12 @@
 # Nhật ký thực hiện
 
+### 2026-11-11 — Chỉnh cẩm nang: gộp trang Shopee, số liệu nhà cung cấp giảm giá
+
+- Gộp hai trang Cẩm nang về nhập file Shopee thành một ("Nhập file Shopee: cảnh báo, trạng thái và trả hàng"), giữ phần lỗi SKU và mẹo import lại không trùng của trang cũ. Cẩm nang còn 33 trang.
+- Trang nhà cung cấp: bước giảm giá có số thật (5.000.000 − 1.000.000 − 200.000 = 3.800.000; NCC còn nợ shop 200.000; giá vốn kho 50.000 → 47.500 ₫/kg), đã kiểm bằng cách chạy trả hàng nhập và giảm giá trên DB tạm. Sửa câu cũ "kho không đổi": số lượng không đổi nhưng giá vốn hàng còn trong kho giảm.
+- Hỏi đáp "Chốt nhầm phiếu đối soát": "bấm" đổi thành "nhấn".
+- Kiểm chứng: 313/313 test giao diện, build qua.
+
 ### 2026-11-11 — Bù Cẩm nang và Hướng dẫn cho bốn đợt sửa nghiệp vụ
 
 - Cẩm nang (`web/src/guides/handbook/data.js`) thêm 6 trang, từ 28 lên 34: "Trả hàng cho nhà cung cấp và nhà cung cấp bớt tiền" (chương Bắt đầu), "Khách đặt cọc rồi không lấy: hoàn hay giữ", "Khách nhận hàng bị lỗi, hoàn một phần", "Nhập file Shopee: cảnh báo, trạng thái và trả hàng", "Đơn Shopee bị trả hàng: phí sàn được hoàn" (chương Bán hàng), "Nhập theo kg, bán theo hộp" (chương Kho, kèm mẹo chiết nước hoa ml sang chai 10 ml). Số liệu ví dụ cộng đúng (giá vốn kg 190.000, giá vốn hộp 3.900.000 / 40 = 97.500, phải thu sàn 1.728.000 − 960.000 + 96.000 = 864.000). Sửa tên nút ở các trang cũ cho khớp giao diện (Ghi nhận trả hàng, Xác nhận huỷ, Xem trước (chưa ghi gì), Ghi vào hệ thống). Bìa và Tình huống hay gặp thêm mục.
