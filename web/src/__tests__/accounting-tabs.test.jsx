@@ -42,7 +42,7 @@ describe('Sổ kế toán: tab chia nhóm', () => {
         : { data: [] });
     renderAt('/accounting?tab=assets');
     fireEvent.click(await screen.findByRole('button', { name: '+ Tài sản / chi phí trả trước' }));
-    expect(await screen.findByText('Ghi nhận nguyên giá, sau đó phân bổ đều theo tháng.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Thêm tài sản / chi phí trả trước' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByRole('button', { name: 'Huỷ' })).toBeTruthy();
   });

@@ -111,10 +111,11 @@ export function Tabs({ options, value, onChange, wrap }) {
 }
 
 /** Đầu trang: tiêu đề, mô tả ngắn (tuỳ chọn), nút hành động bên phải. `deco` chỉ dùng ở Tổng quan (đường diềm theo ngành). */
-export function PageHeader({ title, sub, actions, deco }) {
+/** `sub` còn nhận để các trang cũ không vỡ nhưng không hiện: chữ nhỏ dưới tiêu đề bị bỏ có chủ đích */
+export function PageHeader({ title, actions, deco }) {
   return (
     <div className={`page-head${deco ? ' deco' : ''}`}>
-      <div><h1>{title}</h1>{sub && <p className="sub muted small">{sub}</p>}</div>
+      <div><h1>{title}</h1></div>
       {actions && <div className="actions">{actions}</div>}
     </div>
   );

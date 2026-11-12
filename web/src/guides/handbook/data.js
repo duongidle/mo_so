@@ -207,7 +207,7 @@ add({ch:'E',type:'faq'});
 function coverHTML(){
   const first=(c)=>SL.findIndex(x=>x.ch===c&&!x.type);
   return `<div class="full"><p class="kick">Cẩm nang cho chủ shop</p><h1 style="font-size:clamp(30px,5vw,52px)">Dùng Mở Sổ từ ngày đầu đến chốt tháng</h1>
-  <p class="lead" style="font-size:18px">Nhấn → để sang bước sau. Mỗi trang có một màn hình mô phỏng tự thao tác và phát lại liên tục. Xem xong bạn biết cần nhấn gì, ở đâu và chuyện gì xảy ra với kho và tiền.</p>
+  <p class="lead" style="font-size:18px">Nhấn → để sang bước sau.</p>
   <div class="map">
     <button data-go="${first('A')}"><b>Bắt đầu</b><span>Tạo shop, sản phẩm, nhập hàng đầu tiên, trả tiền nhà cung cấp, trả hàng cho nhà cung cấp</span></button>
     <button data-go="${first('B')}"><b>Bán hàng</b><span>Bán trực tiếp, đơn giao hàng, file Shopee, khách, đặt cọc, huỷ, trả hàng, hàng lỗi, phí sàn được hoàn</span></button>
