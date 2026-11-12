@@ -38,7 +38,7 @@ describe('Chi phí & quỹ: công nợ phải trả và chi phí định kỳ', 
     api.get.mockImplementation(async (path) => (path === '/expense-categories' ? { data: [{ id: 'ecat_rent', name: 'Thuê' }] } : { data: [] }));
     renderAt('/expenses?tab=recurring');
     fireEvent.click(await screen.findByRole('button', { name: '+ Chi phí định kỳ' }));
-    expect(await screen.findByText('Thiết lập khoản chi và lịch tạo tự động.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Thêm chi phí định kỳ' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

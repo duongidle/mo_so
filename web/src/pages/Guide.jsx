@@ -108,7 +108,6 @@ export default function Guide() {
               <header className="guide-head">
                 <div className="guide-kicker">{guide.group}{guide.time ? ` · ${guide.time}` : ''}</div>
                 <h2>{guide.title}</h2>
-                <p className="guide-summary">{guide.summary}</p>
               </header>
               {guide.special === 'health' ? <HealthGuide /> : guide.special === 'handbook' ? <Handbook /> : <Blocks guide={guide} />}
               {guide.special !== 'handbook' && <footer className="guide-foot">

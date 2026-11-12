@@ -135,6 +135,12 @@
 
 > Ghi theo module trong `CLAUDE.md` mục 8. Mỗi phiên làm việc: đọc mục "Việc tiếp theo" trước, cập nhật file này khi xong.
 
+
+## 2026-11-12 — Gọn hướng dẫn, bỏ chữ phụ dưới tiêu đề, sửa phiếu đóng gói
+- `PageHeader` không còn hiện dòng chữ nhỏ dưới tiêu đề; bỏ tóm tắt lặp ở đầu bài Hướng dẫn, đoạn mở đầu Hỏi đáp, rút lời dẫn bìa Cẩm nang và câu trả lời dài nhất của Hỏi đáp.
+- Ô chọn file có viền nét đứt, nút phụ thay vì nút nâu đặc.
+- Phiếu đóng gói: thành phẩm chỉ lấy hàng bán niêm yết ở shop đang chọn (không lọc theo kho vì hộp mới chưa từng nằm trong kho); hàng nguồn chỉ hiện hàng đang có tồn ở kho đã chọn, hàng chỉ có ở kho khác hiện mờ kèm nhắc chuyển kho trước; kho mặc định theo kho chính của shop.
+
 ## Tổng quan
 
 | # | Module | Backend | Giao diện | Test | Ghi chú |

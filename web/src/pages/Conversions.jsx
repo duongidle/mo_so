@@ -40,19 +40,29 @@ export function ConversionList() {
   );
 }
 
-/** Ô tìm mặt hàng trong kho đang chọn: nguồn lấy mọi mặt hàng có tồn (kể cả bao bì, vật tư), thành phẩm chỉ hàng bán */
-function ItemSearch({ wh, kind, onPick, exclude, placeholder }) {
+/** Ô tìm mặt hàng. Nguồn: chỉ hàng đang có tồn ở KHO ĐÃ CHỌN (phiếu chỉ lấy từ một kho); hàng chỉ có ở kho khác hiện mờ, kèm nhắc chuyển kho trước.
+ *  Thành phẩm: chỉ hàng bán của shop đang chọn, không lọc theo kho vì hộp mới thường chưa từng nằm trong kho này. */
+function ItemSearch({ wh, shopId, kind, onPick, exclude, placeholder }) {
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
-  const found = useAsync(() => (dq ? api.get('/stock', { warehouse_id: wh || undefined, q: dq, limit: 10 }) : null), [dq, wh]);
-  const rows = (Array.isArray(found.data?.data) ? found.data.data : []).filter((r) => !r.is_bundle && (kind === 'source' || r.item_type === 'product') && !exclude.includes(r.variant_id));
+  const isSource = kind === 'source';
+  const here = useAsync(() => (dq && isSource ? api.get('/stock', { warehouse_id: wh, q: dq, limit: 10 }) : null), [dq, wh, isSource]);
+  const any = useAsync(() => (dq ? api.get('/stock', isSource ? { q: dq, limit: 10 } : { shop_id: shopId || undefined, q: dq, limit: 10 }) : null), [dq, shopId, isSource]);
+  const list = (r) => (Array.isArray(r.data?.data) ? r.data.data : []).filter((x) => !x.is_bundle && !exclude.includes(x.variant_id));
+  let rows;
+  if (isSource) {
+    const atWh = list(here).filter((r) => r.on_hand > 0);
+    const ids = new Set(atWh.map((r) => r.variant_id));
+    const elsewhere = list(any).filter((r) => r.on_hand > 0 && !ids.has(r.variant_id)).map((r) => ({ ...r, other: true }));
+    rows = [...atWh, ...elsewhere];
+  } else rows = list(any).filter((r) => r.item_type === 'product');
   return (
     <div className="stack" style={{ gap: 4 }}>
       <input placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} aria-label={placeholder} />
       {rows.length > 0 && <div className="pick-list">{rows.map((r) => (
-        <div key={r.variant_id} className="pick" onClick={() => { onPick(r); setQ(''); }}>
+        <div key={r.variant_id} className="pick" style={r.other ? { opacity: 0.55, cursor: 'not-allowed' } : undefined} onClick={() => { if (r.other) return; onPick(r); setQ(''); }}>
           <span>{itemName(r.product_name, r.variant_name)} <span className="muted small">{r.sku}</span></span>
-          <span className="small muted">Còn {num(r.on_hand)} {r.unit}</span>
+          <span className="small muted">{r.other ? 'Không có ở kho này, chuyển kho trước' : isSource ? `Còn ${num(r.on_hand)} ${r.unit}` : ''}</span>
         </div>
       ))}</div>}
     </div>
@@ -61,8 +71,8 @@ function ItemSearch({ wh, kind, onPick, exclude, placeholder }) {
 
 /** Trang lập phiếu đóng gói: cột chính là hàng nguồn và thành phẩm, cột phụ là kho, ghi chú, giá trị và giá vốn mỗi thành phẩm xem trước. */
 export function ConversionForm({ onClose, onSaved, onDirty }) {
-  const { warehouses, shopId, isAll } = useSession();
-  const [wh, setWh] = useState(warehouses[0]?.id);
+  const { warehouses, shops, shopId, isAll } = useSession();
+  const [wh, setWh] = useState((!isAll && shops?.find((x) => x.id === shopId)?.default_warehouse_id) || warehouses[0]?.id);
   const [note, setNote] = useState('');
   const [sources, setSources] = useState([]);
   const [outputs, setOutputs] = useState([]);
@@ -146,7 +156,7 @@ export function ConversionForm({ onClose, onSaved, onDirty }) {
     >
       <Section title={`Thành phẩm nhận được${outputs.length ? ` (${outputs.length})` : ''}`} actions={<button type="button" className="btn sm" disabled={busy || !validOut.length} onClick={suggest}>Gợi ý hàng nguồn</button>}>
         <div className="stack">
-          <ItemSearch wh={wh} kind="output" onPick={addOutput} exclude={[...outputs.map((o) => o.id), ...sources.map((s) => s.id)]} placeholder="Tìm thành phẩm (hộp, túi…) để thêm" />
+          <ItemSearch wh={wh} shopId={isAll ? null : shopId} kind="output" onPick={addOutput} exclude={[...outputs.map((o) => o.id), ...sources.map((s) => s.id)]} placeholder="Tìm thành phẩm (hộp, túi…) để thêm" />
           {!outputs.length ? <div className="of-empty muted">Chưa có thành phẩm. Gõ SKU ở ô trên rồi chọn.</div> : outputs.map((o) => (
             <div key={o.id} className="stack" style={{ gap: 8 }}>
               <div className="pl-row">
@@ -171,7 +181,7 @@ export function ConversionForm({ onClose, onSaved, onDirty }) {
 
       <Section title={`Hàng nguồn đã dùng${sources.length ? ` (${sources.length})` : ''}`}>
         <div className="stack">
-          <ItemSearch wh={wh} kind="source" onPick={addSource} exclude={[...outputs.map((o) => o.id), ...sources.map((s) => s.id)]} placeholder="Tìm hàng nguồn (kg, hộp rỗng, tem…) để thêm" />
+          <ItemSearch wh={wh} shopId={null} kind="source" onPick={addSource} exclude={[...outputs.map((o) => o.id), ...sources.map((s) => s.id)]} placeholder="Tìm hàng nguồn (kg, hộp rỗng, tem…) để thêm" />
           {!sources.length ? <div className="of-empty muted">Chưa có hàng nguồn. Thêm thành phẩm rồi nhấn “Gợi ý hàng nguồn”, hoặc tự tìm ở ô trên.</div> : sources.map((s) => {
             const sl = lotsOf(s.id);
             const norm = suggested[s.id];
